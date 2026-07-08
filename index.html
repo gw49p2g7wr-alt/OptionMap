@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OptionMap</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>📊 OptionMap</h1>
+
+    <div class="card">
+        <h2>夜間データ</h2>
+        <textarea id="nightData"></textarea>
+    </div>
+
+    <div class="card">
+        <h2>日中データ</h2>
+        <textarea id="dayData"></textarea>
+    </div>
+
+    <div class="card">
+        <h2>オプションデータ</h2>
+        <textarea id="optionData"></textarea>
+    </div>
+
+    <button id="analyzeButton">
+        解析開始
+    </button>
+
+    <div class="card chart-card">
+        <h2>グラフ</h2>
+
+        <canvas id="myChart"></canvas>
+
+    
+    </div>
+
+    <div class="card chart-card">
+        <h2>価格帯グラフ</h2>
+    
+        <canvas id="priceChart"></canvas>
+    
+    </div>
+
+    <h2>価格帯マップ</h2>
+
+    <table id="optionMapTable" border="1">
+    </table>
+
+<br><br>
+
+<div class="card">
+    <h2>最大建玉</h2>
+
+    <div id="maxPosition"></div>
+
+</div>
+
+
+<div class="card">
+    <h2>価格帯ランキング</h2>
+    <div id="priceRanking"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="js/script.js"></script>
+
+</body>
+</html>
