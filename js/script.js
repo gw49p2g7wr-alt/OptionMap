@@ -724,8 +724,25 @@ function drawChart(labels, values) {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false
-        }
+            maintainAspectRatio: false,
+          
+            interaction: {
+              mode: "index",
+              intersect: false
+            },
+          
+            plugins: {
+              tooltip: {
+                enabled: true,
+                callbacks: {
+                  label: (context) => {
+                    const value = Number(context.raw || 0);
+                    return `取引枚数: ${value.toLocaleString("ja-JP")}枚`;
+                  }
+                }
+              }
+            }
+          }
     });
 
 }

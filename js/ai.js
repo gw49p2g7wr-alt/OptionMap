@@ -13,6 +13,10 @@ function analyzeOptionMapData(aiData) {
     
     console.log("AIデータ概要:", summary);
 
+    const futureOpenInterestText = aiData.futureOpenInterest
+    ? JSON.stringify(aiData.futureOpenInterest, null, 2)
+    : "データなし";
+
     let prompt = `
    【現在値】
     ${aiData.currentPrice} 円
@@ -28,6 +32,9 @@ function analyzeOptionMapData(aiData) {
 
    【オプション建玉】
     ${aiData.optionData}
+
+   【指数先物建玉（週次）】
+    ${futureOpenInterestText}
 `;
         
     prompt += `
@@ -40,6 +47,8 @@ function analyzeOptionMapData(aiData) {
 ・建玉の偏りから考えられる動き
 ・参加者別手口から読み取れる特徴
 ・初心者にも分かるように説明してください。
+・週次の指数先物建玉は必ず分析してください。
+・参加者ごとの買い建玉・売り建玉の偏りと、日中・夜間の取引高との一致・不一致をコメントしてください。
 `;
 
 console.log(prompt);
