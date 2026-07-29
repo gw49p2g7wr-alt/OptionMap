@@ -1,4 +1,10 @@
 const { app, BrowserWindow } = require("electron");
+require("dotenv").config();
+
+console.log(
+  "OpenAI APIキーを読み込めた？",
+  Boolean(process.env.OPENAI_API_KEY)
+);
 
 function createWindow() {
   const win = new BrowserWindow({

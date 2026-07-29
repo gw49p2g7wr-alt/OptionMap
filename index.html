@@ -29,23 +29,312 @@
         <textarea id="optionData"></textarea>
     </div>
 
+    <div class="card">
+        <h2>指数先物建玉（週次）</h2>
+        <textarea id="futureOpenInterestData"></textarea>
+      </div>
+
+    <button id="clearInputButton" type="button">
+        入力データをクリア
+    </button>
+
     <button id="analyzeButton">
         解析開始
     </button>
 
-    <div class="card chart-card">
-        <h2>グラフ</h2>
-
-        <canvas id="myChart"></canvas>
-
     
-    </div>
-
     <div class="card chart-card">
+
+
         <h2>価格帯グラフ</h2>
     
-        <canvas id="priceChart"></canvas>
+        <div class="current-price-controls">
+
+            <label for="priceSource">
+                現在値の基準
+            </label>
+        
+            <select id="priceSource">
+                <option value="manual">手入力</option>
+                <option value="nikkei225" disabled>日経平均 現物（準備中）</option>
+                <option value="nikkei225-futures" disabled>日経225先物 期近（準備中）</option>
+                <option value="nikkei225-mini" disabled>日経225ミニ先物 期近（準備中）</option>
+            </select>
+        
+            <input
+                type="number"
+                id="currentPriceInput"
+                value="70000"
+                step="5"
+                min="0"
+            >
+        
+            <button id="updateCurrentPriceButton" type="button">
+                現在値を反映
+            </button>
+        
+            <span id="currentPriceStatus">
+                現在値：70,000円
+            </span>
+        
+        </div>
+
+        <div class="market-info">
+
+            <div class="market-info-item">
+                <span class="market-info-label">現在値</span>
+                <strong id="marketCurrentPrice">--</strong>
+            </div>
+        
+            <div class="market-info-item">
+                <span class="market-info-label">表示範囲</span>
+                <strong id="marketDisplayRange">--</strong>
+            </div>
+        
+            <div class="market-info-item">
+                <span class="market-info-label">データ日時</span>
+                <strong id="marketFetchedAt">--</strong>
+            </div>
+        
+        </div>
+        
+        <div class="snapshot-controls">
+            
+            <div class="snapshot-memo-area">
+
+                <label for="snapshotMemo">今日のメモ</label>
+        
+                <textarea
+        
+                    id="snapshotMemo"
+        
+                    placeholder="例）
+                    市場：やや強気
+                    判断：様子見
+                    理由：PUT減少・SQ前日
+                    結果：（後で記入）"
+        
+                    rows="4"
+        
+                ></textarea>
+        
+            </div>
+            
+            <button
+                type="button"
+                id="saveJpxSnapshotButton">
+                今日のJPXデータを保存
+            </button>
+            
+            <div class="world-market-upload">
+                <label for="worldMarketImage">
+                    世界の株価スクショ
+                </label>
+            
+                <input
+                    type="file"
+                    id="worldMarketImage"
+                    accept="image/png, image/jpeg, image/webp"
+                >
+            </div>
+
+        </div>
+
+        <details class="snapshot-list-card">
+            <summary>保存済みJPXデータ</summary>
+        
+            <div id="savedSnapshotList">
+                保存済みデータはありません
+            </div>
+            <div id="worldMarketImageArea"></div>
+        </details>
+            <div class="intelligence-card">
+                <h3>🧬 OptionMap Intelligence</h3>
+            
+                <div class="intelligence-grid">
+                    <div class="intelligence-item">
+                        <span>保存データ</span>
+                        <strong id="intelligenceSnapshotCount">0件</strong>
+                    </div>
+            
+                    <div class="intelligence-item">
+                        <span>保存日数</span>
+                        <strong id="intelligenceDayCount">0日</strong>
+                    </div>
+            
+                    <div class="intelligence-item">
+                        <span>蓄積レベル</span>
+                        <strong id="intelligenceLevel">Lv.1</strong>
+                    </div>
+            
+                    <div class="intelligence-item">
+                        <span>データ充実度</span>
+                        <strong id="intelligenceStars">★☆☆☆☆</strong>
+                    </div>
+                </div>
+            
+                <div class="intelligence-progress">
+                    <div class="intelligence-progress-label">
+                        <span>保存状況</span>
+                        <strong id="intelligenceProgressText">0日 / 30日</strong>
+                    </div>
+                
+                    <div class="intelligence-progress-track">
+                        <div
+                            id="intelligenceProgressBar"
+                            class="intelligence-progress-bar"
+                            
+                        ></div>
+                    </div>
+                </div>
+
+                <p id="intelligenceMessage">
+                    データの蓄積を始めたばかりです。
+                </p>
+            </div>
+
+            <div class="comparison-status-card">
+                <span class="comparison-status-label">
+                    比較対象
+                </span>
+            
+                <strong id="comparisonSnapshotStatus">
+                    まだ選択されていません
+                </strong>
+            </div>
+
+        
+
+
+
+        <div class="market-summary-card">
+
+            <h3>🧠 今日の市場の特徴</h3>
+        
+            <div id="marketSummary">
+        
+                比較対象を選択すると表示されます。
+        
+            </div>
+        
+        </div>
+
+        <div class="difference-summary-card">
+            <h3>現在値付近の注目変化</h3>
+        
+            <div class="difference-summary-grid">
+                <div class="difference-summary-item">
+                    <span>CALL 増加</span>
+                    <strong id="maxCallIncrease">
+                        まだ比較されていません
+                    </strong>
+                </div>
+        
+                <div class="difference-summary-item">
+                    <span>CALL 減少</span>
+                    <strong id="maxCallDecrease">
+                        まだ比較されていません
+                    </strong>
+                </div>
+        
+                <div class="difference-summary-item">
+                    <span>PUT 増加</span>
+                    <strong id="maxPutIncrease">
+                        まだ比較されていません
+                    </strong>
+                </div>
+        
+                <div class="difference-summary-item">
+                    <span>PUT 減少</span>
+                    <strong id="maxPutDecrease">
+                        まだ比較されていません
+                    </strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="wall-summary">
+
+            <div class="wall-card call-wall">
+                <h3>上側のCALL壁候補</h3>
+                <p id="callWallResult">まだ計算されていません</p>
+            </div>
+        
+            <div class="wall-card put-wall">
+                <h3>下側のPUT壁候補</h3>
+                <p id="putWallResult">まだ計算されていません</p>
+            </div>
+        
+        </div>
     
+
+        <div
+        id="differenceRankingCard"
+        class="difference-ranking-card"
+    >
+        <h3>建玉の前回比較</h3>
+    
+        <div class="difference-ranking-grid">
+            <div class="difference-panel">
+                <h4>CALL 増加TOP3</h4>
+                <div id="callIncreaseResult">
+                    比較対象を選択してください
+                </div>
+            </div>
+    
+            <div class="difference-panel">
+                <h4>CALL 減少TOP3</h4>
+                <div id="callDecreaseResult">
+                    比較対象を選択してください
+                </div>
+            </div>
+    
+            <div class="difference-panel">
+                <h4>PUT 増加TOP3</h4>
+                <div id="putIncreaseResult">
+                    比較対象を選択してください
+                </div>
+            </div>
+    
+            <div class="difference-panel">
+                <h4>PUT 減少TOP3</h4>
+                <div id="putDecreaseResult">
+                    比較対象を選択してください
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+        <div class="jpx-chart-block">
+            <h3 id="combinedChartTitle">CALL・PUT建玉残</h3>
+
+                   
+            <div class="chart-mode-switch">
+                <button
+                    type="button"
+                    id="showOpenInterestButton"
+                    class="chart-mode-button active"
+                >
+                    建玉残
+                </button>
+            
+                <button
+                    type="button"
+                    id="showVolumeButton"
+                    class="chart-mode-button"
+                >
+                    本日の取引高
+                </button>
+            </div>
+
+            <div class="chart-container combined-chart-container">
+                <canvas id="combinedPriceChart"></canvas>
+            </div>
+        </div>
+    
+
+
     </div>
 
     <h2>価格帯マップ</h2>
@@ -68,8 +357,167 @@
     <div id="priceRanking"></div>
 </div>
 
+<div class="card chart-card">
+    <h2>証券会社別取引高</h2>
+
+    <div class="current-price-controls">
+        <label for="brokerProductSelect">商品</label>
+        <select id="brokerProductSelect">
+          <option value="NK225F">日経225先物</option>
+          <option value="NK225M">日経225mini</option>
+          <option value="TOPIXF">TOPIX先物</option>
+        </select>
+      
+        <label for="brokerMarketSelect">区分</label>
+        <select id="brokerMarketSelect">
+          <option value="auction">立会</option>
+          <option value="jnet">J-NET</option>
+          <option value="combined">合算</option>
+        </select>
+      </div>
+    <canvas id="myChart"></canvas>
+
+
+</div>
+
+<div class="card chart-card">
+    <h2>指数先物建玉（週次）</h2>
+  
+    <div class="current-price-controls">
+      <label for="futureOpenInterestProduct">
+        表示する商品
+      </label>
+  
+      <select id="futureOpenInterestProduct">
+        <option value="日経225先物">日経225先物</option>
+        <option value="日経225mini">日経225mini</option>
+        <option value="TOPIX先物">TOPIX先物</option>
+      </select>
+    </div>
+  
+    <canvas id="futureOpenInterestChart"></canvas>
+  </div>
+  <div id="futureOpenInterestRanking" class="ranking-box"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="js/ai.js"></script>
 <script src="js/script.js"></script>
+
+<script type="module">
+
+    import { parseJpxHtml } from "./js/parser/jpxParser.js";
+    
+    fetch("./data/sample.html")
+        .then(r => r.text())
+        .then(html => {
+    
+           // sample.html全体を文字として取り出す
+const sourceDocument =
+    new DOMParser().parseFromString(html, "text/html");
+
+const sourceText =
+    sourceDocument.body.textContent || "";
+
+console.log("日時検索用テキスト:", sourceText);
+
+// 例：7/8(水) 16:30
+const dateMatch = sourceText.match(
+    /(\d{1,2})\/(\d{1,2})\s*(?:\([^)]+\))?\s*(\d{1,2}):(\d{2})/
+);
+
+if (dateMatch) {
+
+    const year = new Date().getFullYear();
+    const month = Number(dateMatch[1]);
+    const day = Number(dateMatch[2]);
+    const hour = Number(dateMatch[3]);
+    const minute = Number(dateMatch[4]);
+
+    const sourceDate = new Date(
+        year,
+        month - 1,
+        day,
+        hour,
+        minute
+    );
+
+    console.log("見つけた元データ日時:", sourceDate);
+
+    if (typeof window.setJpxSourceTime === "function") {
+        window.setJpxSourceTime(sourceDate);
+    }
+
+} else {
+    console.warn("sample.html内に日時が見つかりません");
+}
+
+            const data = parseJpxHtml(html);
+    
+            console.log("JPX Parser Result");
+    
+            console.table(data);
+
+            const sortedData = [...data]
+       
+        .sort((a, b) => a.strike - b.strike);
+
+            const labels = sortedData.map(item =>
+                item.strike.toLocaleString()
+);
+
+            const callValues = sortedData.map(item =>
+                item.callOI
+);
+
+            const putValues = sortedData.map(item =>
+                item.putOI
+);
+
+            const callVolumes = sortedData.map(item =>
+                item.callVolume
+);
+
+            const putVolumes = sortedData.map(item =>
+                item.putVolume
+);
+
+console.log(
+    "グラフ関数:",
+    typeof window.drawJpxPriceChart
+);
+
+console.log("グラフ用データ件数:", labels.length);
+console.log("CALL先頭5件:", callValues.slice(0, 5));
+console.log("PUT先頭5件:", putValues.slice(0, 5));
+
+if (typeof window.drawJpxPriceChart === "function") {
+    window.drawJpxPriceChart(
+    labels,
+    callValues,
+    putValues,
+    callVolumes,
+    putVolumes
+);
+} else {
+    console.error("drawJpxPriceChart が見つかりません");
+}           
+
+            const output = document.getElementById("parserOutput");
+
+            if (output) {
+    output.textContent = "";
+}    
+        });
+    
+    </script>
+
+<div class="version-info">
+
+    OptionMap v1.0<br>
+  
+    © 2026 Natsu & Buddy
+  
+  </div>
 
 </body>
 </html>

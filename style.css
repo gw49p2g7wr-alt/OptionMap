@@ -172,3 +172,674 @@ canvas {
     width: 100% !important;
     height: 320px !important;
 }
+
+.combined-chart-container {
+    height: 400px;
+    width: 100%;
+    
+}
+
+/* CALL・PUT 壁候補カード */
+.wall-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 24px 0 30px;
+}
+
+.wall-card {
+    padding: 22px 24px;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 5px 16px rgba(0, 0, 0, 0.10);
+}
+
+.wall-card h3 {
+    margin: 0 0 16px;
+    font-size: 20px;
+}
+
+.wall-card p {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.8;
+    font-weight: 600;
+}
+
+/* CALLカード */
+.call-wall {
+    border-left: 7px solid #1769c2;
+    background: rgba(74, 144, 226, 0.08);
+}
+
+.call-wall h3 {
+    color: #1459a3;
+}
+
+/* PUTカード */
+.put-wall {
+    border-left: 7px solid #d81b45;
+    background: rgba(255, 99, 132, 0.08);
+}
+
+.put-wall h3 {
+    color: #bd183b;
+}
+
+/* 画面が狭いときは縦並び */
+@media (max-width: 750px) {
+    .wall-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 現在値・表示範囲・取得時刻 */
+.market-info {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 22px 0;
+}
+
+.market-info-item {
+    padding: 15px 18px;
+    border-radius: 12px;
+    background: #f7f8fb;
+    border: 1px solid #e2e5ec;
+}
+
+.market-info-label {
+    display: block;
+    margin-bottom: 6px;
+    color: #666666;
+    font-size: 13px;
+}
+
+.market-info-item strong {
+    font-size: 17px;
+    color: #222222;
+}
+
+@media (max-width: 750px) {
+    .market-info {
+        grid-template-columns: 1fr;
+    }
+}
+
+.chart-mode-switch {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0 18px;
+}
+
+.chart-mode-button {
+    padding: 10px 18px;
+    border: 1px solid #c9ced8;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #333333;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.chart-mode-button.active {
+    background: #244a82;
+    border-color: #244a82;
+    color: #ffffff;
+}
+
+.snapshot-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 16px 0 22px;
+}
+
+#saveJpxSnapshotButton {
+    padding: 11px 18px;
+    border: none;
+    border-radius: 10px;
+    background: #244a82;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#saveJpxSnapshotButton:hover {
+    opacity: 0.88;
+}
+
+#snapshotSaveStatus {
+    color: #555555;
+    font-size: 14px;
+}
+
+/* 保存済みJPXデータ一覧 */
+.snapshot-list-card {
+    margin: 0 0 24px;
+    padding: 18px 20px;
+    border: 1px solid #e1e5ec;
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.snapshot-list-card h3 {
+    margin: 0 0 14px;
+    font-size: 18px;
+}
+
+.saved-snapshot-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 4px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+.saved-snapshot-item:last-child {
+    border-bottom: none;
+}
+
+.saved-snapshot-date {
+    font-weight: 700;
+    color: #26364d;
+}
+
+.saved-snapshot-detail {
+    color: #777777;
+    font-size: 13px;
+}
+
+.show-snapshot-button {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border: 1px solid #244a82;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #244a82;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.show-snapshot-button:hover {
+    background: #244a82;
+    color: #ffffff;
+}
+
+.comparison-status-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0 0 24px;
+    padding: 15px 20px;
+    border: 1px solid #d9dee8;
+    border-radius: 12px;
+    background: #f7f9fc;
+}
+
+.comparison-status-label {
+    color: #667085;
+    font-size: 14px;
+}
+
+#comparisonSnapshotStatus {
+    color: #244a82;
+    font-size: 16px;
+}
+
+.difference-ranking-card {
+    margin: 0 0 24px;
+    padding: 20px;
+    border: 1px solid #dfe4ec;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.difference-ranking-card h3 {
+    margin: 0 0 18px;
+}
+
+.difference-ranking-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+
+.difference-panel {
+    padding: 16px;
+    border-radius: 12px;
+    background: #f7f9fc;
+}
+
+.difference-panel h4 {
+    margin: 0 0 12px;
+}
+
+.difference-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 7px 0;
+    border-bottom: 1px solid #e6e9ef;
+}
+
+.difference-row:last-child {
+    border-bottom: none;
+}
+
+.difference-up {
+    color: #17803d;
+}
+
+.difference-down {
+    color: #c62828;
+}
+
+@media (max-width: 700px) {
+    .difference-ranking-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.difference-summary-card {
+    margin: 0 0 24px;
+    padding: 20px;
+    border: 1px solid #dfe4ec;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.difference-summary-card h3 {
+    margin: 0 0 18px;
+}
+
+.difference-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+
+.difference-summary-item {
+    padding: 16px;
+    border-radius: 12px;
+    background: #f7f9fc;
+}
+
+.difference-summary-item span {
+    display: block;
+    margin-bottom: 8px;
+    color: #667085;
+    font-size: 14px;
+}
+
+.difference-summary-item strong {
+    display: block;
+    font-size: 18px;
+}
+
+@media (max-width: 700px) {
+    .difference-summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.nearby-strike {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.nearby-distance {
+    display: block;
+    margin-top: 6px;
+    color: #667085;
+    font-size: 13px;
+}
+
+.difference-summary-item strong {
+    font-size: 18px;
+}
+
+/* 現在値から250円以内 */
+.difference-summary-item.nearby-close {
+    background: #eaf7ee;
+    border: 2px solid #69b77c;
+}
+
+/* 現在値から251〜500円 */
+.difference-summary-item.nearby-middle {
+    background: #fff8df;
+    border: 2px solid #e1b94f;
+}
+
+/* 現在値から501〜1,000円 */
+.difference-summary-item.nearby-far {
+    background: #fff1e5;
+    border: 2px solid #df9b61;
+}
+
+.difference-summary-item {
+    transition:
+        background-color 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.nearby-card-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+}
+
+.nearby-attention {
+    color: #e1a72c;
+    font-size: 18px;
+    letter-spacing: 1px;
+    line-height: 1;
+}
+
+.nearby-arrow {
+    margin: 0 2px;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.market-summary-card {
+
+    margin-bottom:20px;
+
+    padding:20px;
+
+    background:#ffffff;
+
+    border-radius:14px;
+
+    border:1px solid #dfe4ec;
+
+}
+
+#marketSummary{
+
+    line-height:1.8;
+
+    font-size:15px;
+
+}
+
+.version-info {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    margin: 40px 0 20px;
+    line-height: 1.6;
+}
+
+/* OptionMap Intelligence */
+.intelligence-card {
+    margin: 0 0 24px;
+    padding: 20px;
+    border: 1px solid #dfe4ec;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.intelligence-card h3 {
+    margin: 0 0 18px;
+    color: #244a82;
+}
+
+.intelligence-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+.intelligence-item {
+    padding: 14px;
+    border-radius: 11px;
+    background: #f7f9fc;
+}
+
+.intelligence-item span {
+    display: block;
+    margin-bottom: 7px;
+    color: #667085;
+    font-size: 13px;
+}
+
+.intelligence-item strong {
+    color: #26364d;
+    font-size: 18px;
+}
+
+#intelligenceStars {
+    color: #e1a72c;
+    letter-spacing: 2px;
+}
+
+#intelligenceMessage {
+    margin: 16px 0 0;
+    color: #667085;
+    font-size: 14px;
+}
+
+@media (max-width: 750px) {
+    .intelligence-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.market-diagnosis{
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:16px;
+}
+
+.market-diagnosis.強気{
+    background:#e8f8ec;
+    border-left:6px solid #2e7d32;
+}
+
+.market-diagnosis.弱気{
+    background:#fdecec;
+    border-left:6px solid #d32f2f;
+}
+
+.market-diagnosis.中立{
+    background:#fff9e6;
+    border-left:6px solid #f9a825;
+}
+
+/* ===== 市場診断バッジ ===== */
+
+.market-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.market-badge.strong {
+    background: #2e7d32;
+}
+
+.market-badge.neutral {
+    background: #f9a825;
+    color: #333;
+}
+
+.market-badge.weak {
+    background: #c62828;
+}
+
+.confidence-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #ffe58f;
+    color: #7a5200;
+    font-weight: bold;
+}
+
+.point-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-weight: bold;
+}
+
+.snapshot-list-card summary {
+    cursor: pointer;
+    font-size: 1.25rem;
+    font-weight: 700;
+    list-style: none;
+  }
+  
+  .snapshot-list-card summary::-webkit-details-marker {
+    display: none;
+  }
+  
+  .snapshot-list-card summary::before {
+    content: "▶";
+    display: inline-block;
+    margin-right: 0.5rem;
+    transition: transform 0.2s ease;
+  }
+  
+  .snapshot-list-card[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  /* OptionMap Intelligence 進捗表示 */
+.intelligence-progress {
+    margin: 14px 0 10px;
+  }
+  
+  .intelligence-progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+    color: #5f6878;
+  }
+  
+  .intelligence-progress-label strong {
+    color: #223f78;
+  }
+  
+  .intelligence-progress-track {
+    height: 8px;
+    overflow: hidden;
+    background: #e8edf5;
+    border-radius: 999px;
+  }
+  
+  .intelligence-progress-bar {
+    height: 100%;
+    background: #284d8f;
+    border-radius: inherit;
+    transition: width 0.3s ease;
+  }
+
+  /* 今日の市場の特徴を読みやすくする */
+.market-summary-card {
+    line-height: 1.75;
+  }
+  
+  .market-summary-card h3 {
+    margin-bottom: 16px;
+  }
+  
+  #marketSummary {
+    max-width: 100%;
+  }
+  
+  #marketSummary p {
+    margin: 8px 0;
+  }
+  
+  #marketSummary ul {
+    margin: 10px 0 0;
+    padding-left: 1.4rem;
+  }
+  
+  #marketSummary li {
+    margin: 4px 0;
+  }
+
+  .snapshot-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0;
+  }
+  
+  .snapshot-tag {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef3fb;
+    color: #284d8f;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .snapshot-memo-area textarea {
+    width: 100%;
+    max-width: 420px;
+    min-height: 100px;
+    resize: vertical;
+
+    padding: 12px;
+    border: 1px solid #d8dce8;
+    border-radius: 10px;
+
+    font-size: 0.95rem;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.snapshot-memo {
+    margin: 8px 0;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid #4caf50;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    font-size: 0.9rem;
+}
+
+.ranking-box{
+    margin-top:20px;
+    padding:15px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    background:#fafafa;
+}
+
+.ranking-columns{
+    display:flex;
+    gap:40px;
+}
+
+.ranking-columns>div{
+    flex:1;
+}
+
+.ranking-columns h3{
+    margin-bottom:10px;
+}
+
+.ranking-columns ol{
+    margin:0;
+    padding-left:20px;
+}

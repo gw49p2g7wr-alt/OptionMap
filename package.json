@@ -2,17 +2,14 @@
   "name": "optionmap",
   "version": "1.0.0",
   "main": "main.js",
-
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder"
   },
-
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
-
   "build": {
     "appId": "com.natsu.optionmap",
     "productName": "OptionMap",
@@ -20,9 +17,12 @@
       "target": "nsis"
     }
   },
-
   "devDependencies": {
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "openai": "^7.0.0"
   }
 }
