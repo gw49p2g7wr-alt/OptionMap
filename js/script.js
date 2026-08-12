@@ -53,6 +53,7 @@ let allJpxCallVolumes = [];
 let allJpxPutVolumes = [];
 let currentChartMode = "openInterest";
 let lastJpxFetchedAt = null;
+let currentPrice = 70000;
 let priceTotals = {};
 let comparisonSnapshot = null;
 let latestNightFutureTotals = null;
@@ -1737,6 +1738,102 @@ const currentPriceStatus =
 const priceSource =
     document.getElementById("priceSource");
 
+function applyCurrentPrice({
+    value,
+    source = "manual",
+    quotedAt = null,
+    fetchedAt = null,
+    mode = "manual",
+    persist = true,
+    invalidateOnChange = true,
+    redraw = true
+}) {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        return {
+            success: false,
+            changed: false,
+            error: "invalid_price"
+        };
+    }
+
+    const changed = currentPrice !== numericValue;
+    currentPrice = numericValue;
+
+    if (currentPriceInput) {
+        currentPriceInput.value = String(currentPrice);
+    }
+
+    if (currentPriceStatus) {
+        currentPriceStatus.textContent =
+            "現在値：" +
+            currentPrice.toLocaleString() +
+            "円";
+    }
+
+    if (priceSource && source) {
+        priceSource.value = source;
+    }
+
+    if (persist) {
+        localStorage.setItem(
+            "optionMapCurrentPrice",
+            String(currentPrice)
+        );
+        localStorage.setItem(
+            "optionMapPriceSource",
+            source
+        );
+        localStorage.setItem(
+            "optionMapPriceMode",
+            mode
+        );
+
+        if (quotedAt) {
+            localStorage.setItem(
+                "optionMapPriceQuotedAt",
+                String(quotedAt)
+            );
+        } else {
+            localStorage.removeItem("optionMapPriceQuotedAt");
+        }
+
+        if (fetchedAt) {
+            localStorage.setItem(
+                "optionMapPriceFetchedAt",
+                String(fetchedAt)
+            );
+        } else {
+            localStorage.removeItem("optionMapPriceFetchedAt");
+        }
+    }
+
+    if (changed && invalidateOnChange) {
+        invalidateOptionMarketJudgment();
+    }
+
+    if (redraw && allJpxLabels.length > 0) {
+        window.drawJpxPriceChart(
+            allJpxLabels,
+            allJpxCallValues,
+            allJpxPutValues,
+            allJpxCallVolumes,
+            allJpxPutVolumes
+        );
+    }
+
+    return {
+        success: true,
+        changed,
+        value: currentPrice,
+        source,
+        quotedAt,
+        fetchedAt,
+        mode
+    };
+}
+
 
 // 保存してある現在値を読み込む
 const savedPrice =
@@ -1746,28 +1843,19 @@ const savedSource =
     localStorage.getItem("optionMapPriceSource");
 
 if (savedPrice) {
-
-    const restoredPrice = Number(savedPrice);
-
-    if (Number.isFinite(restoredPrice) && restoredPrice > 0) {
-
-        currentPrice = restoredPrice;
-
-        if (currentPriceInput) {
-            currentPriceInput.value = restoredPrice;
-        }
-
-        if (currentPriceStatus) {
-            currentPriceStatus.textContent =
-                "現在値：" +
-                restoredPrice.toLocaleString() +
-                "円";
-        }
-    }
-}
-
-if (savedSource && priceSource) {
-    priceSource.value = savedSource;
+    applyCurrentPrice({
+        value: savedPrice,
+        source: savedSource || "manual",
+        quotedAt:
+            localStorage.getItem("optionMapPriceQuotedAt"),
+        fetchedAt:
+            localStorage.getItem("optionMapPriceFetchedAt"),
+        mode:
+            localStorage.getItem("optionMapPriceMode") || "manual",
+        persist: false,
+        invalidateOnChange: false,
+        redraw: false
+    });
 }
 
 
@@ -1775,48 +1863,18 @@ if (savedSource && priceSource) {
 if (updateCurrentPriceButton && currentPriceInput) {
 
     updateCurrentPriceButton.addEventListener("click", function () {
+        const result = applyCurrentPrice({
+            value: currentPriceInput.value,
+            source: priceSource?.value || "manual",
+            quotedAt: null,
+            fetchedAt: new Date().toISOString(),
+            mode: "manual"
+        });
 
-        const newPrice = Number(currentPriceInput.value);
-
-        if (!Number.isFinite(newPrice) || newPrice <= 0) {
+        if (!result.success) {
             alert("正しい現在値を入力してください");
             return;
         }
-
-        currentPrice = newPrice;
-
-        invalidateOptionMarketJudgment();
-
-        localStorage.setItem(
-            "optionMapCurrentPrice",
-            String(currentPrice)
-        );
-
-        if (priceSource) {
-            localStorage.setItem(
-                "optionMapPriceSource",
-                priceSource.value
-            );
-        }
-
-        if (currentPriceStatus) {
-            currentPriceStatus.textContent =
-                "現在値：" +
-                currentPrice.toLocaleString() +
-                "円";
-        }
-
-        if (allJpxLabels.length > 0) {
-            window.drawJpxPriceChart(
-                allJpxLabels,
-                allJpxCallValues,
-                allJpxPutValues,
-                allJpxCallVolumes,
-                allJpxPutVolumes
-            );
-        }
-
-        
 
         console.log("現在値を変更:", currentPrice);
     });
