@@ -2325,6 +2325,126 @@ const snapshotSaveStatus =
         }
     }
 
+const weeklyBrokerMap = {
+    JPM: "ＪＰモルガン証券",
+    GS: "ゴールドマン証券",
+    NOMURA: "野村証券",
+    BNP: "ＢＮＰパリバ証券",
+    ABN: "ＡＢＮクリアリン証券"
+};
+
+function calculateWeeklyBrokerJudgment(
+    previousWeekly,
+    currentWeekly
+) {
+    const brokerDiffs = {};
+
+    for (const [key, brokerName] of Object.entries(weeklyBrokerMap)) {
+        const getBrokerPosition = item =>
+            item.futureOpenInterest
+                ?.products?.["日経225先物"]
+                ?.brokers?.[brokerName] || {
+                    sell: 0,
+                    buy: 0,
+                    net: 0
+                };
+
+        const previous =
+            getBrokerPosition(previousWeekly);
+
+        const current =
+            getBrokerPosition(currentWeekly);
+
+        const delta = {
+            sell: current.sell - previous.sell,
+            buy: current.buy - previous.buy,
+            net: current.net - previous.net
+        };
+
+        let status = "unconfirmed";
+
+        if (delta.buy > 0 && delta.sell <= 0) {
+            status = "estimatedBuy";
+        } else if (delta.sell > 0 && delta.buy <= 0) {
+            status = "estimatedSell";
+        } else if (delta.buy < 0 && delta.sell === 0) {
+            status = "reducedBuy";
+        } else if (delta.sell < 0 && delta.buy === 0) {
+            status = "reducedSell";
+        }
+
+        brokerDiffs[key] = {
+            brokerName,
+            from: previousWeekly.date,
+            to: currentWeekly.date,
+
+            previous: {
+                sell: previous.sell,
+                buy: previous.buy,
+                net: previous.net
+            },
+
+            current: {
+                sell: current.sell,
+                buy: current.buy,
+                net: current.net
+            },
+
+            delta,
+            status
+        };
+    }
+
+    let buyScore = 0;
+    let sellScore = 0;
+
+    for (const item of Object.values(brokerDiffs)) {
+        if (!item) continue;
+
+        const previousTotal =
+            Math.abs(item.previous?.buy || 0) +
+            Math.abs(item.previous?.sell || 0);
+
+        if (previousTotal <= 0) continue;
+
+        if (item.status === "estimatedBuy") {
+            const changeRate =
+                Math.abs(item.delta?.buy || 0) / previousTotal;
+
+            buyScore += changeRate;
+        }
+
+        if (item.status === "estimatedSell") {
+            const changeRate =
+                Math.abs(item.delta?.sell || 0) / previousTotal;
+
+            sellScore += changeRate;
+        }
+    }
+
+    const scoreDiff = buyScore - sellScore;
+
+    let direction = "方向感薄い";
+
+    if (scoreDiff >= 0.10) {
+        direction = "強い買い優勢";
+    } else if (scoreDiff >= 0.02) {
+        direction = "買い優勢";
+    } else if (scoreDiff <= -0.10) {
+        direction = "強い売り優勢";
+    } else if (scoreDiff <= -0.02) {
+        direction = "売り優勢";
+    }
+
+    return {
+        brokerDiffs,
+        buyScore,
+        sellScore,
+        scoreDiff,
+        direction
+    };
+}
+
 function renderSavedSnapshots() {
 
     if (!savedSnapshotList) {
@@ -2408,76 +2528,31 @@ function renderSavedSnapshots() {
             "比較できる週次データが不足しています。";
     }
 
-    const brokerMap = {
-        JPM: "ＪＰモルガン証券",
-        GS: "ゴールドマン証券",
-        NOMURA: "野村証券",
-        BNP: "ＢＮＰパリバ証券",
-        ABN: "ＡＢＮクリアリン証券"
-    };
+    const brokerMap = weeklyBrokerMap;
+
+    const weeklyDirectionChangeElement =
+        document.getElementById("weeklyBrokerDirectionChange");
+
+    if (weeklyDirectionChangeElement) {
+        weeklyDirectionChangeElement.textContent =
+            "比較データ不足";
+    }
     
     if (uniqueWeeklySnapshots.length >= 2) {
         const previousWeekly =
             uniqueWeeklySnapshots[uniqueWeeklySnapshots.length - 2];
-    
+
         const currentWeekly =
             uniqueWeeklySnapshots[uniqueWeeklySnapshots.length - 1];
-      
-        for (const [key, brokerName] of Object.entries(brokerMap)) {
-            const getBrokerPosition = item =>
-                item.futureOpenInterest
-                    ?.products?.["日経225先物"]
-                    ?.brokers?.[brokerName] || {
-                        sell: 0,
-                        buy: 0,
-                        net: 0
-                    };
-    
-            const previous =
-                getBrokerPosition(previousWeekly);
-    
-            const current =
-                getBrokerPosition(currentWeekly);
-    
-                const delta = {
-                    sell: current.sell - previous.sell,
-                    buy: current.buy - previous.buy,
-                    net: current.net - previous.net
-                };
-                
-                let status = "unconfirmed";
 
-if (delta.buy > 0 && delta.sell <= 0) {
-    status = "estimatedBuy";
-} else if (delta.sell > 0 && delta.buy <= 0) {
-    status = "estimatedSell";
-} else if (delta.buy < 0 && delta.sell === 0) {
-    status = "reducedBuy";
-} else if (delta.sell < 0 && delta.buy === 0) {
-    status = "reducedSell";
-}
-                
-            weeklyBrokerDiffs[key] = {
-                brokerName,
-                from: previousWeekly.date,
-                to: currentWeekly.date,
-    
-                previous: {
-                    sell: previous.sell,
-                    buy: previous.buy,
-                    net: previous.net
-                },
-    
-                current: {
-                    sell: current.sell,
-                    buy: current.buy,
-                    net: current.net
-                },
-    
-                delta,
-                status
-            };
-        }
+        const currentWeeklyJudgment =
+            calculateWeeklyBrokerJudgment(
+                previousWeekly,
+                currentWeekly
+            );
+
+        weeklyBrokerDiffs =
+            currentWeeklyJudgment.brokerDiffs;
     
         console.log(
             "📊 主要5社 週次差分 =",
@@ -2504,48 +2579,20 @@ if (delta.buy > 0 && delta.sell <= 0) {
         document.getElementById("weeklyBrokerDirection");
     
         if (weeklyDirectionElement) {
-            let buyScore = 0;
-            let sellScore = 0;
+            const {
+                buyScore,
+                sellScore,
+                scoreDiff,
+                direction: weeklyDirection
+            } = currentWeeklyJudgment;
         
-            for (const item of Object.values(weeklyBrokerDiffs)) {
-                if (!item) continue;
-        
-                const previousTotal =
-                    Math.abs(item.previous?.buy || 0) +
-                    Math.abs(item.previous?.sell || 0);
-        
-                if (previousTotal <= 0) continue;
-        
-                if (item.status === "estimatedBuy") {
-                    const changeRate =
-                        Math.abs(item.delta?.buy || 0) / previousTotal;
-        
-                    buyScore += changeRate;
-                }
-        
-                if (item.status === "estimatedSell") {
-                    const changeRate =
-                        Math.abs(item.delta?.sell || 0) / previousTotal;
-        
-                    sellScore += changeRate;
-                }
-            }
-        
-            const scoreDiff = buyScore - sellScore;
-
-            let weeklyDirection = "方向感薄い";
-        
-            if (scoreDiff >= 0.10) {
-                weeklyDirection = "強い買い優勢";
+            if (weeklyDirection === "強い買い優勢") {
                 weeklyDirectionElement.textContent = "🔵 強い買い優勢";
-            } else if (scoreDiff >= 0.02) {
-                weeklyDirection = "買い優勢";
+            } else if (weeklyDirection === "買い優勢") {
                 weeklyDirectionElement.textContent = "🔵 買い優勢";
-            } else if (scoreDiff <= -0.10) {
-                weeklyDirection = "強い売り優勢";
+            } else if (weeklyDirection === "強い売り優勢") {
                 weeklyDirectionElement.textContent = "🔴 強い売り優勢";
-            } else if (scoreDiff <= -0.02) {
-                weeklyDirection = "売り優勢";
+            } else if (weeklyDirection === "売り優勢") {
                 weeklyDirectionElement.textContent = "🔴 売り優勢";
             } else {
                 weeklyDirectionElement.textContent = "○ 方向感薄い";
@@ -2677,6 +2724,26 @@ if (delta.buy > 0 && delta.sell <= 0) {
                 sellScore,
                 scoreDiff
             });
+        }
+
+        if (
+            weeklyDirectionChangeElement &&
+            uniqueWeeklySnapshots.length >= 3
+        ) {
+            const previousWeeklyJudgment =
+                calculateWeeklyBrokerJudgment(
+                    uniqueWeeklySnapshots[
+                        uniqueWeeklySnapshots.length - 3
+                    ],
+                    previousWeekly
+                );
+
+            weeklyDirectionChangeElement.textContent =
+                previousWeeklyJudgment.direction ===
+                currentWeeklyJudgment.direction
+                    ? `${currentWeeklyJudgment.direction}を維持`
+                    : `${previousWeeklyJudgment.direction} → ` +
+                        currentWeeklyJudgment.direction;
         }
 
         for (const [key, elementId] of Object.entries(weeklyStatusIds)) {
