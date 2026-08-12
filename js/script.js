@@ -270,31 +270,6 @@ brokerMarketSelect.addEventListener("change", () => {
     }
 });  
 
-const worldMarketImageInput =
-    document.getElementById("worldMarketImage");
-
-let worldMarketImageData = "";
-
-if (worldMarketImageInput) {
-    worldMarketImageInput.addEventListener("change", function (event) {
-        const file = event.target.files[0];
-
-        if (!file) {
-            worldMarketImageData = "";
-            return;
-        }
-
-        const reader = new FileReader();
-
-        reader.onload = function () {
-            worldMarketImageData = reader.result;
-            console.log("世界の株価画像を読み込みました");
-        };
-
-        reader.readAsDataURL(file);
-    });
-}
-
 button.addEventListener("click", function () {
 
     
@@ -3558,49 +3533,6 @@ window.drawJpxPriceChart(
     allJpxPutVolumes
 );
 
-const worldMarketImageArea =
-    document.getElementById("worldMarketImageArea");
-
-if (worldMarketImageArea) {
-    if (snapshot.worldMarketImage) {
-        worldMarketImageArea.innerHTML = `
-            <h3>世界の株価スクショ</h3>
-    
-            <img
-                src="${snapshot.worldMarketImage}"
-                alt="世界の株価スクショ"
-                style="max-width:100%;height:auto;"
-            >
-    
-            <br><br>
-    
-            <button id="analyzeWorldMarketButton">
-                🤖 AIで分析
-            </button>
-    
-            <div id="worldMarketAnalysisResult"></div>
-        `;
-    }
-    else {
-        worldMarketImageArea.innerHTML = `
-            <p>この保存データには世界の株価スクショがありません。</p>
-        `;
-    }
-}
-
-const analyzeWorldMarketButton =
-    document.getElementById("analyzeWorldMarketButton");
-
-const worldMarketAnalysisResult =
-    document.getElementById("worldMarketAnalysisResult");
-
-if (analyzeWorldMarketButton && worldMarketAnalysisResult) {
-    analyzeWorldMarketButton.addEventListener("click", () => {
-        worldMarketAnalysisResult.innerHTML =
-            "<p>🔍 AIが世界市場を分析中です...</p>";
-    });
-}
-
 console.log(
     "保存済みJPXデータを表示:",
     snapshot
@@ -3793,7 +3725,6 @@ if (cumulativePeriodSelect) {
         tags: [],
         memo:
         document.getElementById("snapshotMemo")?.value.trim() || "",
-        worldMarketImage: worldMarketImageData,
 
         nightData: nightData.value,
         dayData: dayData.value,
