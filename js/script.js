@@ -4781,6 +4781,452 @@ return (
 );
 }
 
+function calculateOptionMarketJudgment({
+    nearbyCallIncrease,
+    nearbyCallDecrease,
+    nearbyPutIncrease,
+    nearbyPutDecrease,
+    currentPrice
+}) {
+    const numericCurrentPrice = Number(currentPrice) || 0;
+    let marketLevel = "中立";
+    let confidenceScore = 1;
+    let marketIcon = "🟡";
+    let bullishScore = 0;
+    let bearishScore = 0;
+    const bullishReasons = [];
+    const bearishReasons = [];
+
+    const addDistanceScore = item => {
+        if (!item) return 0;
+
+        const distance =
+            Math.abs(item.strike - numericCurrentPrice);
+
+        if (distance <= 100) return 2;
+        if (distance <= 300) return 1;
+
+        return 0;
+    };
+
+    if (nearbyCallIncrease?.diff > 1000) {
+        bullishScore += 2;
+        bullishReasons.push({
+            text: "CALL建玉が大きく増加",
+            priority: 4,
+            optionType: "CALL",
+            changeType: "increase",
+            strike: nearbyCallIncrease.strike,
+            diff: nearbyCallIncrease.diff,
+            distance: Math.abs(
+                nearbyCallIncrease.strike - numericCurrentPrice
+            )
+        });
+    } else if (nearbyCallIncrease?.diff > 500) {
+        bullishScore += 1;
+        bullishReasons.push({
+            text: "CALL建玉増加",
+            priority: 3,
+            optionType: "CALL",
+            changeType: "increase",
+            strike: nearbyCallIncrease.strike,
+            diff: nearbyCallIncrease.diff,
+            distance: Math.abs(
+                nearbyCallIncrease.strike - numericCurrentPrice
+            )
+        });
+    }
+
+    if (nearbyCallIncrease?.diff > 500) {
+        const callDistanceScore =
+            addDistanceScore(nearbyCallIncrease);
+
+        bullishScore += callDistanceScore;
+
+        if (callDistanceScore > 0) {
+            bullishReasons.push({
+                text: "現在値付近でCALL建玉増加",
+                priority: 5,
+                optionType: "CALL",
+                changeType: "increase",
+                strike: nearbyCallIncrease.strike,
+                diff: nearbyCallIncrease.diff,
+                distance: Math.abs(
+                    nearbyCallIncrease.strike - numericCurrentPrice
+                )
+            });
+        }
+    }
+
+    if (nearbyPutDecrease?.diff < -1000) {
+        bullishScore += 2;
+        bullishReasons.push({
+            text: "PUT建玉が大きく減少",
+            priority: 4,
+            optionType: "PUT",
+            changeType: "decrease",
+            strike: nearbyPutDecrease.strike,
+            diff: nearbyPutDecrease.diff,
+            distance: Math.abs(
+                nearbyPutDecrease.strike - numericCurrentPrice
+            )
+        });
+    } else if (nearbyPutDecrease?.diff < 0) {
+        bullishScore += 1;
+        bullishReasons.push({
+            text: "PUT建玉が減少",
+            priority: 3,
+            optionType: "PUT",
+            changeType: "decrease",
+            strike: nearbyPutDecrease.strike,
+            diff: nearbyPutDecrease.diff,
+            distance: Math.abs(
+                nearbyPutDecrease.strike - numericCurrentPrice
+            )
+        });
+    }
+
+    if (nearbyPutDecrease?.diff < 0) {
+        const putDecreaseDistanceScore =
+            addDistanceScore(nearbyPutDecrease);
+
+        bullishScore += putDecreaseDistanceScore;
+
+        if (putDecreaseDistanceScore > 0) {
+            bullishReasons.push({
+                text: "現在値付近でPUT建玉が減少",
+                priority: 5,
+                optionType: "PUT",
+                changeType: "decrease",
+                strike: nearbyPutDecrease.strike,
+                diff: nearbyPutDecrease.diff,
+                distance: Math.abs(
+                    nearbyPutDecrease.strike - numericCurrentPrice
+                )
+            });
+        }
+    }
+
+    if (nearbyPutIncrease?.diff > 1000) {
+        bearishScore += 2;
+        bearishReasons.push({
+            text: "PUT建玉が大きく増加",
+            priority: 4,
+            optionType: "PUT",
+            changeType: "increase",
+            strike: nearbyPutIncrease.strike,
+            diff: nearbyPutIncrease.diff,
+            distance: Math.abs(
+                nearbyPutIncrease.strike - numericCurrentPrice
+            )
+        });
+    } else if (nearbyPutIncrease?.diff > 500) {
+        bearishScore += 1;
+        bearishReasons.push({
+            text: "PUT建玉増加",
+            priority: 3,
+            optionType: "PUT",
+            changeType: "increase",
+            strike: nearbyPutIncrease.strike,
+            diff: nearbyPutIncrease.diff,
+            distance: Math.abs(
+                nearbyPutIncrease.strike - numericCurrentPrice
+            )
+        });
+    }
+
+    if (nearbyPutIncrease?.diff > 500) {
+        const putIncreaseDistanceScore =
+            addDistanceScore(nearbyPutIncrease);
+
+        bearishScore += putIncreaseDistanceScore;
+
+        if (putIncreaseDistanceScore > 0) {
+            bearishReasons.push({
+                text: "現在値付近でPUT建玉が増加",
+                priority: 5,
+                optionType: "PUT",
+                changeType: "increase",
+                strike: nearbyPutIncrease.strike,
+                diff: nearbyPutIncrease.diff,
+                distance: Math.abs(
+                    nearbyPutIncrease.strike - numericCurrentPrice
+                )
+            });
+        }
+    }
+
+    if (nearbyCallDecrease?.diff < -1000) {
+        bearishScore += 2;
+        bearishReasons.push({
+            text: "CALL建玉が大きく減少",
+            priority: 4,
+            optionType: "CALL",
+            changeType: "decrease",
+            strike: nearbyCallDecrease.strike,
+            diff: nearbyCallDecrease.diff,
+            distance: Math.abs(
+                nearbyCallDecrease.strike - numericCurrentPrice
+            )
+        });
+    } else if (nearbyCallDecrease?.diff < 0) {
+        bearishScore += 1;
+        bearishReasons.push({
+            text: "CALL建玉減少",
+            priority: 3,
+            optionType: "CALL",
+            changeType: "decrease",
+            strike: nearbyCallDecrease.strike,
+            diff: nearbyCallDecrease.diff,
+            distance: Math.abs(
+                nearbyCallDecrease.strike - numericCurrentPrice
+            )
+        });
+    }
+
+    if (nearbyCallDecrease?.diff < 0) {
+        const callDecreaseDistanceScore =
+            addDistanceScore(nearbyCallDecrease);
+
+        bearishScore += callDecreaseDistanceScore;
+
+        if (callDecreaseDistanceScore > 0) {
+            bearishReasons.push({
+                text: "現在値付近でCALL建玉が減少",
+                priority: 5,
+                optionType: "CALL",
+                changeType: "decrease",
+                strike: nearbyCallDecrease.strike,
+                diff: nearbyCallDecrease.diff,
+                distance: Math.abs(
+                    nearbyCallDecrease.strike - numericCurrentPrice
+                )
+            });
+        }
+    }
+
+    let diagnosisReason =
+        "CALL・PUTの勢力が拮抗しています。";
+    let marketAdvice =
+        "• 方向感が出るまで、建玉の変化を観察しましょう。";
+
+    if (
+        nearbyCallIncrease?.diff > 1000 &&
+        nearbyPutDecrease?.diff < -1000
+    ) {
+        marketLevel = "強気";
+        marketIcon = "🟢";
+        diagnosisReason =
+            "CALL増加とPUT減少が同時に確認され、上方向への期待が強まっています。";
+        marketAdvice =
+            "• 押し目を探しながら、上値での建玉変化にも注目しましょう。";
+    } else if (
+        nearbyPutIncrease?.diff > 1000 &&
+        nearbyCallDecrease?.diff < -1000
+    ) {
+        marketLevel = "弱気";
+        marketIcon = "🔴";
+        diagnosisReason =
+            "PUT増加とCALL減少が同時に確認され、下方向への警戒が強まっています。";
+        marketAdvice =
+            "• 戻り売りが入りやすい場面か確認しながら、下値支持を見極めましょう。";
+    } else if (
+        nearbyCallIncrease?.diff > 500 &&
+        nearbyPutDecrease?.diff < 0
+    ) {
+        marketLevel = "中立";
+        marketIcon = "🟡";
+        diagnosisReason =
+            "強い上昇シグナルには届いていませんが、CALL増加とPUT減少が見られ、やや強気寄りです。";
+        marketAdvice =
+            "• 上方向への変化が続くか、次の建玉更新を確認しましょう。";
+    } else if (
+        nearbyPutIncrease?.diff > 500 &&
+        nearbyCallDecrease?.diff < 0
+    ) {
+        marketLevel = "中立";
+        marketIcon = "🟡";
+        diagnosisReason =
+            "強い下落シグナルには届いていませんが、PUT増加とCALL減少が見られ、やや弱気寄りです。";
+        marketAdvice =
+            "• 下方向への変化が続くか、次の建玉更新を確認しましょう。";
+    }
+
+    const scoreDifference = bullishScore - bearishScore;
+
+    const topBullishReasons = bullishReasons
+        .filter(reason => reason && typeof reason === "object")
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, 3)
+        .map(reason => reason.text);
+
+    const topBearishReasons = bearishReasons
+        .filter(reason => reason && typeof reason === "object")
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, 3)
+        .map(reason => reason.text);
+
+    if (scoreDifference >= 5) {
+        marketLevel = "強気";
+        marketIcon = "🟢";
+        diagnosisReason =
+            topBullishReasons.length > 0
+                ? topBullishReasons.join("・")
+                : `強気材料が弱気材料を${scoreDifference}点上回っています。`;
+        marketAdvice =
+            "• 押し目を探しながら、上方向への変化が続くか確認しましょう。";
+    } else if (scoreDifference >= 2) {
+        marketLevel = "やや強気";
+        marketIcon = "🟢";
+        diagnosisReason =
+            topBullishReasons.length > 0
+                ? topBullishReasons.join("・")
+                : `強気材料がやや優勢です。（+${scoreDifference}点）`;
+        marketAdvice =
+            "• 上方向への変化が続くか、次の建玉更新を確認しましょう。";
+    } else if (scoreDifference <= -5) {
+        marketLevel = "弱気";
+        marketIcon = "🔴";
+        diagnosisReason =
+            topBearishReasons.length > 0
+                ? topBearishReasons.join("・")
+                : `弱気材料が強気材料を${Math.abs(scoreDifference)}点上回っています。`;
+        marketAdvice =
+            "• 戻り売りが入りやすい場面か確認しながら、下値支持を見極めましょう。";
+    } else if (scoreDifference <= -2) {
+        marketLevel = "やや弱気";
+        marketIcon = "🔴";
+        diagnosisReason =
+            topBearishReasons.length > 0
+                ? topBearishReasons.join("・")
+                : `弱気材料がやや優勢です。（${scoreDifference}点）`;
+        marketAdvice =
+            "• 下方向への変化が続くか、次の建玉更新を確認しましょう。";
+    } else {
+        marketLevel = "中立";
+        marketIcon = "🟡";
+        diagnosisReason =
+            "強気・弱気材料がほぼ拮抗しています。";
+        marketAdvice =
+            "• 方向感が出るまで、建玉の変化を観察しましょう。";
+    }
+
+    let selectedDiagnosisReasons = [];
+
+    if (marketLevel.includes("強気")) {
+        selectedDiagnosisReasons = bullishReasons;
+    } else if (marketLevel.includes("弱気")) {
+        selectedDiagnosisReasons = bearishReasons;
+    } else {
+        selectedDiagnosisReasons = [
+            ...bullishReasons,
+            ...bearishReasons
+        ];
+    }
+
+    diagnosisReason = createDiagnosisSentence(
+        selectedDiagnosisReasons,
+        marketLevel
+    );
+
+    const sameStrikeCandidate =
+        nearbyCallIncrease?.strike != null &&
+        nearbyPutIncrease?.strike != null &&
+        nearbyCallIncrease.strike === nearbyPutIncrease.strike
+            ? nearbyCallIncrease.strike
+            : null;
+
+    const confidenceCandidates = [
+        nearbyCallIncrease,
+        nearbyCallDecrease,
+        nearbyPutIncrease,
+        nearbyPutDecrease
+    ].filter(item => item?.strike != null);
+
+    const strongestDifference =
+        confidenceCandidates.length > 0
+            ? Math.max(
+                ...confidenceCandidates.map(
+                    item => Math.abs(item.diff ?? 0)
+                )
+            )
+            : 0;
+
+    const nearestDistance =
+        confidenceCandidates.length > 0
+            ? Math.min(
+                ...confidenceCandidates.map(
+                    item => Math.abs(
+                        item.strike - numericCurrentPrice
+                    )
+                )
+            )
+            : Infinity;
+
+    if (marketLevel !== "中立") {
+        confidenceScore += 1;
+    }
+
+    if (sameStrikeCandidate != null) {
+        confidenceScore += 1;
+    }
+
+    if (strongestDifference >= 1000) {
+        confidenceScore += 1;
+    }
+
+    if (nearestDistance <= 500) {
+        confidenceScore += 1;
+    }
+
+    confidenceScore = Math.min(5, confidenceScore);
+
+    const confidence =
+        "★".repeat(confidenceScore) +
+        "☆".repeat(5 - confidenceScore);
+
+    let confidenceReason = "";
+
+    if (confidenceScore >= 5) {
+        confidenceReason =
+            "複数の重要シグナルが一致し、高い信頼性があります。";
+    } else if (confidenceScore === 4) {
+        confidenceReason =
+            "複数の条件が揃い、信頼性は高めです。";
+    } else if (confidenceScore === 3) {
+        confidenceReason =
+            "いくつかの条件が揃っていますが、慎重な判断も必要です。";
+    } else if (confidenceScore === 2) {
+        confidenceReason =
+            "根拠はありますが、まだ方向感は十分ではありません。";
+    } else {
+        confidenceReason =
+            "判断材料が少なく、様子見が無難です。";
+    }
+
+    return {
+        available: confidenceCandidates.length > 0,
+        bullishScore,
+        bearishScore,
+        scoreDifference,
+        marketLevel,
+        confidenceScore,
+        reasons: {
+            bullish: bullishReasons,
+            bearish: bearishReasons,
+            selected: selectedDiagnosisReasons
+        },
+        bullishReasons,
+        bearishReasons,
+        diagnosisReason,
+        marketAdvice,
+        marketIcon,
+        confidence,
+        confidenceReason,
+        sameStrikeCandidate
+    };
+}
+
 function renderDifferenceRankings(
     callDifferenceData,
     putDifferenceData
@@ -5092,471 +5538,33 @@ console.log(
     nearbyPutDecrease
 );
 
-let marketLevel = "中立";
-let confidenceScore = 1;
-let confidence = "★☆☆☆☆";
-let marketIcon = "🟡";
-
-// 市場方向の採点
-let bullishScore = 0;
-let bearishScore = 0;
-let bullishReasons = [];
-let bearishReasons = [];
-
-function addDistanceScore(item) {
-    if (!item) return 0;
-
-    const distance = Math.abs(item.strike - numericCurrentPrice);
-
-    if (distance <= 100) return 2;
-    if (distance <= 300) return 1;
-
-    return 0;
-}
-
-// CALL増加は上方向の材料
-
-if (nearbyCallIncrease?.diff > 1000) {
-    bullishScore += 2;
-    bullishReasons.push({
-        text: "CALL建玉が大きく増加",
-        priority: 4,
-
-optionType: "CALL",
-
-    changeType: "increase",
-
-    strike: nearbyCallIncrease.strike,
-
-    diff: nearbyCallIncrease.diff,
-
-    distance: Math.abs(
-
-        nearbyCallIncrease.strike -
-
-        numericCurrentPrice
-
-    )
+const optionMarketJudgment =
+    calculateOptionMarketJudgment({
+        nearbyCallIncrease,
+        nearbyCallDecrease,
+        nearbyPutIncrease,
+        nearbyPutDecrease,
+        currentPrice: numericCurrentPrice
     });
 
-}
-else if (nearbyCallIncrease?.diff > 500) {
-    bullishScore += 1;
-    bullishReasons.push({
-        text: "CALL建玉増加",
-        priority: 3,
-    
-        optionType: "CALL",
-        changeType: "increase",
-    
-        strike: nearbyCallIncrease.strike,
-        diff: nearbyCallIncrease.diff,
-    
-        distance: Math.abs(
-            nearbyCallIncrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-
-
-
-if (nearbyCallIncrease?.diff > 500) {
-    const callDistanceScore =
-        addDistanceScore(nearbyCallIncrease);
-
-    bullishScore += callDistanceScore;
-
-    if (callDistanceScore > 0) {
-        bullishReasons.push({
-            text: "現在値付近でCALL建玉増加",
-            priority: 5,
-        
-            optionType: "CALL",
-            changeType: "increase",
-        
-            strike: nearbyCallIncrease.strike,
-            diff: nearbyCallIncrease.diff,
-        
-            distance: Math.abs(
-                nearbyCallIncrease.strike -
-                numericCurrentPrice
-            )
-        });
-    }
-}
-
-// PUT減少は上方向の材料
-if (nearbyPutDecrease?.diff < -1000) {
-    bullishScore += 2;
-    bullishReasons.push({
-        text: "PUT建玉が大きく減少",
-        priority: 4,
-    
-        optionType: "PUT",
-        changeType: "decrease",
-    
-        strike: nearbyPutDecrease.strike,
-        diff: nearbyPutDecrease.diff,
-    
-        distance: Math.abs(
-            nearbyPutDecrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-else if (nearbyPutDecrease?.diff < 0) {
-    bullishScore += 1;
-    bullishReasons.push({
-        text: "PUT建玉が減少",
-        priority: 3,
-    
-        optionType: "PUT",
-        changeType: "decrease",
-    
-        strike: nearbyPutDecrease.strike,
-        diff: nearbyPutDecrease.diff,
-    
-        distance: Math.abs(
-            nearbyPutDecrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-
-
-
-if (nearbyPutDecrease?.diff < 0) {
-    const putDecreaseDistanceScore =
-        addDistanceScore(nearbyPutDecrease);
-
-    bullishScore += putDecreaseDistanceScore;
-
-    if (putDecreaseDistanceScore > 0) {
-        bullishReasons.push({
-            text: "現在値付近でPUT建玉が減少",
-            priority: 5,
-        
-            optionType: "PUT",
-            changeType: "decrease",
-        
-            strike: nearbyPutDecrease.strike,
-            diff: nearbyPutDecrease.diff,
-        
-            distance: Math.abs(
-                nearbyPutDecrease.strike -
-                numericCurrentPrice
-            )
-        });
-    }
-}
-
-
-// PUT増加は下方向の材料
-if (nearbyPutIncrease?.diff > 1000) {
-    bearishScore += 2;
-
-    bearishReasons.push({
-        text: "PUT建玉が大きく増加",
-        priority: 4,
-    
-        optionType: "PUT",
-        changeType: "increase",
-    
-        strike: nearbyPutIncrease.strike,
-        diff: nearbyPutIncrease.diff,
-    
-        distance: Math.abs(
-            nearbyPutIncrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-else if (nearbyPutIncrease?.diff > 500) {
-    bearishScore += 1;
-
-    bearishReasons.push({
-        text: "PUT建玉増加",
-        priority: 3,
-    
-        optionType: "PUT",
-        changeType: "increase",
-    
-        strike: nearbyPutIncrease.strike,
-        diff: nearbyPutIncrease.diff,
-    
-        distance: Math.abs(
-            nearbyPutIncrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-
-if (nearbyPutIncrease?.diff > 500) {
-    const putIncreaseDistanceScore =
-        addDistanceScore(nearbyPutIncrease);
-
-    bearishScore += putIncreaseDistanceScore;
-
-    if (putIncreaseDistanceScore > 0) {
-        bearishReasons.push({
-            text: "現在値付近でPUT建玉が増加",
-            priority: 5,
-
-            optionType: "PUT",
-
-    changeType: "increase",
-
-    strike: nearbyPutIncrease.strike,
-
-    diff: nearbyPutIncrease.diff,
-
-    distance: Math.abs(
-
-        nearbyPutIncrease.strike -
-
-        numericCurrentPrice
-
-    
-        )});
-    }
-}
-
-// CALL減少は下方向の材料
-if (nearbyCallDecrease?.diff < -1000) {
-    bearishScore += 2;
-
-    bearishReasons.push({
-        text: "CALL建玉が大きく減少",
-        priority: 4,
-
-        optionType: "CALL",
-        changeType: "decrease",
-        strike: nearbyCallDecrease.strike,
-        diff: nearbyCallDecrease.diff,
-        distance: Math.abs(
-            nearbyCallDecrease.strike -
-            numericCurrentPrice
-        )
-    });
-}
-else if (nearbyCallDecrease?.diff < 0) {
-    bearishScore += 1;
-
-    bearishReasons.push({
-        text: "CALL建玉減少",
-        priority: 3,
-        
-        optionType: "CALL",
-        changeType: "decrease",
-        strike: nearbyCallDecrease.strike,
-        diff: nearbyCallDecrease.diff,
-        distance: Math.abs(
-            nearbyCallDecrease.strike -
-            numericCurrentPrice
-)
-    });
-}
-
-if (nearbyCallDecrease?.diff < 0) {
-    const callDecreaseDistanceScore =
-        addDistanceScore(nearbyCallDecrease);
-
-    bearishScore += callDecreaseDistanceScore;
-
-    if (callDecreaseDistanceScore > 0) {
-        bearishReasons.push({
-            text: "現在値付近でCALL建玉が減少",
-            priority: 5,
-            optionType: "CALL",
-            changeType: "decrease",
-            strike: nearbyCallDecrease.strike,
-            diff: nearbyCallDecrease.diff,
-            distance: Math.abs(
-                nearbyCallDecrease.strike -
-                numericCurrentPrice
-)
-        });
-    }
-}
-
-
-console.log(
-    "CALL増加の距離点:",
-    addDistanceScore(nearbyCallIncrease)
-);
-
-console.log(
-    "PUT増加の距離点:",
-    addDistanceScore(nearbyPutIncrease)
-);
-
-console.log(
-    "PUT減少の距離点:",
-    addDistanceScore(nearbyPutDecrease)
-);
-
-console.log(
-    "CALL減少の距離点:",
-    addDistanceScore(nearbyCallDecrease)
-);
-
+const {
+    bullishScore,
+    bearishScore,
+    scoreDifference,
+    marketLevel,
+    confidenceScore,
+    bullishReasons,
+    bearishReasons,
+    diagnosisReason,
+    marketAdvice,
+    marketIcon,
+    confidence,
+    confidenceReason,
+    sameStrikeCandidate
+} = optionMarketJudgment;
 
 console.log("強気スコア:", bullishScore);
 console.log("弱気スコア:", bearishScore);
-
-let diagnosisReason = "CALL・PUTの勢力が拮抗しています。";
-let marketAdvice =
-    "• 方向感が出るまで、建玉の変化を観察しましょう。";
-
-
-
-if (
-    nearbyCallIncrease?.diff > 1000 &&
-    nearbyPutDecrease?.diff < -1000
-) {
-    marketLevel = "強気";
-    
-    marketIcon = "🟢";
-    diagnosisReason =
-        "CALL増加とPUT減少が同時に確認され、上方向への期待が強まっています。";
-    marketAdvice =
-       "• 押し目を探しながら、上値での建玉変化にも注目しましょう。";    
-}
-
-else if (
-    nearbyPutIncrease?.diff > 1000 &&
-    nearbyCallDecrease?.diff < -1000
-) {
-    marketLevel = "弱気";
-    
-    marketIcon = "🔴";
-    diagnosisReason =
-    "PUT増加とCALL減少が同時に確認され、下方向への警戒が強まっています。";
-    marketAdvice =
-    "• 戻り売りが入りやすい場面か確認しながら、下値支持を見極めましょう。";
-}
-
-else if (
-    nearbyCallIncrease?.diff > 500 &&
-    nearbyPutDecrease?.diff < 0
-) {
-    marketLevel = "中立";
-    marketIcon = "🟡";
-    diagnosisReason =
-        "強い上昇シグナルには届いていませんが、CALL増加とPUT減少が見られ、やや強気寄りです。";
-
-    marketAdvice =
-        "• 上方向への変化が続くか、次の建玉更新を確認しましょう。";
-}
-else if (
-    nearbyPutIncrease?.diff > 500 &&
-    nearbyCallDecrease?.diff < 0
-) {
-    marketLevel = "中立";
-    marketIcon = "🟡";
-    diagnosisReason =
-        "強い下落シグナルには届いていませんが、PUT増加とCALL減少が見られ、やや弱気寄りです。";
-
-    marketAdvice =
-        "• 下方向への変化が続くか、次の建玉更新を確認しましょう。";
-}
-
-// ===== AI採点方式による市場診断 =====
-
-const scoreDifference = bullishScore - bearishScore;
-
-// 理由を優先度の高い順に並べる
-const topBullishReasons = bullishReasons
-    .filter(reason => reason && typeof reason === "object")
-    .sort((a, b) => b.priority - a.priority)
-    .slice(0, 3)
-    .map(reason => reason.text);
-
-const topBearishReasons = bearishReasons
-    .filter(reason => reason && typeof reason === "object")
-    .sort((a, b) => b.priority - a.priority)
-    .slice(0, 3)
-    .map(reason => reason.text);
-
-if (scoreDifference >= 5) {
-    marketLevel = "強気";
-    marketIcon = "🟢";
-
-    diagnosisReason =
-        topBullishReasons.length > 0
-            ? topBullishReasons.join("・")
-            : `強気材料が弱気材料を${scoreDifference}点上回っています。`;
-
-    marketAdvice =
-        "• 押し目を探しながら、上方向への変化が続くか確認しましょう。";
-}
-else if (scoreDifference >= 2) {
-    marketLevel = "やや強気";
-    marketIcon = "🟢";
-
-    diagnosisReason =
-        topBullishReasons.length > 0
-            ? topBullishReasons.join("・")
-            : `強気材料がやや優勢です。（+${scoreDifference}点）`;
-
-    marketAdvice =
-        "• 上方向への変化が続くか、次の建玉更新を確認しましょう。";
-}
-else if (scoreDifference <= -5) {
-    marketLevel = "弱気";
-    marketIcon = "🔴";
-
-    diagnosisReason =
-        topBearishReasons.length > 0
-            ? topBearishReasons.join("・")
-            : `弱気材料が強気材料を${Math.abs(scoreDifference)}点上回っています。`;
-
-    marketAdvice =
-        "• 戻り売りが入りやすい場面か確認しながら、下値支持を見極めましょう。";
-}
-else if (scoreDifference <= -2) {
-    marketLevel = "やや弱気";
-    marketIcon = "🔴";
-
-    diagnosisReason =
-        topBearishReasons.length > 0
-            ? topBearishReasons.join("・")
-            : `弱気材料がやや優勢です。（${scoreDifference}点）`;
-
-    marketAdvice =
-        "• 下方向への変化が続くか、次の建玉更新を確認しましょう。";
-}
-else{
-    marketLevel = "中立";
-    marketIcon = "🟡";
-    diagnosisReason =
-        "強気・弱気材料がほぼ拮抗しています。";
-
-    marketAdvice =
-        "• 方向感が出るまで、建玉の変化を観察しましょう。";
-}
-
-let selectedDiagnosisReasons = [];
-
-if (marketLevel.includes("強気")) {
-    selectedDiagnosisReasons = bullishReasons;
-}
-else if (marketLevel.includes("弱気")) {
-    selectedDiagnosisReasons = bearishReasons;
-}
-else {
-    selectedDiagnosisReasons = [
-        ...bullishReasons,
-        ...bearishReasons
-    ];
-}
-
-diagnosisReason = createDiagnosisSentence(
-    selectedDiagnosisReasons,
-    marketLevel
-);
-
 const aiComment = createAIComment(
     bullishReasons,
     bearishReasons,
@@ -5599,85 +5607,6 @@ const diagnosisHtml = `
     <div class="level">${marketLevel}</div>
 </div>
 `;
-
-const sameStrikeCandidate =
-    nearbyCallIncrease?.strike != null &&
-    nearbyPutIncrease?.strike != null &&
-    nearbyCallIncrease.strike === nearbyPutIncrease.strike
-        ? nearbyCallIncrease.strike
-        : null;
-
-        const confidenceCandidates = [
-            nearbyCallIncrease,
-            nearbyCallDecrease,
-            nearbyPutIncrease,
-            nearbyPutDecrease
-        ].filter(item => item?.strike != null);
-        
-        const strongestDifference =
-            confidenceCandidates.length > 0
-                ? Math.max(
-                    ...confidenceCandidates.map(
-                        item => Math.abs(item.diff ?? 0)
-                    )
-                )
-                : 0;
-        
-        const nearestDistance =
-            confidenceCandidates.length > 0
-                ? Math.min(
-                    ...confidenceCandidates.map(
-                        item =>
-                            Math.abs(
-                                item.strike - numericCurrentPrice
-                            )
-                    )
-                )
-                : Infinity;
-        
-        // 強気または弱気まで方向が出ている
-        if (marketLevel !== "中立") {
-            confidenceScore += 1;
-        }
-        
-        // CALLとPUTが同じ価格帯で一致している
-        if (sameStrikeCandidate != null) {
-            confidenceScore += 1;
-        }
-        
-        // 1,000枚以上の大きな変化がある
-        if (strongestDifference >= 1000) {
-            confidenceScore += 1;
-        }
-        
-        // 現在値から500円以内に注目変化がある
-        if (nearestDistance <= 500) {
-            confidenceScore += 1;
-        }
-        
-        confidenceScore =
-            Math.min(5, confidenceScore);
-        
-        confidence =
-            "★".repeat(confidenceScore) +
-            "☆".repeat(5 - confidenceScore);
-            let confidenceReason = "";
-            if (confidenceScore >= 5) {
-                confidenceReason =
-                    "複数の重要シグナルが一致し、高い信頼性があります。";
-            } else if (confidenceScore === 4) {
-                confidenceReason =
-                    "複数の条件が揃い、信頼性は高めです。";
-            } else if (confidenceScore === 3) {
-                confidenceReason =
-                    "いくつかの条件が揃っていますが、慎重な判断も必要です。";
-            } else if (confidenceScore === 2) {
-                confidenceReason =
-                    "根拠はありますが、まだ方向感は十分ではありません。";
-            } else {
-                confidenceReason =
-                    "判断材料が少なく、様子見が無難です。";
-            }
 
        // 星を計算したあとで表示に追加
 
