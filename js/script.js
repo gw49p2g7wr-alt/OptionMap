@@ -54,8 +54,18 @@ let allJpxPutVolumes = [];
 let currentChartMode = "openInterest";
 let lastJpxFetchedAt = null;
 let currentPrice = 70000;
+let currentPriceState = {
+    value: currentPrice,
+    source: "qri-nikkei225-futures",
+    contract: null,
+    quotedAt: null,
+    fetchedAt: null,
+    mode: "automatic"
+};
 let priceTotals = {};
 let comparisonSnapshot = null;
+let comparisonSelectionMode = "none";
+let comparisonSelectionCurrentSourceDate = null;
 let latestNightFutureTotals = null;
 let latestDayFutureTotals = null;
 let latestParsedDayData = null;
@@ -1764,6 +1774,14 @@ function applyCurrentPrice({
 
     const changed = currentPrice !== numericValue;
     currentPrice = numericValue;
+    currentPriceState = {
+        value: currentPrice,
+        source,
+        contract,
+        quotedAt,
+        fetchedAt,
+        mode
+    };
 
     if (currentPriceInput) {
         currentPriceInput.value = String(currentPrice);
@@ -1865,6 +1883,100 @@ function applyCurrentPrice({
     };
 }
 
+function normalizeQriFuturesPrice(priceData) {
+    const value = Number(priceData?.value);
+    const source = priceData?.source;
+    const contract =
+        typeof priceData?.contract === "string"
+            ? priceData.contract.trim()
+            : "";
+    const quotedAt =
+        typeof priceData?.quotedAt === "string"
+            ? priceData.quotedAt.trim()
+            : "";
+    const fetchedAt =
+        typeof priceData?.fetchedAt === "string"
+            ? priceData.fetchedAt.trim()
+            : "";
+
+    if (
+        !Number.isFinite(value) ||
+        value <= 0 ||
+        source !== "qri-nikkei225-futures" ||
+        !contract ||
+        !quotedAt ||
+        !fetchedAt
+    ) {
+        return null;
+    }
+
+    return {
+        value,
+        source,
+        contract,
+        quotedAt,
+        fetchedAt
+    };
+}
+
+function saveLastQriFuturesPrice(priceData) {
+    const normalizedPrice =
+        normalizeQriFuturesPrice(priceData);
+
+    if (!normalizedPrice) return null;
+
+    localStorage.setItem(
+        "optionMapLastQriFuturesPrice",
+        JSON.stringify(normalizedPrice)
+    );
+
+    return normalizedPrice;
+}
+
+function loadLastQriFuturesPrice() {
+    try {
+        return normalizeQriFuturesPrice(
+            JSON.parse(
+                localStorage.getItem(
+                    "optionMapLastQriFuturesPrice"
+                ) || "null"
+            )
+        );
+    } catch (error) {
+        console.warn(
+            "最後のQRI先物価格を読み込めませんでした:",
+            error
+        );
+        return null;
+    }
+}
+
+function restoreLastQriFuturesPrice() {
+    const lastQriPrice = loadLastQriFuturesPrice();
+
+    if (!lastQriPrice) {
+        if (currentPriceMetadata) {
+            currentPriceMetadata.textContent =
+                "利用できるQRI価格がありません";
+        }
+
+        if (priceSource) {
+            priceSource.value = currentPriceState.source;
+        }
+
+        return {
+            success: false,
+            changed: false,
+            error: "qri_futures_price_unavailable"
+        };
+    }
+
+    return applyCurrentPrice({
+        ...lastQriPrice,
+        mode: "automatic"
+    });
+}
+
 function applyQriNikkei225FuturesPrice(
     referencePrices,
     fetchedAt = new Date().toISOString()
@@ -1894,12 +2006,34 @@ function applyQriNikkei225FuturesPrice(
         };
     }
 
-    return applyCurrentPrice({
+    const latestQriPrice = saveLastQriFuturesPrice({
         value: price,
         source: "qri-nikkei225-futures",
         contract,
         quotedAt,
-        fetchedAt,
+        fetchedAt
+    });
+
+    if (!latestQriPrice) {
+        return {
+            success: false,
+            changed: false,
+            error: "qri_futures_price_unavailable"
+        };
+    }
+
+    if (currentPriceState.mode === "manual") {
+        return {
+            success: true,
+            changed: false,
+            applied: false,
+            reason: "manual_mode",
+            latestQriPrice
+        };
+    }
+
+    return applyCurrentPrice({
+        ...latestQriPrice,
         mode: "automatic"
     });
 }
@@ -1913,24 +2047,39 @@ window.applyQriNikkei225FuturesPrice =
 const savedPrice =
     localStorage.getItem("optionMapCurrentPrice");
 
-const savedSource =
-    localStorage.getItem("optionMapPriceSource");
-
 if (savedPrice) {
+    const storedMode =
+        localStorage.getItem("optionMapPriceMode");
+    const savedMode =
+        storedMode === "automatic"
+            ? "automatic"
+            : "manual";
+    const restoredSource =
+        savedMode === "automatic"
+            ? "qri-nikkei225-futures"
+            : "manual";
+
     applyCurrentPrice({
         value: savedPrice,
-        source: savedSource || "manual",
+        source: restoredSource,
         contract:
             localStorage.getItem("optionMapPriceContract"),
         quotedAt:
             localStorage.getItem("optionMapPriceQuotedAt"),
         fetchedAt:
             localStorage.getItem("optionMapPriceFetchedAt"),
-        mode:
-            localStorage.getItem("optionMapPriceMode") || "manual",
+        mode: savedMode,
         persist: false,
         invalidateOnChange: false,
         redraw: false
+    });
+}
+
+if (priceSource) {
+    priceSource.addEventListener("change", function () {
+        if (priceSource.value === "qri-nikkei225-futures") {
+            restoreLastQriFuturesPrice();
+        }
     });
 }
 
@@ -1939,6 +2088,11 @@ if (savedPrice) {
 if (updateCurrentPriceButton && currentPriceInput) {
 
     updateCurrentPriceButton.addEventListener("click", function () {
+        if (priceSource?.value === "qri-nikkei225-futures") {
+            restoreLastQriFuturesPrice();
+            return;
+        }
+
         const result = applyCurrentPrice({
             value: currentPriceInput.value,
             source: "manual",
@@ -2683,6 +2837,282 @@ function areJudgmentSourceArraysEqual(left, right) {
         left.every((value, index) => value === right[index])
     );
 }
+
+function isValidOptionSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") {
+        return false;
+    }
+
+    const sourceDate = new Date(snapshot.sourceDate);
+
+    if (Number.isNaN(sourceDate.getTime())) {
+        return false;
+    }
+
+    const {
+        labels,
+        callOpenInterest,
+        putOpenInterest
+    } = snapshot;
+
+    if (
+        !Array.isArray(labels) ||
+        !Array.isArray(callOpenInterest) ||
+        !Array.isArray(putOpenInterest) ||
+        labels.length === 0 ||
+        labels.length !== callOpenInterest.length ||
+        labels.length !== putOpenInterest.length
+    ) {
+        return false;
+    }
+
+    const hasValue = value =>
+        value !== null &&
+        value !== undefined &&
+        String(value).trim() !== "";
+
+    return labels.every((label, index) => {
+        const callOpenInterestValue = callOpenInterest[index];
+        const putOpenInterestValue = putOpenInterest[index];
+
+        if (
+            !hasValue(label) ||
+            !hasValue(callOpenInterestValue) ||
+            !hasValue(putOpenInterestValue)
+        ) {
+            return false;
+        }
+
+        const strike = Number(
+            String(label).replace(/,/g, "")
+        );
+        const callValue = Number(callOpenInterestValue);
+        const putValue = Number(putOpenInterestValue);
+
+        return (
+            Number.isFinite(strike) &&
+            strike > 0 &&
+            Number.isFinite(callValue) &&
+            Number.isFinite(putValue)
+        );
+    });
+}
+
+function selectLatestValidComparisonSnapshot(
+    snapshots,
+    currentSourceDate
+) {
+    if (!Array.isArray(snapshots)) {
+        return null;
+    }
+
+    const currentDate = new Date(currentSourceDate);
+    const currentTime = currentDate.getTime();
+
+    if (Number.isNaN(currentTime)) {
+        return null;
+    }
+
+    return snapshots
+        .filter(snapshot => {
+            if (!isValidOptionSnapshot(snapshot)) {
+                return false;
+            }
+
+            return new Date(snapshot.sourceDate).getTime() < currentTime;
+        })
+        .sort(
+            (a, b) =>
+                new Date(b.sourceDate).getTime() -
+                new Date(a.sourceDate).getTime()
+        )[0] || null;
+}
+
+function resetComparisonSelection(
+    statusText,
+    currentSourceDate = null
+) {
+    comparisonSnapshot = null;
+    comparisonSelectionMode = "none";
+    comparisonSelectionCurrentSourceDate = currentSourceDate;
+
+    invalidateOptionMarketJudgment();
+
+    const comparisonStatusElement =
+        document.getElementById("comparisonSnapshotStatus");
+
+    if (comparisonStatusElement) {
+        comparisonStatusElement.textContent = statusText;
+    }
+
+    const marketSummaryElement =
+        document.getElementById("marketSummary");
+
+    if (marketSummaryElement) {
+        marketSummaryElement.textContent = statusText;
+    }
+
+    [
+        "maxCallIncrease",
+        "maxCallDecrease",
+        "maxPutIncrease",
+        "maxPutDecrease",
+        "callIncreaseResult",
+        "callDecreaseResult",
+        "putIncreaseResult",
+        "putDecreaseResult"
+    ].forEach(elementId => {
+        const element = document.getElementById(elementId);
+
+        if (element) {
+            element.textContent = statusText;
+        }
+    });
+}
+
+function applyComparisonSnapshot(
+    snapshot,
+    { selectionMode = "manual" } = {}
+) {
+    if (!isValidOptionSnapshot(snapshot)) {
+        return false;
+    }
+
+    invalidateOptionMarketJudgment();
+    comparisonSnapshot = snapshot;
+    comparisonSelectionMode =
+        selectionMode === "automatic"
+            ? "automatic"
+            : "manual";
+    comparisonSelectionCurrentSourceDate =
+        lastJpxFetchedAt instanceof Date &&
+        !Number.isNaN(lastJpxFetchedAt.getTime())
+            ? lastJpxFetchedAt.toISOString()
+            : null;
+
+    const comparisonStatusElement =
+        document.getElementById("comparisonSnapshotStatus");
+    const comparisonDate = new Date(snapshot.sourceDate);
+
+    if (comparisonStatusElement) {
+        const selectionLabel =
+            comparisonSelectionMode === "automatic"
+                ? "自動選択"
+                : "手動選択";
+
+        comparisonStatusElement.textContent =
+            comparisonDate.toLocaleString("ja-JP", {
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+            }) + `（${selectionLabel}）`;
+    }
+
+    console.log(
+        `${comparisonSelectionMode}で比較対象に選択:`,
+        comparisonSnapshot
+    );
+
+    const futureOpenInterestText =
+        futureOpenInterestData.value;
+
+    if (futureOpenInterestText.trim()) {
+        latestFutureOpenInterestResult =
+            analyzeFutureOpenInterestData(
+                futureOpenInterestText
+            );
+    }
+
+    const callDifferenceData =
+        createDifferenceData(
+            allJpxLabels,
+            allJpxCallValues,
+            comparisonSnapshot.labels,
+            comparisonSnapshot.callOpenInterest
+        );
+
+    const putDifferenceData =
+        createDifferenceData(
+            allJpxLabels,
+            allJpxPutValues,
+            comparisonSnapshot.labels,
+            comparisonSnapshot.putOpenInterest
+        );
+
+    console.log("CALL建玉差分:", callDifferenceData);
+    console.log("PUT建玉差分:", putDifferenceData);
+
+    renderDifferenceRankings(
+        callDifferenceData,
+        putDifferenceData
+    );
+
+    return true;
+}
+
+function autoSelectComparisonSnapshot() {
+    if (
+        !(lastJpxFetchedAt instanceof Date) ||
+        Number.isNaN(lastJpxFetchedAt.getTime()) ||
+        !Array.isArray(allJpxLabels) ||
+        !Array.isArray(allJpxCallValues) ||
+        !Array.isArray(allJpxPutValues) ||
+        allJpxLabels.length === 0 ||
+        allJpxLabels.length !== allJpxCallValues.length ||
+        allJpxLabels.length !== allJpxPutValues.length
+    ) {
+        resetComparisonSelection("比較データ不足");
+        return null;
+    }
+
+    const currentSourceDate =
+        lastJpxFetchedAt.toISOString();
+
+    if (
+        comparisonSelectionCurrentSourceDate ===
+        currentSourceDate
+    ) {
+        return comparisonSnapshot;
+    }
+
+    let savedSnapshots = [];
+
+    try {
+        savedSnapshots = JSON.parse(
+            localStorage.getItem("optionMapJpxSnapshots") || "[]"
+        );
+    } catch (error) {
+        console.error(
+            "自動比較用の保存データを読み込めませんでした:",
+            error
+        );
+    }
+
+    const selectedSnapshot =
+        selectLatestValidComparisonSnapshot(
+            savedSnapshots,
+            currentSourceDate
+        );
+
+    if (!selectedSnapshot) {
+        resetComparisonSelection(
+            "比較データ不足",
+            currentSourceDate
+        );
+        return null;
+    }
+
+    applyComparisonSnapshot(selectedSnapshot, {
+        selectionMode: "automatic"
+    });
+
+    return selectedSnapshot;
+}
+
+window.autoSelectComparisonSnapshot =
+    autoSelectComparisonSnapshot;
 
 function calculateWeeklyBrokerJudgment(
     previousWeekly,
@@ -3615,6 +4045,8 @@ if (showButton) {
     showButton.addEventListener(
         "click",
         function () {
+    resetComparisonSelection("まだ選択されていません");
+
     const snapshotDate =
     new Date(snapshot.sourceDate);
 
@@ -3739,77 +4171,9 @@ if (compareButton) {
     compareButton.addEventListener(
         "click",
         function () {
-            invalidateOptionMarketJudgment();
-            comparisonSnapshot = snapshot;
-
-const comparisonSnapshotStatus =
-    document.getElementById(
-        "comparisonSnapshotStatus"
-    );
-
-const comparisonDate =
-    new Date(snapshot.sourceDate);
-
-if (comparisonSnapshotStatus) {
-    comparisonSnapshotStatus.textContent =
-        comparisonDate.toLocaleString(
-            "ja-JP",
-            {
-                year: "numeric",
-                month: "numeric",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit"
-            }
-        );
-}
-
-console.log(
-    "比較対象に選択:",
-    comparisonSnapshot
-);
-
-// 比較時に週次指数先物建玉を自動解析
-const futureOpenInterestText =
-    futureOpenInterestData.value;
-
-    if (futureOpenInterestText.trim()) {
-        latestFutureOpenInterestResult =
-            analyzeFutureOpenInterestData(
-                futureOpenInterestText
-            );
-    }
-const callDifferenceData =
-    createDifferenceData(
-        allJpxLabels,
-        allJpxCallValues,
-        comparisonSnapshot.labels,
-        comparisonSnapshot.callOpenInterest
-    );
-
-const putDifferenceData =
-    createDifferenceData(
-        allJpxLabels,
-        allJpxPutValues,
-        comparisonSnapshot.labels,
-        comparisonSnapshot.putOpenInterest
-    );
-
-console.log(
-    "CALL建玉差分:",
-    callDifferenceData
-);
-
-console.log(
-    "PUT建玉差分:",
-    putDifferenceData
-);
-
-renderDifferenceRankings(
-    callDifferenceData,
-    putDifferenceData
-);
-
+            applyComparisonSnapshot(snapshot, {
+                selectionMode: "manual"
+            });
         }
     );
 }

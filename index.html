@@ -83,9 +83,9 @@
             </label>
         
             <select id="priceSource">
+                <option value="qri-nikkei225-futures">日経225先物（QRI自動取得）</option>
                 <option value="manual">手入力</option>
                 <option value="nikkei225" disabled>日経平均 現物（準備中）</option>
-                <option value="qri-nikkei225-futures" disabled>日経225先物（QRI自動取得）</option>
                 <option value="nikkei225-mini" disabled>日経225ミニ先物 期近（準備中）</option>
             </select>
         
@@ -719,6 +719,13 @@ if (typeof window.drawJpxPriceChart === "function") {
     callVolumes,
     putVolumes
 );
+
+    if (
+        typeof window.autoSelectComparisonSnapshot ===
+        "function"
+    ) {
+        window.autoSelectComparisonSnapshot();
+    }
 } else {
     console.error("drawJpxPriceChart が見つかりません");
 }           
