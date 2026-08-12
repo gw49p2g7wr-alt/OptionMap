@@ -1810,6 +1810,8 @@ if (updateCurrentPriceButton && currentPriceInput) {
 
         currentPrice = newPrice;
 
+        invalidateOptionMarketJudgment();
+
         localStorage.setItem(
             "optionMapCurrentPrice",
             String(currentPrice)
@@ -2333,6 +2335,159 @@ const weeklyBrokerMap = {
     ABN: "ＡＢＮクリアリン証券"
 };
 
+const weeklyJudgmentScoreMap = Object.freeze({
+    "強い買い優勢": 2,
+    "買い優勢": 1,
+    "方向感薄い": 0,
+    "売り優勢": -1,
+    "強い売り優勢": -2
+});
+
+const optionMarketJudgmentScoreMap = Object.freeze({
+    "強気": 2,
+    "やや強気": 1,
+    "中立": 0,
+    "やや弱気": -1,
+    "弱気": -2
+});
+
+const optionMapJudgmentState = {
+    weekly: {
+        available: false,
+        judgment: null,
+        metadata: null
+    },
+    option: {
+        available: false,
+        judgment: null,
+        metadata: null
+    }
+};
+
+function calculateOptionMapOverallJudgment(state) {
+    const hasOwnScore = (scoreMap, label) =>
+        Object.prototype.hasOwnProperty.call(scoreMap, label);
+
+    const weeklyLabel =
+        state?.weekly?.judgment?.direction;
+
+    const optionLabel =
+        state?.option?.judgment?.marketLevel;
+
+    const weeklyValid =
+        state?.weekly?.available === true &&
+        hasOwnScore(weeklyJudgmentScoreMap, weeklyLabel);
+
+    const optionValid =
+        state?.option?.available === true &&
+        hasOwnScore(optionMarketJudgmentScoreMap, optionLabel);
+
+    const weeklyComponent = {
+        available: weeklyValid,
+        label: weeklyValid ? weeklyLabel : null,
+        score: weeklyValid
+            ? weeklyJudgmentScoreMap[weeklyLabel]
+            : null,
+        metadata: state?.weekly?.metadata || null
+    };
+
+    const optionComponent = {
+        available: optionValid,
+        label: optionValid ? optionLabel : null,
+        score: optionValid
+            ? optionMarketJudgmentScoreMap[optionLabel]
+            : null,
+        metadata: state?.option?.metadata || null
+    };
+
+    const missingSources = [];
+    const invalidSources = [];
+
+    if (!weeklyValid) {
+        missingSources.push("weekly");
+
+        if (
+            state?.weekly?.available === true &&
+            !hasOwnScore(weeklyJudgmentScoreMap, weeklyLabel)
+        ) {
+            invalidSources.push("weekly");
+        }
+    }
+
+    if (!optionValid) {
+        missingSources.push("option");
+
+        if (
+            state?.option?.available === true &&
+            !hasOwnScore(optionMarketJudgmentScoreMap, optionLabel)
+        ) {
+            invalidSources.push("option");
+        }
+    }
+
+    if (!weeklyValid || !optionValid) {
+        return {
+            available: false,
+            status: invalidSources.length > 0
+                ? "invalid_input"
+                : "insufficient_data",
+            totalScore: null,
+            judgment: null,
+            components: {
+                weekly: weeklyComponent,
+                option: optionComponent
+            },
+            missingSources,
+            invalidSources
+        };
+    }
+
+    const totalScore =
+        weeklyComponent.score + optionComponent.score;
+
+    let judgment = "中立";
+
+    if (totalScore >= 3) {
+        judgment = "強い買いアドバンテージ";
+    } else if (totalScore >= 1) {
+        judgment = "買いアドバンテージ";
+    } else if (totalScore <= -3) {
+        judgment = "強い売りアドバンテージ";
+    } else if (totalScore <= -1) {
+        judgment = "売りアドバンテージ";
+    }
+
+    return {
+        available: true,
+        status: "complete",
+        totalScore,
+        judgment,
+        components: {
+            weekly: weeklyComponent,
+            option: optionComponent
+        },
+        missingSources: [],
+        invalidSources: []
+    };
+}
+
+function invalidateOptionMarketJudgment() {
+    optionMapJudgmentState.option = {
+        available: false,
+        judgment: null,
+        metadata: null
+    };
+}
+
+function areJudgmentSourceArraysEqual(left, right) {
+    return (
+        Array.isArray(left) &&
+        Array.isArray(right) &&
+        left.length === right.length &&
+        left.every((value, index) => value === right[index])
+    );
+}
+
 function calculateWeeklyBrokerJudgment(
     previousWeekly,
     currentWeekly
@@ -2520,6 +2675,12 @@ function renderSavedSnapshots() {
     let weeklyBrokerDiffs = {};
     let weeklyBrokerHistory = [];
 
+    optionMapJudgmentState.weekly = {
+        available: false,
+        judgment: null,
+        metadata: null
+    };
+
     const weeklyBrokerCommentElement =
         document.getElementById("weeklyBrokerComment");
 
@@ -2550,6 +2711,15 @@ function renderSavedSnapshots() {
                 previousWeekly,
                 currentWeekly
             );
+
+        optionMapJudgmentState.weekly = {
+            available: true,
+            judgment: currentWeeklyJudgment,
+            metadata: {
+                from: previousWeekly.date,
+                to: currentWeekly.date
+            }
+        };
 
         weeklyBrokerDiffs =
             currentWeeklyJudgment.brokerDiffs;
@@ -3412,6 +3582,7 @@ if (compareButton) {
     compareButton.addEventListener(
         "click",
         function () {
+            invalidateOptionMarketJudgment();
             comparisonSnapshot = snapshot;
 
 const comparisonSnapshotStatus =
@@ -3640,6 +3811,17 @@ window.drawJpxPriceChart = function (
 putVolumes = Array.isArray(putVolumes)
     ? putVolumes
     : labels.map(() => 0);
+
+const optionSourceDataChanged =
+    !areJudgmentSourceArraysEqual(labels, allJpxLabels) ||
+    !areJudgmentSourceArraysEqual(callValues, allJpxCallValues) ||
+    !areJudgmentSourceArraysEqual(putValues, allJpxPutValues) ||
+    !areJudgmentSourceArraysEqual(callVolumes, allJpxCallVolumes) ||
+    !areJudgmentSourceArraysEqual(putVolumes, allJpxPutVolumes);
+
+if (optionSourceDataChanged) {
+    invalidateOptionMarketJudgment();
+}
 
 
        // 新しく読み込んだJPXデータで毎回更新
@@ -5546,6 +5728,23 @@ const optionMarketJudgment =
         nearbyPutDecrease,
         currentPrice: numericCurrentPrice
     });
+
+optionMapJudgmentState.option = {
+    available: optionMarketJudgment.available === true,
+    judgment: optionMarketJudgment.available === true
+        ? optionMarketJudgment
+        : null,
+    metadata: {
+        comparisonSourceDate:
+            comparisonSnapshot?.sourceDate || null,
+        currentSourceDate:
+            lastJpxFetchedAt instanceof Date &&
+            !Number.isNaN(lastJpxFetchedAt.getTime())
+                ? lastJpxFetchedAt.toISOString()
+                : null,
+        currentPrice: numericCurrentPrice
+    }
+};
 
 const {
     bullishScore,
