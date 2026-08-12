@@ -627,6 +627,61 @@ canvas {
     font-size: 14px;
 }
 
+.optionmap-overall-summary {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid #dfe4ec;
+    border-left: 5px solid #98a2b3;
+    border-radius: 11px;
+    background: #f7f9fc;
+}
+
+.optionmap-overall-summary h4 {
+    margin: 0 0 12px;
+    color: #344054;
+}
+
+.optionmap-overall-result {
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.optionmap-overall-result strong {
+    font-size: 18px;
+}
+
+.optionmap-overall-components {
+    display: grid;
+    gap: 6px;
+    color: #475467;
+    font-size: 14px;
+}
+
+.optionmap-overall-summary.is-buy {
+    border-left-color: #2e7d32;
+    background: #f1f8f3;
+}
+
+.optionmap-overall-summary.is-sell {
+    border-left-color: #c62828;
+    background: #fdf3f3;
+}
+
+.optionmap-overall-summary.is-neutral {
+    border-left-color: #e1a72c;
+    background: #fffaf0;
+}
+
+.optionmap-overall-summary.is-insufficient {
+    border-left-color: #98a2b3;
+    background: #f7f9fc;
+}
+
+.optionmap-overall-summary.is-invalid {
+    border-left-color: #b54708;
+    background: #fff6ed;
+}
+
 @media (max-width: 750px) {
     .intelligence-grid {
         grid-template-columns: repeat(2, 1fr);

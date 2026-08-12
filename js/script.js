@@ -2471,12 +2471,98 @@ function calculateOptionMapOverallJudgment(state) {
     };
 }
 
+function renderOptionMapOverallJudgment() {
+    const result =
+        calculateOptionMapOverallJudgment(optionMapJudgmentState);
+
+    const summaryElement =
+        document.getElementById("optionMapOverallSummary");
+    const judgmentElement =
+        document.getElementById("optionMapOverallJudgment");
+    const weeklyElement =
+        document.getElementById("optionMapWeeklyComponent");
+    const optionElement =
+        document.getElementById("optionMapOptionComponent");
+    const scoreElement =
+        document.getElementById("optionMapOverallScore");
+
+    if (
+        !summaryElement ||
+        !judgmentElement ||
+        !weeklyElement ||
+        !optionElement ||
+        !scoreElement
+    ) {
+        return;
+    }
+
+    const formatScore = score =>
+        score > 0 ? `+${score}` : String(score);
+
+    const formatComponent = (component, invalid) => {
+        if (invalid) return "判定エラー";
+        if (!component.available) return "データ不足";
+
+        return `${component.label}（${formatScore(component.score)}）`;
+    };
+
+    const weeklyInvalid =
+        result.invalidSources.includes("weekly");
+    const optionInvalid =
+        result.invalidSources.includes("option");
+
+    weeklyElement.textContent = formatComponent(
+        result.components.weekly,
+        weeklyInvalid
+    );
+    optionElement.textContent = formatComponent(
+        result.components.option,
+        optionInvalid
+    );
+
+    summaryElement.classList.remove(
+        "is-buy",
+        "is-sell",
+        "is-neutral",
+        "is-insufficient",
+        "is-invalid"
+    );
+
+    if (result.status === "invalid_input") {
+        judgmentElement.textContent = "判定材料エラー";
+        scoreElement.textContent = "算出不可";
+        summaryElement.classList.add("is-invalid");
+        return;
+    }
+
+    if (result.status === "insufficient_data") {
+        judgmentElement.textContent = "判定材料不足";
+        scoreElement.textContent = "算出不可";
+        summaryElement.classList.add("is-insufficient");
+        return;
+    }
+
+    judgmentElement.textContent = result.judgment;
+    scoreElement.textContent =
+        `${formatScore(result.totalScore)} / +4`;
+
+    if (result.judgment.includes("買い")) {
+        summaryElement.classList.add("is-buy");
+    } else if (result.judgment.includes("売り")) {
+        summaryElement.classList.add("is-sell");
+    } else {
+        summaryElement.classList.add("is-neutral");
+    }
+}
+
 function invalidateOptionMarketJudgment() {
     optionMapJudgmentState.option = {
         available: false,
         judgment: null,
         metadata: null
     };
+
+    renderOptionMapOverallJudgment();
 }
 
 function areJudgmentSourceArraysEqual(left, right) {
@@ -2681,6 +2767,8 @@ function renderSavedSnapshots() {
         metadata: null
     };
 
+    renderOptionMapOverallJudgment();
+
     const weeklyBrokerCommentElement =
         document.getElementById("weeklyBrokerComment");
 
@@ -2720,6 +2808,8 @@ function renderSavedSnapshots() {
                 to: currentWeekly.date
             }
         };
+
+        renderOptionMapOverallJudgment();
 
         weeklyBrokerDiffs =
             currentWeeklyJudgment.brokerDiffs;
@@ -5745,6 +5835,8 @@ optionMapJudgmentState.option = {
         currentPrice: numericCurrentPrice
     }
 };
+
+renderOptionMapOverallJudgment();
 
 const {
     bullishScore,
