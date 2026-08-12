@@ -2400,6 +2400,14 @@ function renderSavedSnapshots() {
     let weeklyBrokerDiffs = {};
     let weeklyBrokerHistory = [];
 
+    const weeklyBrokerCommentElement =
+        document.getElementById("weeklyBrokerComment");
+
+    if (weeklyBrokerCommentElement) {
+        weeklyBrokerCommentElement.textContent =
+            "比較できる週次データが不足しています。";
+    }
+
     const brokerMap = {
         JPM: "ＪＰモルガン証券",
         GS: "ゴールドマン証券",
@@ -2524,17 +2532,144 @@ if (delta.buy > 0 && delta.sell <= 0) {
             }
         
             const scoreDiff = buyScore - sellScore;
+
+            let weeklyDirection = "方向感薄い";
         
             if (scoreDiff >= 0.10) {
+                weeklyDirection = "強い買い優勢";
                 weeklyDirectionElement.textContent = "🔵 強い買い優勢";
             } else if (scoreDiff >= 0.02) {
+                weeklyDirection = "買い優勢";
                 weeklyDirectionElement.textContent = "🔵 買い優勢";
             } else if (scoreDiff <= -0.10) {
+                weeklyDirection = "強い売り優勢";
                 weeklyDirectionElement.textContent = "🔴 強い売り優勢";
             } else if (scoreDiff <= -0.02) {
+                weeklyDirection = "売り優勢";
                 weeklyDirectionElement.textContent = "🔴 売り優勢";
             } else {
                 weeklyDirectionElement.textContent = "○ 方向感薄い";
+            }
+
+            if (weeklyBrokerCommentElement) {
+                const displayBrokerNames = {
+                    JPM: "JPM",
+                    GS: "GS",
+                    NOMURA: "野村",
+                    BNP: "BNP",
+                    ABN: "ABN"
+                };
+
+                const brokerKeysByStatus = status =>
+                    Object.entries(weeklyBrokerDiffs)
+                        .filter(([, item]) => item?.status === status)
+                        .map(([key]) => displayBrokerNames[key] || key);
+
+                const estimatedBuyBrokers =
+                    brokerKeysByStatus("estimatedBuy");
+                const estimatedSellBrokers =
+                    brokerKeysByStatus("estimatedSell");
+                const reducedBuyBrokers =
+                    brokerKeysByStatus("reducedBuy");
+                const reducedSellBrokers =
+                    brokerKeysByStatus("reducedSell");
+                const unconfirmedBrokers =
+                    brokerKeysByStatus("unconfirmed");
+
+                const details = [];
+
+                if (reducedBuyBrokers.length > 0) {
+                    details.push(
+                        `${reducedBuyBrokers.join("・")}は買い縮小`
+                    );
+                }
+
+                if (reducedSellBrokers.length > 0) {
+                    details.push(
+                        `${reducedSellBrokers.join("・")}は売り縮小`
+                    );
+                }
+
+                if (unconfirmedBrokers.length > 0) {
+                    details.push(
+                        `${unconfirmedBrokers.join("・")}は未確定`
+                    );
+                }
+
+                const buyCount = estimatedBuyBrokers.length;
+                const sellCount = estimatedSellBrokers.length;
+
+                let conclusion = "";
+
+                if (
+                    buyCount > sellCount &&
+                    weeklyDirection.includes("売り優勢")
+                ) {
+                    conclusion =
+                        "買い推定の社数が上回っていますが、" +
+                        "売り方向の変化率が相対的に大きく、" +
+                        `週次では${weeklyDirection}と判断します。`;
+                } else if (
+                    sellCount > buyCount &&
+                    weeklyDirection.includes("買い優勢")
+                ) {
+                    conclusion =
+                        "売り推定の社数が上回っていますが、" +
+                        "買い方向の変化率が相対的に大きく、" +
+                        `週次では${weeklyDirection}と判断します。`;
+                } else if (
+                    buyCount === sellCount &&
+                    weeklyDirection.includes("買い優勢")
+                ) {
+                    conclusion =
+                        "買い推定と売り推定の社数は同数ですが、" +
+                        "買い方向の変化率が上回っており、" +
+                        `週次では${weeklyDirection}と判断します。`;
+                } else if (
+                    buyCount === sellCount &&
+                    weeklyDirection.includes("売り優勢")
+                ) {
+                    conclusion =
+                        "買い推定と売り推定の社数は同数ですが、" +
+                        "売り方向の変化率が上回っており、" +
+                        `週次では${weeklyDirection}と判断します。`;
+                } else if (weeklyDirection === "強い買い優勢") {
+                    conclusion =
+                        "買い方向への変化が強く、" +
+                        "週次では強い買い優勢と判断します。";
+                } else if (weeklyDirection === "買い優勢") {
+                    conclusion =
+                        "買い方向の変化率が上回っており、" +
+                        "週次では買い優勢と判断します。";
+                } else if (weeklyDirection === "強い売り優勢") {
+                    conclusion =
+                        "売り方向への変化が強く、" +
+                        "週次では強い売り優勢と判断します。";
+                } else if (weeklyDirection === "売り優勢") {
+                    conclusion =
+                        "売り方向の変化率が上回っており、" +
+                        "週次では売り優勢と判断します。";
+                } else if (buyCount !== sellCount) {
+                    conclusion =
+                        "推定社数には偏りがありますが、" +
+                        "買い・売りの変化率スコア差は小さく、" +
+                        "週次では方向感が薄いと判断します。";
+                } else {
+                    conclusion =
+                        "買い・売りの変化率スコア差が小さく、" +
+                        "週次では方向感が薄いと判断します。";
+                }
+
+                const detailText =
+                    details.length > 0
+                        ? `${details.join("、")}となっています。`
+                        : "";
+
+                weeklyBrokerCommentElement.textContent =
+                    `主要5社では買い推定が${buyCount}社、` +
+                    `売り推定が${sellCount}社です。` +
+                    detailText +
+                    conclusion;
             }
         
             console.log("🧭 週次総合スコア =", {
