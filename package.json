@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
-    "openai": "^7.0.0"
+    "openai": "^7.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

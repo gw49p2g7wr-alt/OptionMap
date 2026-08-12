@@ -3,26 +3,6 @@ console.log("script.js 読み込み成功！");
 let myChart = null;
 let futureOpenInterestChart = null;
 let latestFutureOpenInterestResult = null;
-window.setLatestFutureOpenInterestResult = function (result) {
-    console.log("★ setter受信 =", result);
-    latestFutureOpenInterestResult = result;
-
-    updateFutureOpenInterestExpiryOptions(
-        futureOpenInterestProduct.value
-    );
-
-    drawFutureOpenInterestChart(
-        futureOpenInterestProduct.value,
-        futureOpenInterestExpiry.value
-    );
-
-    console.log(
-        "週次先物データをグラフへ反映:",
-        latestFutureOpenInterestResult
-    );
-};
-
-
 let latestBrokerLabels = [];
 let latestBrokerValues = [];
 let latestNightBrokerData = {};
@@ -34,18 +14,6 @@ let latestJpxLabels = [];
 let latestCallValues = [];
 let latestPutValues = [];
 let optionMap = {};
-window.setWeeklyOptionMap = function (result) {
-    optionMap = result?.optionMap || {};
-
-    console.log(
-        "週次オプションを価格帯マップへ反映:",
-        optionMap
-    );
-
-    drawOptionTable();
-    showMaxPosition(result?.priceTotals || {});
-    showPriceRanking();
-};
 let allJpxLabels = [];
 let allJpxCallValues = [];
 let allJpxPutValues = [];
@@ -343,11 +311,7 @@ button.addEventListener("click", function () {
           document.getElementById("futureOpenInterestProduct").value
         );
 
-        if (latestParsedDayData) {
-            updateBrokerChartByProduct(latestParsedDayData);
-        } else {
-            updateBrokerChartFromSelection();
-        }
+        updateBrokerChartFromSelection();
 
       console.log(
         "指数先物建玉の解析結果:",
@@ -360,16 +324,8 @@ button.addEventListener("click", function () {
         
         console.log("価格帯別データ:", optionResult.priceTotals);
         
-
-        if (
-            optionResult?.optionMap &&
-            Object.keys(optionResult.optionMap).length > 0
-        ) {
-            optionMap = optionResult.optionMap;
-        }
-        
         console.log("価格帯マップ:", optionMap);
-        
+
         const optionTotals = optionResult.priceTotals;
         
         const selectedProduct = brokerProductSelect.value;
@@ -450,39 +406,11 @@ drawOptionTable();
 console.log("optionTotals =", optionTotals);
 showMaxPosition(optionTotals);
 
-
-
 showPriceRanking();
 
     }, 1000);
 
 });
-
-function showMaxPosition(priceTotals) {
-    const result = document.getElementById("maxPosition");
-
-    if (!result) return;
-
-    let maxPrice = "";
-    let maxValue = 0;
-
-    for (const price in priceTotals) {
-        const value = Number(priceTotals[price]) || 0;
-
-        if (value > maxValue) {
-            maxValue = value;
-            maxPrice = price;
-        }
-    }
-
-    result.innerHTML = `
-        <p><strong>価格帯</strong></p>
-        <h2>${Number(maxPrice || 0).toLocaleString()}円</h2>
-
-        <p><strong>建玉</strong></p>
-        <h2>${maxValue.toLocaleString()}枚</h2>
-    `;
-}
 
 function analyzeFutureData(text) {
 
@@ -652,8 +580,7 @@ function analyzeOptionData(text) {
     console.log(optionMap);
     return {
         brokerTotals: totals,
-        priceTotals: priceTotals,
-        optionMap: optionMap
+        priceTotals: priceTotals
     };
 
 }
@@ -894,248 +821,7 @@ console.log(
     };
   }
 
-  function analyzeFutureOpenInterestJson(rows) {
-    console.log("週次先物JSON解析開始");
-
-    const products = {};
-    const brokerTotals = {};
-
-    const normalizeText = value =>
-        String(value ?? "")
-            .replace(/\r?\n/g, "")
-            .replace(/\u3000/g, "")
-            .replace(/\s+/g, "")
-            .trim();
-
-    const toNumber = value => {
-        const cleaned = String(value ?? "")
-            .replace(/,/g, "")
-            .replace(/[^\d.-]/g, "");
-
-        const number = Number(cleaned);
-        return Number.isFinite(number) ? number : 0;
-    };
-
-    const ensureProduct = productName => {
-        if (!products[productName]) {
-            products[productName] = {
-                brokers: {},
-                sellTotal: 0,
-                buyTotal: 0,
-            };
-        }
-
-        return products[productName];
-    };
-
-    const addBrokerPosition = (
-        productName,
-        brokerName,
-        side,
-        volume,
-        expiry
-    ) => {
-        const broker = normalizeText(brokerName);
-        const amount = toNumber(volume);
-
-        if (!productName || !broker || amount <= 0) {
-            return;
-        }
-
-        const product = ensureProduct(productName);
-
-        if (!product.brokers[broker]) {
-            product.brokers[broker] = {
-                sell: 0,
-                buy: 0,
-                net: 0,
-                expiries: {},
-            };
-        }
-
-        const brokerData = product.brokers[broker];
-
-        brokerData[side] += amount;
-
-        if (side === "sell") {
-            product.sellTotal += amount;
-        } else {
-            product.buyTotal += amount;
-        }
-
-        if (expiry) {
-            if (!brokerData.expiries[expiry]) {
-                brokerData.expiries[expiry] = {
-                    sell: 0,
-                    buy: 0,
-                    net: 0,
-                };
-            }
-
-            brokerData.expiries[expiry][side] += amount;
-
-            brokerData.expiries[expiry].net =
-                brokerData.expiries[expiry].buy -
-                brokerData.expiries[expiry].sell;
-        }
-
-        brokerData.net = brokerData.buy - brokerData.sell;
-    };
-
-    let currentProduct = "";
-
-    const expiryPattern = /^20\d{2}年\d{1,2}月限月$/;
-
-    for (const row of rows) {
-        if (!Array.isArray(row)) continue;
-
-        const firstCell = normalizeText(row[0]);
-
-        if (firstCell.includes("日経225mini")) {
-            currentProduct = "日経225mini";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (firstCell.includes("日経225先物")) {
-            currentProduct = "日経225先物";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (firstCell.includes("TOPIX")) {
-            currentProduct = "TOPIX先物";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (!currentProduct) continue;
-
-        row.forEach((cell, expiryIndex) => {
-            const expiry = normalizeText(cell);
-
-            if (!expiryPattern.test(expiry)) {
-                return;
-            }
-
-            const sellVolume = toNumber(row[expiryIndex + 1]);
-            const sellBroker = row[expiryIndex + 2] ?? "";
-
-            const buyVolume = toNumber(row[expiryIndex + 3]);
-            const buyBroker = row[expiryIndex + 5] ?? "";
-
-            addBrokerPosition(
-                currentProduct,
-                sellBroker,
-                "sell",
-                sellVolume,
-                expiry
-            );
-
-            addBrokerPosition(
-                currentProduct,
-                buyBroker,
-                "buy",
-                buyVolume,
-                expiry
-            );
-        });
-    }
-
-    for (const productData of Object.values(products)) {
-        for (const [broker, position] of Object.entries(
-            productData.brokers
-        )) {
-            if (!brokerTotals[broker]) {
-                brokerTotals[broker] = {
-                    sell: 0,
-                    buy: 0,
-                    net: 0,
-                };
-            }
-
-            brokerTotals[broker].sell += position.sell;
-            brokerTotals[broker].buy += position.buy;
-            brokerTotals[broker].net =
-                brokerTotals[broker].buy -
-                brokerTotals[broker].sell;
-        }
-    }
-
-    console.log("週次先物・商品別:", products);
-    console.log("週次先物・証券会社別合計:", brokerTotals);
-
-    return {
-        products,
-        brokerTotals,
-    };
-}
-
-function analyzeOptionOpenInterestJson(rows) {
-    console.log("週次オプションJSON解析開始");
-
-    const optionMapResult = {};
-    const priceTotals = {};
-    const brokerTotals = {};
-
-    const addPosition = (price, broker, volume) => {
-        price = Number(price);
-        volume = Number(volume);
-
-        if (!Number.isFinite(price) || price <= 0) return;
-        if (!broker || !Number.isFinite(volume) || volume <= 0) return;
-
-        // 既存の companyNames を使って略称へ統一
-        const brokerKey = companyNames[broker] || broker;
-
-        if (!optionMapResult[price]) {
-            optionMapResult[price] = {};
-        }
-
-        if (!optionMapResult[price][brokerKey]) {
-            optionMapResult[price][brokerKey] = 0;
-        }
-
-        optionMapResult[price][brokerKey] += volume;
-
-        if (!priceTotals[price]) {
-            priceTotals[price] = 0;
-        }
-
-        priceTotals[price] += volume;
-
-        if (!brokerTotals[brokerKey]) {
-            brokerTotals[brokerKey] = 0;
-        }
-
-        brokerTotals[brokerKey] += volume;
-    };
-
-    for (const row of rows) {
-        if (!Array.isArray(row)) continue;
-
-        // PUT
-        addPosition(row[1], row[3], row[4]);
-        addPosition(row[1], row[6], row[7]);
-
-        // CALL
-        addPosition(row[11], row[13], row[14]);
-        addPosition(row[11], row[16], row[17]);
-    }
-
-    console.log("週次オプション optionMap:", optionMapResult);
-    console.log("週次オプション priceTotals:", priceTotals);
-    console.log("週次オプション brokerTotals:", brokerTotals);
-
-    return {
-        optionMap: optionMapResult,
-        priceTotals,
-        brokerTotals,
-    };
-}
+  function analyzeFutureOpenInterestJson(rows)
 
 function drawChart(labels, values) {
     latestBrokerLabels = [...labels];
@@ -1434,11 +1120,6 @@ const rows = Array.from(rowMap.values());
 
 
   function updateBrokerChartFromSelection() {
-
-    console.log("★ broker初回描画");
-    console.log("★ latestNightFutureTotals =", latestNightFutureTotals);
-    console.log("★ latestDayFutureTotals =", latestDayFutureTotals);
-
     if (!latestNightFutureTotals || !latestDayFutureTotals) {
       return;
     }
@@ -1452,21 +1133,6 @@ const rows = Array.from(rowMap.values());
     const selectedDayTotals =
       latestDayFutureTotals[selectedProduct]?.[selectedMarket] || {};
   
-      console.log("★ selectedProduct =", selectedProduct);
-      console.log("★ selectedMarket =", selectedMarket);
-      console.log("★ selectedNightTotals =", selectedNightTotals);
-      console.log("★ selectedDayTotals =", selectedDayTotals);
-
-      console.log(
-        "★ night NK225Fの区分キー =",
-        Object.keys(latestNightFutureTotals[selectedProduct] || {})
-    );
-    
-    console.log(
-        "★ day NK225Fの区分キー =",
-        Object.keys(latestDayFutureTotals[selectedProduct] || {})
-    );
-
     latestNightBrokerData = { ...selectedNightTotals };
     latestDayBrokerData = { ...selectedDayTotals };
   
@@ -1566,10 +1232,6 @@ function updateBrokerChartByProduct(parsedDayData) {
             return data.topix?.records || [];
         }
 
-        if (product === "NK225E") {
-            return data.micro?.records || [];
-        }
-
         console.warn("未対応の商品です:", product);
         return [];
     };
@@ -1602,7 +1264,6 @@ function updateBrokerChartByProduct(parsedDayData) {
             dayJnetRecords,
             nightJnetRecords
         );
-
     } else if (market === "combined") {
         const auctionRecords = mergeBrokerRecords(
             dayAuctionRecords,
@@ -1625,22 +1286,7 @@ function updateBrokerChartByProduct(parsedDayData) {
 
 function setLatestParsedDayData(data) {
     latestParsedDayData = data;
-
-    if (latestParsedDayData) {
-        updateBrokerChartByProduct(latestParsedDayData);
-    
-        console.log(
-
-            "🔵 自動取得 parsedDayData =",
-
-            latestParsedDayData
-
-        );
-
-    }
 }
-
-window.setLatestParsedDayData = setLatestParsedDayData;
 
 function createBarColors(values, normalColor, strongColor) {
 
@@ -2340,592 +1986,9 @@ function renderSavedSnapshots() {
             localStorage.getItem(storageKey) || "[]"
         );
 
-        const weeklySnapshots = savedSnapshots
-        .filter(snapshot => snapshot?.futureOpenInterest)
-        .map(snapshot => ({
-            date: snapshot.sourceDate.slice(0, 10),
-            futureOpenInterest: snapshot.futureOpenInterest
-        }));
-    
-    console.log(
-        "📚 保存済み週次建玉一覧 =",
-        weeklySnapshots
-    );
-
-    const weeklyCheck = weeklySnapshots.map(item => {
-        const nikkei225 =
-            item.futureOpenInterest?.products?.["日経225先物"];
-    
-        return {
-            date: item.date,
-            sellTotal: nikkei225?.sellTotal ?? null,
-            buyTotal: nikkei225?.buyTotal ?? null
-        };
-    });
-    
-    console.log(
-        "🔍 週次建玉内容確認 =",
-        weeklyCheck
-    );
-    
-    const uniqueWeeklySnapshots = [];
-
-    let previousSignature = null;
-    
-    weeklySnapshots.forEach(item => {
-        const signature =
-            JSON.stringify(item.futureOpenInterest);
-    
-        if (signature !== previousSignature) {
-            uniqueWeeklySnapshots.push(item);
-            previousSignature = signature;
-        }
-    });
-    
-    console.log(
-        "✨ 重複除外した週次建玉 =",
-        uniqueWeeklySnapshots.map(item => ({
-            date: item.date,
-            sellTotal:
-                item.futureOpenInterest
-                    ?.products?.["日経225先物"]
-                    ?.sellTotal ?? null,
-            buyTotal:
-                item.futureOpenInterest
-                    ?.products?.["日経225先物"]
-                    ?.buyTotal ?? null
-        }))
-    );
-
-    let weeklyBrokerDiffs = {};
-    let weeklyBrokerHistory = [];
-
-    const brokerMap = {
-        JPM: "ＪＰモルガン証券",
-        GS: "ゴールドマン証券",
-        NOMURA: "野村証券",
-        BNP: "ＢＮＰパリバ証券",
-        ABN: "ＡＢＮクリアリン証券"
-    };
-    
-    if (uniqueWeeklySnapshots.length >= 2) {
-        const previousWeekly =
-            uniqueWeeklySnapshots[uniqueWeeklySnapshots.length - 2];
-    
-        const currentWeekly =
-            uniqueWeeklySnapshots[uniqueWeeklySnapshots.length - 1];
-      
-        for (const [key, brokerName] of Object.entries(brokerMap)) {
-            const getBrokerPosition = item =>
-                item.futureOpenInterest
-                    ?.products?.["日経225先物"]
-                    ?.brokers?.[brokerName] || {
-                        sell: 0,
-                        buy: 0,
-                        net: 0
-                    };
-    
-            const previous =
-                getBrokerPosition(previousWeekly);
-    
-            const current =
-                getBrokerPosition(currentWeekly);
-    
-                const delta = {
-                    sell: current.sell - previous.sell,
-                    buy: current.buy - previous.buy,
-                    net: current.net - previous.net
-                };
-                
-                let status = "unconfirmed";
-
-if (delta.buy > 0 && delta.sell <= 0) {
-    status = "estimatedBuy";
-} else if (delta.sell > 0 && delta.buy <= 0) {
-    status = "estimatedSell";
-} else if (delta.buy < 0 && delta.sell === 0) {
-    status = "reducedBuy";
-} else if (delta.sell < 0 && delta.buy === 0) {
-    status = "reducedSell";
-}
-                
-            weeklyBrokerDiffs[key] = {
-                brokerName,
-                from: previousWeekly.date,
-                to: currentWeekly.date,
-    
-                previous: {
-                    sell: previous.sell,
-                    buy: previous.buy,
-                    net: previous.net
-                },
-    
-                current: {
-                    sell: current.sell,
-                    buy: current.buy,
-                    net: current.net
-                },
-    
-                delta,
-                status
-            };
-        }
-    
-        console.log(
-            "📊 主要5社 週次差分 =",
-            weeklyBrokerDiffs
-        );
-
-        const weeklyStatusLabels = {
-            estimatedBuy: "🔵 買い推定",
-            estimatedSell: "🔴 売り推定",
-            reducedBuy: "↘️ 買い縮小",
-            reducedSell: "↗️ 売り縮小",
-            unconfirmed: "○ 未確定"
-        };
-        
-        const weeklyStatusIds = {
-            JPM: "weeklyStatusJPM",
-            GS: "weeklyStatusGS",
-            NOMURA: "weeklyStatusNOMURA",
-            BNP: "weeklyStatusBNP",
-            ABN: "weeklyStatusABN"
-        };
-        
-        const weeklyDirectionElement =
-        document.getElementById("weeklyBrokerDirection");
-    
-        if (weeklyDirectionElement) {
-            let buyScore = 0;
-            let sellScore = 0;
-        
-            for (const item of Object.values(weeklyBrokerDiffs)) {
-                if (!item) continue;
-        
-                const previousTotal =
-                    Math.abs(item.previous?.buy || 0) +
-                    Math.abs(item.previous?.sell || 0);
-        
-                if (previousTotal <= 0) continue;
-        
-                if (item.status === "estimatedBuy") {
-                    const changeRate =
-                        Math.abs(item.delta?.buy || 0) / previousTotal;
-        
-                    buyScore += changeRate;
-                }
-        
-                if (item.status === "estimatedSell") {
-                    const changeRate =
-                        Math.abs(item.delta?.sell || 0) / previousTotal;
-        
-                    sellScore += changeRate;
-                }
-            }
-        
-            const scoreDiff = buyScore - sellScore;
-        
-            if (scoreDiff >= 0.10) {
-                weeklyDirectionElement.textContent = "🔵 強い買い優勢";
-            } else if (scoreDiff >= 0.02) {
-                weeklyDirectionElement.textContent = "🔵 買い優勢";
-            } else if (scoreDiff <= -0.10) {
-                weeklyDirectionElement.textContent = "🔴 強い売り優勢";
-            } else if (scoreDiff <= -0.02) {
-                weeklyDirectionElement.textContent = "🔴 売り優勢";
-            } else {
-                weeklyDirectionElement.textContent = "○ 方向感薄い";
-            }
-        
-            console.log("🧭 週次総合スコア =", {
-                buyScore,
-                sellScore,
-                scoreDiff
-            });
-        }
-
-        for (const [key, elementId] of Object.entries(weeklyStatusIds)) {
-            const element = document.getElementById(elementId);
-        
-            if (!element) continue;
-        
-            const status =
-                weeklyBrokerDiffs[key]?.status || "unconfirmed";
-        
-            element.textContent =
-                weeklyStatusLabels[status] || "○ 未確定";
-        }
-
-    }
-
-    if (uniqueWeeklySnapshots.length >= 2) {
-        for (let i = 1; i < uniqueWeeklySnapshots.length; i++) {
-            const previousWeekly =
-                uniqueWeeklySnapshots[i - 1];
-    
-            const currentWeekly =
-                uniqueWeeklySnapshots[i];
-    
-                const intervalBrokers = {};
-
-                for (const [key, brokerName] of Object.entries(brokerMap)) {
-                    const getBrokerPosition = item =>
-                        item.futureOpenInterest
-                            ?.products?.["日経225先物"]
-                            ?.brokers?.[brokerName] || {
-                                sell: 0,
-                                buy: 0,
-                                net: 0
-                            };
-                
-                    const previous =
-                        getBrokerPosition(previousWeekly);
-                
-                    const current =
-                        getBrokerPosition(currentWeekly);
-                
-                    const delta = {
-                        sell: current.sell - previous.sell,
-                        buy: current.buy - previous.buy,
-                        net: current.net - previous.net
-                    };
-                
-                    let status = "unconfirmed";
-                
-                    if (delta.buy > 0 && delta.sell <= 0) {
-                        status = "estimatedBuy";
-                    } else if (delta.sell > 0 && delta.buy <= 0) {
-                        status = "estimatedSell";
-                    }
-                
-                    intervalBrokers[key] = {
-                        brokerName,
-                        delta,
-                        status
-                    };
-                }
-                
-                weeklyBrokerHistory.push({
-                    from: previousWeekly.date,
-                    to: currentWeekly.date,
-                    brokers: intervalBrokers
-                });
-        }
-    }
-    
-    console.log(
-        "🗂 週次判定区間一覧 =",
-        weeklyBrokerHistory
-    );
-
-
         updateIntelligenceCard(
             savedSnapshots
         );
-
-        console.log("📈 累積グラフ用 savedSnapshots =", savedSnapshots);
-
-        const cumulativeDates = savedSnapshots.map(snapshot =>
-            snapshot.sourceDate.slice(0, 10)
-        );
-        
-        console.log("📅 日付一覧 =", cumulativeDates);
-
-        const latestSnapshotsByDay = [];
-
-
-        
-const snapshotMap = new Map();
-
-savedSnapshots.forEach(snapshot => {
-    const day = snapshot.sourceDate.slice(0, 10);
-    snapshotMap.set(day, snapshot);
-});
-
-snapshotMap.forEach(snapshot => {
-    latestSnapshotsByDay.push(snapshot);
-});
-
-const testSnapshot =
-  latestSnapshotsByDay[latestSnapshotsByDay.length - 1];
-
-  
-console.log("snapshotの中身", testSnapshot);
-
-const cumulativeCompanySelect =
-  document.getElementById("cumulativeBrokerSelect");
-
-const companyMap = {
-    JPM: "ＪＰモルガン証券",
-    GS: "ゴールドマン証券",
-    NOMURA: "野村証券",
-    BNP: "ＢＮＰパリバ証券",
-    ABN: "ＡＢＮクリアリン証券"
-  };
-  
-  const companyName =
-    companyMap[cumulativeCompanySelect.value] ||
-    "ＪＰモルガン証券";
-
-const dayAuctionRecords =
-  testSnapshot?.parsedDayData?.dayAuction?.large?.records || [];
-
-const dayJnetRecords =
-  testSnapshot?.parsedDayData?.dayJnet?.large?.records || [];
-
-const nightAuctionRecords =
-  testSnapshot?.parsedDayData?.nightAuction?.large?.records || [];
-
-const nightJnetRecords =
-  testSnapshot?.parsedDayData?.nightJnet?.large?.records || [];
-
-const findCompanyVolume = (records, companyName) => {
-  return records
-    .filter(item => item.company === companyName)
-    .reduce((sum, item) => sum + (Number(item.volume) || 0), 0);
-};
-
-console.log(
-    "🏢 会社名一覧 =",
-    [...new Set([
-      ...dayAuctionRecords,
-      ...dayJnetRecords,
-      ...nightAuctionRecords,
-      ...nightJnetRecords
-    ].map(item => item.company))]
-  );
-
-const jpmDayVolume =
-  findCompanyVolume(dayAuctionRecords, companyName) +
-  findCompanyVolume(dayJnetRecords, companyName);
-
-const jpmNightVolume =
-  findCompanyVolume(nightAuctionRecords, companyName) +
-  findCompanyVolume(nightJnetRecords, companyName);
-
-console.log("📊 JPMテスト =", {
-  date: testSnapshot?.sourceDate?.slice(0, 10),
-  day: jpmDayVolume,
-  night: jpmNightVolume
-});
-
-const cumulativePeriodSelect =
-    document.getElementById("cumulativePeriodSelect");
-
-const selectedPeriod =
-    cumulativePeriodSelect?.value || "20";
-
-// parsedDayData がある営業日だけ
-const validCumulativeSnapshots =
-    latestSnapshotsByDay.filter(
-        snapshot => snapshot?.parsedDayData
-    );
-
-let displaySnapshots = [...validCumulativeSnapshots];
-
-if (selectedPeriod === "20") {
-
-    // 直近20営業日
-    displaySnapshots =
-        validCumulativeSnapshots.slice(-20);
-
-} else if (
-    selectedPeriod === "1m" ||
-    selectedPeriod === "3m"
-) {
-
-    // 最新データの日付を基準にする
-    const latestSnapshot =
-        validCumulativeSnapshots[
-            validCumulativeSnapshots.length - 1
-        ];
-
-    if (latestSnapshot) {
-        const latestDate =
-            new Date(latestSnapshot.sourceDate);
-
-        const cutoffDate =
-            new Date(latestDate);
-
-        cutoffDate.setMonth(
-            cutoffDate.getMonth() -
-            (selectedPeriod === "1m" ? 1 : 3)
-        );
-
-        displaySnapshots =
-            validCumulativeSnapshots.filter(
-                snapshot =>
-                    new Date(snapshot.sourceDate) >= cutoffDate
-            );
-    }
-}
-
-console.log(
-    "📊 累積グラフ表示期間 =",
-    selectedPeriod,
-    displaySnapshots.map(
-        snapshot => snapshot.sourceDate.slice(0, 10)
-    )
-);
-
-const selectedBrokerKey =
-    cumulativeCompanySelect?.value || "JPM";
-
-const selectedWeeklyStatus =
-    weeklyBrokerDiffs[selectedBrokerKey]?.status || "unconfirmed";
-
-console.log(
-    "🎨 累積グラフ判定 =",
-    selectedBrokerKey,
-    selectedWeeklyStatus
-);
-
-const getStatusForDate = date => {
-    const interval = weeklyBrokerHistory.find(item =>
-        date > item.from &&
-        date <= item.to
-    );
-
-    if (!interval) {
-        return "unconfirmed";
-    }
-
-    return (
-        interval.brokers?.[selectedBrokerKey]?.status ||
-        "unconfirmed"
-    );
-};
-
-const companyDailySeries = displaySnapshots
-  .filter(snapshot => snapshot?.parsedDayData)
-  .map(snapshot => {
-    const dayAuctionRecords =
-      snapshot.parsedDayData?.dayAuction?.large?.records || [];
-
-    const dayJnetRecords =
-      snapshot.parsedDayData?.dayJnet?.large?.records || [];
-
-    const nightAuctionRecords =
-      snapshot.parsedDayData?.nightAuction?.large?.records || [];
-
-    const nightJnetRecords =
-      snapshot.parsedDayData?.nightJnet?.large?.records || [];
-
-    const day =
-      findCompanyVolume(dayAuctionRecords, companyName) +
-      findCompanyVolume(dayJnetRecords, companyName);
-
-    const night =
-      findCompanyVolume(nightAuctionRecords, companyName) +
-      findCompanyVolume(nightJnetRecords, companyName);
-
-      const date =
-      snapshot.sourceDate.slice(0, 10);
-  
-      const status = getStatusForDate(date);
-
-    
-  return {
-    date,
-    day,
-    night,
-    status
-};
-  });
-
-console.log("📈 JPM日付別シリーズ =", companyDailySeries);
-
-const cumulativeCanvas = document.getElementById("cumulativeChart");
-
-if (cumulativeCanvas) {
-  if (window.cumulativeChartInstance) {
-    window.cumulativeChartInstance.destroy();
-  }
-
-  window.cumulativeChartInstance = new Chart(cumulativeCanvas, {
-    type: "bar",
-    data: {
-      labels: companyDailySeries.map(item => item.date),
-      datasets: [
-        {
-            label: "日中",
-            data: companyDailySeries.map(item => item.day),
-            backgroundColor: companyDailySeries.map(item => {
-                if (item.status === "estimatedBuy") {
-                    return "rgba(54, 162, 235, 0.85)";
-                }
-        
-                if (item.status === "estimatedSell") {
-                    return "rgba(255, 99, 132, 0.85)";
-                }
-        
-                return "rgba(140, 140, 140, 0.60)";
-            })
-        },
-        {
-            label: "夜間",
-            data: companyDailySeries.map(item => item.night),
-            backgroundColor: companyDailySeries.map(item => {
-                if (item.status === "estimatedBuy") {
-                    return "rgba(54, 162, 235, 0.35)";
-                }
-        
-                if (item.status === "estimatedSell") {
-                    return "rgba(255, 99, 132, 0.35)";
-                }
-        
-                return "rgba(180, 180, 180, 0.30)";
-            })
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: "日付"
-          }
-        },
-        y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: "取引枚数"
-          }
-        }
-      }
-    }
-  });
-}
-
-console.log(
-    "📦 日毎最新データ =",
-    latestSnapshotsByDay
-);
-
-const jpmData = latestSnapshotsByDay.map(snapshot => {
-    return {
-        date: snapshot.sourceDate.slice(0, 10),
-        brokerData: snapshot.brokerData
-    };
-});
-
-const jpmLargeData = latestSnapshotsByDay.map(snapshot => ({
-    date: snapshot.sourceDate.slice(0, 10),
-    large: snapshot.brokerData?.night?.JPM?.large
-}));
-
-console.log(
-    "🔍 brokerData中身 =",
-    latestSnapshotsByDay[24].brokerData
-);
-
-console.log("🏦 JPMラージ =", jpmLargeData);
-
-console.log("🏦 JPM抽出前データ =", jpmData);
 
     } catch (error) {
         console.error(
@@ -3243,12 +2306,11 @@ console.log(
 const futureOpenInterestText =
     futureOpenInterestData.value;
 
-    if (futureOpenInterestText.trim()) {
-        latestFutureOpenInterestResult =
-            analyzeFutureOpenInterestData(
-                futureOpenInterestText
-            );
-    }
+latestFutureOpenInterestResult =
+    analyzeFutureOpenInterestData(
+        futureOpenInterestText
+    );
+
 const callDifferenceData =
     createDifferenceData(
         allJpxLabels,
@@ -3288,25 +2350,6 @@ renderDifferenceRankings(
     });
 }
 
-const cumulativeBrokerSelect =
-  document.getElementById("cumulativeBrokerSelect");
-
-if (cumulativeBrokerSelect) {
-  cumulativeBrokerSelect.addEventListener("change", () => {
-    renderSavedSnapshots();
-  });
-}
-
-const cumulativePeriodSelect =
-    document.getElementById("cumulativePeriodSelect");
-
-if (cumulativePeriodSelect) {
-    cumulativePeriodSelect.addEventListener(
-        "change",
-        renderSavedSnapshots
-    );
-}
-
     function saveCurrentJpxSnapshot() {
 
     if (
@@ -3342,26 +2385,14 @@ if (cumulativePeriodSelect) {
             option: { ...latestOptionBrokerData }
         },
 
-        parsedDayData: latestParsedDayData,
-
-        futureBrokerData: {
-            night: latestNightFutureTotals,
-            day: latestDayFutureTotals
-        },
-       
         labels: [...allJpxLabels],
 
         callOpenInterest: [...allJpxCallValues],
         putOpenInterest: [...allJpxPutValues],
 
         callVolume: [...allJpxCallVolumes],
-        putVolume: [...allJpxPutVolumes],
-        futureOpenInterest: latestFutureOpenInterestResult,
+        putVolume: [...allJpxPutVolumes]
     };
-
-    console.log("保存直前snapshot =", snapshot);
-    console.log("🟣 保存直前 parsedDayData =", latestParsedDayData);
-    console.log("🚀 保存前 futureBrokerData =", snapshot.futureBrokerData);
 
     const storageKey = "optionMapJpxSnapshots";
 
@@ -3831,16 +2862,16 @@ function showOptionMap() {
 function drawOptionTable() {
 
     const companies = [
-        "BNP",
-        "JPM",
-        "ABN",
-        "UBS",
-        "Barclays",
-        "SG",
-        "Goldman",
-        "Rakuten",
-        "Matsui",
-        "MorganMUFG"
+        "ＢＮＰパリバ証券",
+        "ＪＰモルガン証券",
+        "ＡＢＮクリアリン証券",
+        "ＵＢＳ証券",
+        "バークレイズ証券",
+        "ソシエテＧ証券",
+        "ゴールドマン証券",
+        "楽天証券",
+        "松井証券",
+        "モルガンＭＵＦＧ証券"
     ];
 
     const table = document.getElementById("optionMapTable");
@@ -3860,7 +2891,7 @@ function drawOptionTable() {
     for (const company of companies) {
 
         const th = document.createElement("th");
-        th.textContent = company;
+        th.textContent = companyNames[company];
         header.appendChild(th);
 
     }

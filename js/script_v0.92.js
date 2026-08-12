@@ -3,6 +3,16 @@ console.log("script.js 読み込み成功！");
 let myChart = null;
 
 let optionMap = {};
+window.setWeeklyOptionMap = function (result) {
+    optionMap = result?.optionMap || {};
+
+    console.log(
+        "週次オプションを価格帯マップへ反映:",
+        optionMap
+    );
+
+    drawOptionTable();
+};
 
 const companyNames = {
     "ＡＢＮクリアリン証券": "ABN",
@@ -318,7 +328,9 @@ function drawOptionTable() {
 }
 
 function showMaxPosition() {
-
+    
+    console.log("showMaxPosition optionMap =", optionMap);
+    
     let maxPrice = "";
     let maxCompany = "";
     let maxValue = 0;
@@ -349,7 +361,7 @@ function showMaxPosition() {
     <h2>${Number(maxPrice).toLocaleString()}円</h2>
 
     <p><strong>証券会社</strong></p>
-    <h3>${companyNames[maxCompany]}</h3>
+    <h3>${companyNames[maxCompany] || maxCompany}</h3>
 
     <p><strong>建玉</strong></p>
     <h2>${maxValue.toLocaleString()}枚</h2>

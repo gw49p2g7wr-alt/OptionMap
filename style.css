@@ -765,6 +765,7 @@ canvas {
   
   #marketSummary p {
     margin: 8px 0;
+    white-space: pre-line;
   }
   
   #marketSummary ul {
@@ -842,4 +843,62 @@ canvas {
 .ranking-columns ol{
     margin:0;
     padding-left:20px;
+}
+
+.ai-comment {
+    display: block;
+    white-space: pre-line;
+}
+
+.input-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.input-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+}
+
+.input-column .card {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.input-column > button {
+    align-self: center;
+    width: 320px;
+    max-width: 90%;
+}
+
+.cumulative-chart-card {
+    margin-top: 20px;
+    padding: 20px;
+}
+
+.cumulative-chart-controls {
+    margin: 15px 0;
+}
+
+#cumulativeChart {
+    width: 100%;
+    height: 320px;
+}
+
+.cumulative-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: center;
+    margin: 8px 0 10px;
+    font-size: 13px;
+}
+
+.cumulative-status-note {
+    color: #666;
+    font-size: 12px;
 }

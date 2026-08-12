@@ -14,33 +14,61 @@
 
     <h1>📊 OptionMap</h1>
 
-    <div class="card">
-        <h2>夜間データ</h2>
-        <textarea id="nightData"></textarea>
+    <div class="input-columns">
+
+        <div class="input-column">
+            <div class="card">
+                <h2>夜間データ</h2>
+                <textarea id="nightData"></textarea>
+            </div>
+    
+            <div class="card">
+                <h2>日中データ</h2>
+                <textarea id="dayData"></textarea>
+            </div>
+    
+            <button id="clearInputButton" type="button">
+                夜間・日中データをクリア
+            </button>
+        </div>
+    
+        <div class="input-column">
+            <div class="card">
+                <h2>オプションデータ（週次）</h2>
+                <textarea id="optionData"></textarea>
+            </div>
+    
+            <div class="card">
+                <h2>指数先物建玉（週次）</h2>
+                <textarea id="futureOpenInterestData"></textarea>
+            </div>
+    
+            <button id="clearWeeklyButton" type="button">
+                週次データをクリア
+            </button>
+        </div>
+    
+    </div>
+    
+    <div class="analyze-button-area">
+        <button id="analyzeButton">
+            解析開始
+        </button>
     </div>
 
     <div class="card">
-        <h2>日中データ</h2>
-        <textarea id="dayData"></textarea>
-    </div>
-
-    <div class="card">
-        <h2>オプションデータ</h2>
-        <textarea id="optionData"></textarea>
-    </div>
-
-    <div class="card">
-        <h2>指数先物建玉（週次）</h2>
-        <textarea id="futureOpenInterestData"></textarea>
+        <h2>📝 AIコメント設定</h2>
+      
+        <label>勢力図</label>
+        <textarea id="brokerTemplate" rows="3"></textarea>
+      
+        <label>方向感コメント</label>
+        <textarea id="directionTemplate" rows="3"></textarea>
+      
+        <button id="saveAiTemplateButton">
+          保存
+        </button>
       </div>
-
-    <button id="clearInputButton" type="button">
-        入力データをクリア
-    </button>
-
-    <button id="analyzeButton">
-        解析開始
-    </button>
 
     
     <div class="card chart-card">
@@ -148,6 +176,59 @@
             </div>
             <div id="worldMarketImageArea"></div>
         </details>
+        <div class="card cumulative-chart-card">
+            <h3>📈 建玉累積グラフ</h3>
+        
+            <div class="historical-data-controls">
+                <strong>📚 過去データ一括取得</strong>
+            
+                <label>
+                    開始日
+                    <input type="date" id="historicalStartDate">
+                </label>
+            
+                <label>
+                    終了日
+                    <input type="date" id="historicalEndDate">
+                </label>
+            
+                <button type="button" id="fetchHistoricalDataButton">
+                    過去データを取得
+                </button>
+            
+                <span id="historicalDataStatus"></span>
+            </div>
+
+            <div class="cumulative-chart-controls">
+                <select id="cumulativeBrokerSelect">
+                    <option value="JPM">JPM</option>
+                    <option value="GS">GS</option>
+                    <option value="NOMURA">野村</option>
+                    <option value="BNP">BNP</option>
+                    <option value="ABN">ABN</option>
+                  </select>
+
+                  <select id="cumulativePeriodSelect">
+                    <option value="20" selected>直近20営業日</option>
+                    <option value="1m">1か月</option>
+                    <option value="3m">3か月</option>
+                    <option value="all">全期間</option>
+                  </select>
+
+            </div>
+        
+            <div class="cumulative-status-legend">
+                <span>🔵 買い推定</span>
+                <span>🔴 売り推定</span>
+                <span>⚪ 未確定</span>
+                <span class="cumulative-status-note">
+                    濃色：日中　淡色：夜間
+                </span>
+            </div>
+            
+            
+            <canvas id="cumulativeChart" height="220"></canvas>
+        </div>
             <div class="intelligence-card">
                 <h3>🧬 OptionMap Intelligence</h3>
             
@@ -191,6 +272,39 @@
                 <p id="intelligenceMessage">
                     データの蓄積を始めたばかりです。
                 </p>
+            
+                <div class="weekly-broker-summary">
+
+                    <h4>📊 主要5社 週次判定</h4>
+                
+                    <div id="weeklyBrokerSummary">
+                
+                        <div>JPM：<strong id="weeklyStatusJPM">未確定</strong></div>
+                
+                        <div>GS：<strong id="weeklyStatusGS">未確定</strong></div>
+                
+                        <div>野村：<strong id="weeklyStatusNOMURA">未確定</strong></div>
+                
+                        <div>BNP：<strong id="weeklyStatusBNP">未確定</strong></div>
+                
+                        <div>ABN：<strong id="weeklyStatusABN">未確定</strong></div>
+                
+                    </div>
+                
+                    <div class="weekly-broker-direction">
+                
+                        総合判定：
+                
+                        <strong id="weeklyBrokerDirection">判定待ち</strong>
+                
+                        <p id="weeklyBrokerComment">
+                            週次判定コメントを準備中です。
+                        </p>
+
+                    </div>
+                
+                </div>
+            
             </div>
 
             <div class="comparison-status-card">
@@ -339,6 +453,7 @@
 
     <h2>価格帯マップ</h2>
 
+   
     <table id="optionMapTable" border="1">
     </table>
 
@@ -365,6 +480,7 @@
         <select id="brokerProductSelect">
           <option value="NK225F">日経225先物</option>
           <option value="NK225M">日経225mini</option>
+          <option value="NK225E">日経225マイクロ</option>
           <option value="TOPIXF">TOPIX先物</option>
         </select>
       
@@ -393,6 +509,15 @@
         <option value="日経225mini">日経225mini</option>
         <option value="TOPIX先物">TOPIX先物</option>
       </select>
+    
+      <label for="futureOpenInterestExpiry">
+        表示する限月
+      </label>
+      
+      <select id="futureOpenInterestExpiry">
+        <option value="all">全限月</option>
+      </select>
+    
     </div>
   
     <canvas id="futureOpenInterestChart"></canvas>
@@ -405,15 +530,44 @@
 
 <script type="module">
 
-    import { parseJpxHtml } from "./js/parser/jpxParser.js";
+import { parseJpxHtml } from "./js/parser/jpxParser.js";
+
+const { ipcRenderer } = require("electron");
+const XLSX = require("xlsx");
+ 
     
-    fetch("./data/sample.html")
-        .then(r => r.text())
-        .then(html => {
-    
+ipcRenderer
+    .invoke(
+        "fetch-option-page",
+        "https://svc.qri.jp/jpx/nkopm/"
+    )
+    .then(result => {
+        if (!result.success) {
+            throw new Error(
+                result.error || "オプションページの取得に失敗しました"
+            );
+        }
+
+        const html = result.html;
+
+        console.log(
+    "自動取得HTMLを解析します:",
+    html.length,
+    "文字"
+);
+
            // sample.html全体を文字として取り出す
 const sourceDocument =
     new DOMParser().parseFromString(html, "text/html");
+
+    const links = [
+    ...sourceDocument.querySelectorAll("a[href$='.xlsx']")
+];
+
+console.log(
+    "Excelリンク一覧:",
+    links.map(link => link.getAttribute("href"))
+);
 
 const sourceText =
     sourceDocument.body.textContent || "";
@@ -453,6 +607,11 @@ if (dateMatch) {
 
             const data = parseJpxHtml(html);
     
+            console.log(
+    "自動取得データ解析件数:",
+    data.length
+);
+
             console.log("JPX Parser Result");
     
             console.table(data);
@@ -460,6 +619,11 @@ if (dateMatch) {
             const sortedData = [...data]
        
         .sort((a, b) => a.strike - b.strike);
+
+        console.log(
+    "価格帯用JPXデータ先頭5件:",
+    sortedData.slice(0, 5)
+);
 
             const labels = sortedData.map(item =>
                 item.strike.toLocaleString()
@@ -507,8 +671,720 @@ if (typeof window.drawJpxPriceChart === "function") {
             if (output) {
     output.textContent = "";
 }    
-        });
+})
+    .catch(error => {
+        console.error(
+            "オプションデータの自動取得・解析に失敗:",
+            error
+        );
+    });
+ 
+    ipcRenderer
+    .invoke(
+        "fetch-daytrading-page",
+        "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html"
+    )
+    .then(async result => {
+        console.log("日中データ取得結果:", result);
+
+        if (!result.success) {
+            throw new Error(
+                result.error || "日中データページの取得に失敗しました"
+            );
+        }
+
+        const weeklyPageResult = await ipcRenderer.invoke(
+    "fetch-daytrading-page",
+    "https://www.jpx.co.jp/markets/derivatives/open-interest/index.html"
+);
+
+console.log("週次ページ取得結果:", weeklyPageResult);
+
+if (!weeklyPageResult.success) {
+    throw new Error(
+        weeklyPageResult.error ||
+        "週次データページの取得に失敗しました"
+    );
+}
+
+const weeklyHtml = weeklyPageResult.html;
+
+function getParticipantVolumePage(targetDate) {
     
+    const [year, month] = targetDate.split("-").map(Number);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    if (year === currentYear && month === currentMonth) {
+        return "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html";
+    }
+
+    const archiveNo =
+        (currentYear - year) * 12 +
+        (currentMonth - month);
+
+    return `https://www.jpx.co.jp/markets/derivatives/participant-volume/00-archives-${String(archiveNo).padStart(2, "0")}.html`;
+}
+
+function makeParticipantUrls(dateStr) {
+    const compactDate = dateStr.replaceAll("-", "");
+    const ym = compactDate.slice(0, 6);
+
+    const base =
+        `https://www.jpx.co.jp/automation/markets/derivatives/participant-volume/files/daily/${ym}/`;
+
+    return {
+        dayAuctionUrl:
+            `${base}${compactDate}_volume_by_participant_whole_day.xlsx`,
+
+        dayJnetUrl:
+            `${base}${compactDate}_volume_by_participant_whole_day_J-NET.xlsx`,
+
+        nightAuctionUrl:
+            `${base}${compactDate}_volume_by_participant_night.xlsx`,
+
+        nightJnetUrl:
+            `${base}${compactDate}_volume_by_participant_night_J-NET.xlsx`
+    };
+}
+
+const downloadAndParseHistoricalExcel = async (excelUrl, label) => {
+    const excelResult = await ipcRenderer.invoke(
+        "download-daytrading-excel",
+        excelUrl
+    );
+
+    if (!excelResult.success) {
+        throw new Error(
+            excelResult.error ||
+            `${label}の取得に失敗しました`
+        );
+    }
+
+    const workbook = XLSX.read(excelResult.data, {
+        type: "array"
+    });
+
+    const sheet =
+        workbook.Sheets[workbook.SheetNames[0]];
+
+    const json = XLSX.utils.sheet_to_json(sheet, {
+        header: 1
+    });
+
+    const parsedData = parseDayTradingExcel(json);
+
+    console.log(`📦 ${label}解析完了`, parsedData);
+
+    return parsedData;
+};
+
+const historicalStartDate =
+    document.getElementById("historicalStartDate");
+
+const historicalEndDate =
+    document.getElementById("historicalEndDate");
+
+const fetchHistoricalDataButton =
+    document.getElementById("fetchHistoricalDataButton");
+
+const historicalDataStatus =
+    document.getElementById("historicalDataStatus");
+
+if (fetchHistoricalDataButton) {
+    fetchHistoricalDataButton.addEventListener("click", async () => {
+
+        const startDate = historicalStartDate.value;
+        const endDate = historicalEndDate.value;
+
+        if (!startDate || !endDate) {
+            historicalDataStatus.textContent =
+                "開始日と終了日を選んでください";
+            return;
+        }
+
+        if (startDate > endDate) {
+            historicalDataStatus.textContent =
+                "開始日は終了日より前にしてください";
+            return;
+        }
+
+        console.log("📚 過去データ取得期間 =", {
+            startDate,
+            endDate
+        });
+
+        historicalDataStatus.textContent =
+            `${startDate} ～ ${endDate} を取得準備中`;
+
+// 開始日から終了日まで1日ずつ巡回するテスト
+const currentDate = new Date(startDate + "T00:00:00");
+const lastDate = new Date(endDate + "T00:00:00");
+
+while (currentDate <= lastDate) {
+    const dateStr =
+        currentDate.getFullYear() +
+        "-" +
+        String(currentDate.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(currentDate.getDate()).padStart(2, "0");
+
+    console.log("📅 過去データ巡回 =", dateStr);
+
+    const urls = makeParticipantUrls(dateStr);
+
+    // その日の代表として日中立会Excelが存在するか確認
+const checkResult = await ipcRenderer.invoke(
+    "download-daytrading-excel",
+    urls.dayAuctionUrl
+);
+
+if (!checkResult.success) {
+    console.log("⏭️ データなし・スキップ =", dateStr);
+
+    currentDate.setDate(currentDate.getDate() + 1);
+    continue;
+}
+
+console.log("✅ データあり =", dateStr);
+
+try {
+    const [
+        dayAuction,
+        dayJnet,
+        nightAuction,
+        nightJnet
+    ] = await Promise.all([
+        downloadAndParseHistoricalExcel(
+            urls.dayAuctionUrl,
+            `${dateStr} 日中立会`
+        ),
+        downloadAndParseHistoricalExcel(
+            urls.dayJnetUrl,
+            `${dateStr} 日中J-NET`
+        ),
+        downloadAndParseHistoricalExcel(
+            urls.nightAuctionUrl,
+            `${dateStr} 夜間立会`
+        ),
+        downloadAndParseHistoricalExcel(
+            urls.nightJnetUrl,
+            `${dateStr} 夜間J-NET`
+        )
+    ]);
+
+    console.log("🎉 過去4種類解析完了 =", dateStr, {
+        dayAuction,
+        dayJnet,
+        nightAuction,
+        nightJnet
+    });
+
+    const historicalSnapshot = {
+    sourceDate: `${dateStr}T00:00:00.000Z`,
+    savedAt: new Date().toISOString(),
+    tags: ["過去自動取得"],
+    memo: "",
+    parsedDayData: {
+        dayAuction,
+        dayJnet,
+        nightAuction,
+        nightJnet
+    }
+};
+
+console.log(
+    "💾 過去snapshot作成 =",
+    historicalSnapshot
+);
+
+const storageKey = "optionMapJpxSnapshots";
+
+const savedSnapshots =
+    JSON.parse(
+        localStorage.getItem(storageKey) || "[]"
+    );
+
+// 同じ日付があれば更新、なければ追加
+const existingIndex =
+    savedSnapshots.findIndex(snapshot =>
+        snapshot.sourceDate.slice(0, 10) === dateStr
+    );
+
+if (existingIndex >= 0) {
+    savedSnapshots[existingIndex] =
+        historicalSnapshot;
+} else {
+    savedSnapshots.push(
+        historicalSnapshot
+    );
+}
+
+savedSnapshots.sort((a, b) =>
+    new Date(a.sourceDate) -
+    new Date(b.sourceDate)
+);
+
+localStorage.setItem(
+    storageKey,
+    JSON.stringify(savedSnapshots)
+);
+
+console.log(
+    "✅ 過去snapshot保存完了 =",
+    dateStr
+);
+
+} catch (error) {
+    console.error(
+        "❌ 過去4種類解析失敗 =",
+        dateStr,
+        error
+    );
+}
+
+console.log("🔎 JPX確認 =", {
+    date: dateStr,
+    urls: urls
+});
+
+    currentDate.setDate(currentDate.getDate() + 1);
+}
+
+console.log("✅ 日付巡回完了");
+
+renderSavedSnapshots();
+
+historicalDataStatus.textContent =
+    `${startDate} ～ ${endDate} の取得・保存が完了しました`;
+
+    });
+}
+
+
+const testUrl = getParticipantVolumePage("2026-07-31");
+console.log("テストURL =", testUrl);
+
+const weeklyExcelLinks = [
+    ...weeklyHtml.matchAll(
+        /["']([^"']*(?:indexfut_oi_by_tp|nk225op_oi_by_tp)\.xlsx)["']/g
+    )
+].map(match => match[1]);
+
+console.log("週次Excelリンク一覧:", weeklyExcelLinks);
+
+const latestIndexFutureLink = weeklyExcelLinks.find(link =>
+    link.includes("indexfut_oi_by_tp.xlsx")
+);
+
+const latestNikkeiOptionLink = weeklyExcelLinks.find(link =>
+    link.includes("nk225op_oi_by_tp.xlsx")
+);
+
+console.log("最新・指数先物URL:", latestIndexFutureLink);
+console.log("最新・日経225オプションURL:", latestNikkeiOptionLink);
+
+const weeklyFutureUrl = new URL(
+    latestIndexFutureLink,
+    "https://www.jpx.co.jp"
+).href;
+
+const weeklyOptionUrl = new URL(
+    latestNikkeiOptionLink,
+    "https://www.jpx.co.jp"
+).href;
+
+const weeklyFutureExcel = await ipcRenderer.invoke(
+    "download-daytrading-excel",
+    weeklyFutureUrl
+);
+
+const weeklyOptionExcel = await ipcRenderer.invoke(
+    "download-daytrading-excel",
+    weeklyOptionUrl
+);
+
+console.log("週次先物Excel:", weeklyFutureExcel);
+console.log("週次オプションExcel:", weeklyOptionExcel);
+
+const weeklyFutureWorkbook = XLSX.read(weeklyFutureExcel.data, {
+    type: "array"
+});
+
+const weeklyFutureSheet =
+    weeklyFutureWorkbook.Sheets[
+        weeklyFutureWorkbook.SheetNames[0]
+    ];
+
+    const weeklyFutureJson = XLSX.utils.sheet_to_json(
+    weeklyFutureSheet,
+    {
+        header: 1
+    }
+);
+
+console.log("週次先物JSON", weeklyFutureJson.slice(0, 20));
+const weeklyFutureResult =
+    analyzeFutureOpenInterestJson(weeklyFutureJson);
+    console.log("★ weeklyFutureResult =", weeklyFutureResult);
+
+console.log(
+    "週次先物JSON解析結果:",
+    weeklyFutureResult
+);
+
+window.setLatestFutureOpenInterestResult(
+    weeklyFutureResult
+);
+
+
+const weeklyOptionWorkbook = XLSX.read(weeklyOptionExcel.data, {
+    type: "array"
+});
+
+const weeklyOptionSheet =
+    weeklyOptionWorkbook.Sheets[
+        weeklyOptionWorkbook.SheetNames[0]
+    ];
+
+const weeklyOptionJson = XLSX.utils.sheet_to_json(
+    weeklyOptionSheet,
+    {
+        header: 1
+    }
+);
+
+console.log("週次オプションJSON", weeklyOptionJson.slice(0, 20));
+
+const weeklyOptionResult =
+    analyzeOptionOpenInterestJson(weeklyOptionJson);
+
+console.log(
+    "週次オプションJSON解析結果:",
+    weeklyOptionResult
+);
+if (typeof window.setWeeklyOptionMap === "function") {
+    window.setWeeklyOptionMap(weeklyOptionResult);
+}
+        console.log(
+            "日中データページHTML文字数:",
+            result.html.length
+        );
+
+        function getPreviousWeekday(date = new Date()) {
+    const d = new Date(date);
+
+    // まず前日へ
+    d.setDate(d.getDate() - 1);
+
+    // 土日なら金曜日まで戻る
+    while (d.getDay() === 0 || d.getDay() === 6) {
+        d.setDate(d.getDate() - 1);
+    }
+
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}
+
+async function findLatestParticipantDate(startDate, maxDays = 10) {
+    let date = new Date(startDate);
+
+    for (let i = 0; i < maxDays; i++) {
+
+        // 土日は調べずにスキップ
+        if (date.getDay() !== 0 && date.getDay() !== 6) {
+
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+
+            const dateStr = `${year}-${month}-${day}`;
+            const urls = makeParticipantUrls(dateStr);
+
+            console.log("🔎 手口データ確認中 =", dateStr);
+
+            // まず日中立会Excelが存在するか確認
+            const result = await ipcRenderer.invoke(
+                "download-daytrading-excel",
+                urls.dayAuctionUrl
+            );
+
+            if (result.success) {
+                console.log("✅ 手口データ発見 =", dateStr);
+                return dateStr;
+            }
+        }
+
+        // 見つからなければ1日前へ
+        date.setDate(date.getDate() - 1);
+    }
+
+    throw new Error("直近10日以内に手口データが見つかりませんでした");
+}
+
+const targetDate = await findLatestParticipantDate(
+    getPreviousWeekday()
+);
+console.log("手口データ対象日 =", targetDate);
+
+        const dayData = makeParticipantUrls(targetDate);
+        console.log("日中データ解析結果", dayData);
+
+        const downloadAndParseExcel = async (excelUrl, label) => {
+    if (!excelUrl) {
+        console.warn(`${label}のURLがありません`);
+
+        return parseDayTradingExcel([]);
+    }
+
+    console.log(`${label} URL:`, excelUrl);
+
+    const excelResult = await ipcRenderer.invoke(
+        "download-daytrading-excel",
+        excelUrl
+    );
+
+    console.log(`${label}取得結果:`, excelResult);
+
+    if (!excelResult.success) {
+        throw new Error(
+            excelResult.error ||
+            `${label}の取得に失敗しました`
+        );
+    }
+
+    const workbook = XLSX.read(excelResult.data, {
+        type: "array"
+    });
+
+    const sheet =
+        workbook.Sheets[workbook.SheetNames[0]];
+
+    const json = XLSX.utils.sheet_to_json(sheet, {
+        header: 1
+    });
+
+    const parsedData = parseDayTradingExcel(json);
+
+    console.log(`${label}解析結果:`, parsedData);
+
+    return parsedData;
+};
+
+
+const [
+    dayAuction,
+    dayJnet,
+    nightAuction,
+    nightJnet
+] = await Promise.all([
+    downloadAndParseExcel(
+        dayData.dayAuctionUrl,
+        "日中立会"
+    ),
+    downloadAndParseExcel(
+        dayData.dayJnetUrl,
+        "日中J-NET"
+    ),
+    downloadAndParseExcel(
+        dayData.nightAuctionUrl,
+        "夜間立会"
+    ),
+    downloadAndParseExcel(
+        dayData.nightJnetUrl,
+        "夜間J-NET"
+    )
+]);
+    
+
+
+latestParsedDayData = {
+    dayAuction,
+    dayJnet,
+    nightAuction,
+    nightJnet
+};
+
+if (typeof window.setLatestParsedDayData === "function") {
+    window.setLatestParsedDayData(latestParsedDayData);
+}
+
+console.log(
+    "4種類のExcel解析完了:",
+    latestParsedDayData
+);
+})     
+
+    
+    .catch(error => {
+        console.error(
+            "日中データページ取得エラー:",
+            error
+        );
+    });
+   
+    function parseDayTradingHtml(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    console.log("JPX解析開始");
+
+    const tables = doc.querySelectorAll("table");
+
+    console.log("テーブル数:", tables.length);
+
+    const table = tables[1];
+    if (!table) {
+    console.warn("日中データのテーブルが見つかりません");
+    return null;
+}
+
+const rows = table.querySelectorAll("tr");
+
+console.log("行数:", rows.length);
+
+rows.forEach((row, i) => {
+    console.log(i, row.innerText);
+});
+
+const links = table.querySelectorAll("a");
+
+console.log("リンク数:", links.length);
+
+console.table(
+    Array.from(links).map((link, index) => ({
+        index,
+        text: link.textContent.trim(),
+        href: link.getAttribute("href") || ""
+    }))
+);
+
+const dayAuctionLink = Array.from(links).find(link => {
+    const href = link.getAttribute("href") || "";
+
+    return (
+        href.includes("volume_by_participant_whole_day.xlsx") &&
+        !href.includes("_J-NET")
+    );
+});
+
+const dayJnetLink = Array.from(links).find(link => {
+    const href = link.getAttribute("href") || "";
+
+    return href.includes(
+        "volume_by_participant_whole_day_J-NET.xlsx"
+    );
+});
+
+const nightAuctionLink = Array.from(links).find(link => {
+    const href = link.getAttribute("href") || "";
+
+    return (
+        href.includes("volume_by_participant_night.xlsx") &&
+        !href.includes("_J-NET")
+    );
+});
+
+const nightJnetLink = Array.from(links).find(link => {
+    const href = link.getAttribute("href") || "";
+
+    return href.includes(
+        "volume_by_participant_night_J-NET.xlsx"
+    );
+});
+
+const toAbsoluteUrl = link => {
+    if (!link) return null;
+
+    return new URL(
+        link.getAttribute("href"),
+        "https://www.jpx.co.jp"
+    ).href;
+};
+
+return {
+    dayAuctionUrl: toAbsoluteUrl(dayAuctionLink),
+    dayJnetUrl: toAbsoluteUrl(dayJnetLink),
+    nightAuctionUrl: toAbsoluteUrl(nightAuctionLink),
+    nightJnetUrl: toAbsoluteUrl(nightJnetLink)
+};    
+}
+
+function parseDayTradingExcel(json) {
+    const rows = json.filter(
+        row => Array.isArray(row) && row.length >= 8
+    );
+
+    const productList = [
+    ...new Set(
+        rows
+            .map(row => row[0])
+            .filter(product => product)
+    )
+];
+
+console.log("📋 手口Excelの商品一覧 =", productList);
+
+    const makeRecords = product =>
+    rows
+        .filter(row => row[0] === product)
+        .map(row => ({
+            product: row[0],
+            contractCode: row[1],
+            contractName: row[2],
+            rank: Number(row[3]),
+            reportedVolume: Number(row[4]),
+            company: row[5],
+            companyEnglish: row[6],
+            volume: Number(row[7])
+        }))
+        .filter(item =>
+            Number.isFinite(item.rank) &&
+            Number.isFinite(item.volume) &&
+            item.company
+        );
+
+        const largeRecords = makeRecords("NK225F");
+        const miniRecords = makeRecords("NK225M");
+        const topixRecords = makeRecords("TOPIXF");
+        const microRecords = makeRecords("NK225E");
+        
+        console.log("🔬 マイクロ手口件数 =", microRecords.length);
+        
+        return {
+    large: {
+        records: largeRecords,
+        top10: [...largeRecords]
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 10)
+    },
+
+    mini: {
+        records: miniRecords,
+        top10: [...miniRecords]
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 10)
+    },
+
+    topix: {
+        records: topixRecords,
+        top10: [...topixRecords]
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 10)
+    },
+
+    micro: {
+        records: microRecords,
+        top10: [...microRecords]
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 10)
+    }
+};
+}
     </script>
 
 <div class="version-info">
