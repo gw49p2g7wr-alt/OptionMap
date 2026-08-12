@@ -85,7 +85,7 @@
             <select id="priceSource">
                 <option value="manual">手入力</option>
                 <option value="nikkei225" disabled>日経平均 現物（準備中）</option>
-                <option value="nikkei225-futures" disabled>日経225先物 期近（準備中）</option>
+                <option value="qri-nikkei225-futures" disabled>日経225先物（QRI自動取得）</option>
                 <option value="nikkei225-mini" disabled>日経225ミニ先物 期近（準備中）</option>
             </select>
         
@@ -103,6 +103,10 @@
         
             <span id="currentPriceStatus">
                 現在値：70,000円
+            </span>
+
+            <span id="currentPriceMetadata">
+                手動入力
             </span>
         
         </div>
@@ -561,7 +565,10 @@
 
 <script type="module">
 
-import { parseJpxHtml } from "./js/parser/jpxParser.js";
+import {
+    parseJpxHtml,
+    parseJpxReferencePrices
+} from "./js/parser/jpxParser.js";
 
 const { ipcRenderer } = require("electron");
 const XLSX = require("xlsx");
@@ -580,6 +587,25 @@ ipcRenderer
         }
 
         const html = result.html;
+
+        const referencePrices =
+            parseJpxReferencePrices(html);
+
+        if (
+            typeof window.applyQriNikkei225FuturesPrice ===
+            "function"
+        ) {
+            const priceResult =
+                window.applyQriNikkei225FuturesPrice(
+                    referencePrices,
+                    new Date().toISOString()
+                );
+
+            console.log(
+                "QRI日経225先物参考価格の反映結果:",
+                priceResult
+            );
+        }
 
         console.log(
     "自動取得HTMLを解析します:",

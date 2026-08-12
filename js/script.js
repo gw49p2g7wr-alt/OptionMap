@@ -1735,12 +1735,16 @@ const updateCurrentPriceButton =
 const currentPriceStatus =
     document.getElementById("currentPriceStatus");
 
+const currentPriceMetadata =
+    document.getElementById("currentPriceMetadata");
+
 const priceSource =
     document.getElementById("priceSource");
 
 function applyCurrentPrice({
     value,
     source = "manual",
+    contract = null,
     quotedAt = null,
     fetchedAt = null,
     mode = "manual",
@@ -1772,7 +1776,24 @@ function applyCurrentPrice({
             "円";
     }
 
-    if (priceSource && source) {
+    if (currentPriceMetadata) {
+        currentPriceMetadata.textContent =
+            mode === "automatic"
+                ? [
+                    "自動取得：日経225先物",
+                    contract,
+                    quotedAt ? `価格時刻 ${quotedAt}` : null
+                ].filter(Boolean).join(" / ")
+                : "手動入力";
+    }
+
+    if (
+        priceSource &&
+        source &&
+        [...priceSource.options].some(option =>
+            option.value === source
+        )
+    ) {
         priceSource.value = source;
     }
 
@@ -1789,6 +1810,15 @@ function applyCurrentPrice({
             "optionMapPriceMode",
             mode
         );
+
+        if (contract) {
+            localStorage.setItem(
+                "optionMapPriceContract",
+                String(contract)
+            );
+        } else {
+            localStorage.removeItem("optionMapPriceContract");
+        }
 
         if (quotedAt) {
             localStorage.setItem(
@@ -1828,11 +1858,55 @@ function applyCurrentPrice({
         changed,
         value: currentPrice,
         source,
+        contract,
         quotedAt,
         fetchedAt,
         mode
     };
 }
+
+function applyQriNikkei225FuturesPrice(
+    referencePrices,
+    fetchedAt = new Date().toISOString()
+) {
+    const futures = referencePrices?.nikkei225Futures;
+    const price = Number(futures?.price);
+    const contract =
+        typeof futures?.contract === "string"
+            ? futures.contract.trim()
+            : "";
+    const quotedAt =
+        typeof futures?.quotedAt === "string"
+            ? futures.quotedAt.trim()
+            : "";
+
+    if (
+        futures?.available !== true ||
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        !contract ||
+        !quotedAt
+    ) {
+        return {
+            success: false,
+            changed: false,
+            error: "qri_futures_price_unavailable"
+        };
+    }
+
+    return applyCurrentPrice({
+        value: price,
+        source: "qri-nikkei225-futures",
+        contract,
+        quotedAt,
+        fetchedAt,
+        mode: "automatic"
+    });
+}
+
+window.applyCurrentPrice = applyCurrentPrice;
+window.applyQriNikkei225FuturesPrice =
+    applyQriNikkei225FuturesPrice;
 
 
 // 保存してある現在値を読み込む
@@ -1846,6 +1920,8 @@ if (savedPrice) {
     applyCurrentPrice({
         value: savedPrice,
         source: savedSource || "manual",
+        contract:
+            localStorage.getItem("optionMapPriceContract"),
         quotedAt:
             localStorage.getItem("optionMapPriceQuotedAt"),
         fetchedAt:
@@ -1865,7 +1941,8 @@ if (updateCurrentPriceButton && currentPriceInput) {
     updateCurrentPriceButton.addEventListener("click", function () {
         const result = applyCurrentPrice({
             value: currentPriceInput.value,
-            source: priceSource?.value || "manual",
+            source: "manual",
+            contract: null,
             quotedAt: null,
             fetchedAt: new Date().toISOString(),
             mode: "manual"
