@@ -32,6 +32,121 @@ h1{
 
 }
 
+.data-fetch-status-panel {
+    margin-bottom: 25px;
+    padding: 18px 20px 20px;
+    background: #ffffff;
+    border: 1px solid #dde3ec;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .06);
+}
+
+.data-fetch-status-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.data-fetch-status-header h2 {
+    margin: 0;
+    color: #1b3b6f;
+    font-size: 20px;
+}
+
+.data-fetch-status-actions {
+    color: #667085;
+    font-size: 13px;
+    text-align: right;
+}
+
+.data-fetch-status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.data-fetch-status-card {
+    min-width: 0;
+    padding: 14px 15px;
+    background: #f7f9fc;
+    border: 1px solid #e2e7ef;
+    border-left: 5px solid #98a2b3;
+    border-radius: 10px;
+}
+
+.data-fetch-status-card h3 {
+    margin: 0 0 9px;
+    color: #344054;
+    font-size: 15px;
+}
+
+.data-fetch-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: #eef1f5;
+    color: #667085;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.data-fetch-status-meta,
+.data-fetch-status-note {
+    margin: 9px 0 0;
+    color: #667085;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.data-fetch-status-note {
+    padding-top: 7px;
+    border-top: 1px solid rgba(102, 112, 133, .18);
+    font-weight: 600;
+}
+
+.data-fetch-status-card.is-success { border-left-color: #3c8060; background: #f3faf6; }
+.data-fetch-status-badge.is-success { background: #e4f3e9; color: #2f6f50; }
+.data-fetch-status-card.is-loading { border-left-color: #4c78b8; background: #f2f7fd; }
+.data-fetch-status-badge.is-loading { background: #e4eef9; color: #315f9d; }
+.data-fetch-status-card.is-partial { border-left-color: #c58a24; background: #fff9ed; }
+.data-fetch-status-badge.is-partial { background: #fbecc9; color: #8a5b08; }
+.data-fetch-status-card.is-unavailable { border-left-color: #98a2b3; background: #f7f8fa; }
+.data-fetch-status-badge.is-unavailable { background: #e9edf2; color: #596273; }
+.data-fetch-status-card.is-failed { border-left-color: #b84a46; background: #fdf5f4; }
+.data-fetch-status-badge.is-failed { background: #f8dfdd; color: #9c3834; }
+.data-fetch-status-card.is-idle,
+.data-fetch-status-card.is-unknown { border-left-color: #b4bbc5; background: #f8f9fb; }
+.data-fetch-status-badge.is-idle,
+.data-fetch-status-badge.is-unknown { background: #eceff3; color: #687180; }
+.data-fetch-status-note.is-unavailable { color: #596273; }
+.data-fetch-status-note.is-failed { color: #9c3834; }
+.data-fetch-status-note.is-loading { color: #315f9d; }
+
+@media (max-width: 750px) {
+    .data-fetch-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 550px) {
+    .data-fetch-status-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .data-fetch-status-actions {
+        text-align: left;
+    }
+
+    .data-fetch-status-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 
 /* カード */
 

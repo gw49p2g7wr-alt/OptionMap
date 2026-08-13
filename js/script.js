@@ -54,6 +54,240 @@ const dataFetchState = {
     }
 };
 
+const FETCH_STATUS_PRESENTATION = Object.freeze({
+    [FETCH_STATUS.IDLE]: {
+        label: "未取得",
+        icon: "○",
+        className: "is-idle"
+    },
+    [FETCH_STATUS.LOADING]: {
+        label: "取得中",
+        icon: "…",
+        className: "is-loading"
+    },
+    [FETCH_STATUS.SUCCESS]: {
+        label: "取得済み",
+        icon: "✓",
+        className: "is-success"
+    },
+    [FETCH_STATUS.PARTIAL]: {
+        label: "一部取得",
+        icon: "△",
+        className: "is-partial"
+    },
+    [FETCH_STATUS.UNAVAILABLE]: {
+        label: "未提供",
+        icon: "—",
+        className: "is-unavailable"
+    },
+    [FETCH_STATUS.FAILED]: {
+        label: "取得失敗",
+        icon: "!",
+        className: "is-failed"
+    }
+});
+
+function getFetchStatusPresentation(status) {
+    return FETCH_STATUS_PRESENTATION[status] || {
+        label: "状態不明",
+        icon: "?",
+        className: "is-unknown"
+    };
+}
+
+function parseFetchDate(value) {
+    if (!value) {
+        return null;
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatFetchDateTime(value) {
+    const date = parseFetchDate(value);
+
+    if (!date) {
+        return null;
+    }
+
+    return new Intl.DateTimeFormat("ja-JP", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+    }).format(date);
+}
+
+function formatParticipantSourceDate(value) {
+    const match = String(value || "").match(
+        /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/
+    );
+
+    if (match) {
+        return `${match[1]}/${match[2].padStart(2, "0")}/${match[3].padStart(2, "0")}`;
+    }
+
+    const date = parseFetchDate(value);
+
+    return date
+        ? new Intl.DateTimeFormat("ja-JP", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(date)
+        : null;
+}
+
+function createFetchSourceViewModel(source, sourceState) {
+    const definitions = {
+        qri: { label: "QRIオプション", dateLabel: "データ日時" },
+        participant: { label: "参加者別", dateLabel: "対象日" },
+        weeklyFutures: { label: "週次先物", dateLabel: "データ日" },
+        weeklyOptions: { label: "週次オプション", dateLabel: "データ日" }
+    };
+    const definition = definitions[source];
+    const presentation = getFetchStatusPresentation(sourceState?.status);
+    const notes = [];
+    let meta = null;
+
+    if (sourceState?.sourceDate) {
+        const formattedSourceDate = source === "participant"
+            ? formatParticipantSourceDate(sourceState.sourceDate)
+            : formatFetchDateTime(sourceState.sourceDate);
+
+        if (formattedSourceDate) {
+            meta = `${definition.dateLabel}：${formattedSourceDate}`;
+        }
+    }
+
+    if (
+        !meta &&
+        (source === "weeklyFutures" || source === "weeklyOptions") &&
+        [
+            FETCH_STATUS.SUCCESS,
+            FETCH_STATUS.PARTIAL,
+            FETCH_STATUS.UNAVAILABLE
+        ].includes(sourceState?.status)
+    ) {
+        const completedAt = formatFetchDateTime(sourceState?.fetchedAt);
+
+        if (completedAt) {
+            meta = `取得完了：${completedAt}`;
+        }
+    }
+
+    if (
+        source === "qri" &&
+        sourceState?.details?.openInterest?.status === FETCH_STATUS.UNAVAILABLE
+    ) {
+        notes.push({
+            label: "建玉残",
+            status: FETCH_STATUS.UNAVAILABLE
+        });
+    }
+
+    if (
+        source === "participant" &&
+        [FETCH_STATUS.PARTIAL, FETCH_STATUS.FAILED].includes(sourceState?.status)
+    ) {
+        const participantDetails = {
+            dayRegular: "日中立会",
+            dayJnet: "日中J-NET",
+            nightRegular: "夜間立会",
+            nightJnet: "夜間J-NET"
+        };
+
+        Object.entries(participantDetails).forEach(([detail, label]) => {
+            const detailStatus = sourceState?.details?.[detail]?.status;
+
+            if (detailStatus && detailStatus !== FETCH_STATUS.SUCCESS) {
+                notes.push({ label, status: detailStatus });
+            }
+        });
+    }
+
+    return {
+        label: definition.label,
+        presentation,
+        meta,
+        notes
+    };
+}
+
+function renderDataFetchStatus(state = dataFetchState) {
+    const grid = document.getElementById("dataFetchStatusGrid");
+    const lastUpdated = document.getElementById("dataFetchLastUpdated");
+
+    if (!grid || !lastUpdated) {
+        return;
+    }
+
+    const sources = [
+        "qri",
+        "participant",
+        "weeklyFutures",
+        "weeklyOptions"
+    ];
+    const fragment = document.createDocumentFragment();
+
+    sources.forEach(source => {
+        const viewModel = createFetchSourceViewModel(source, state[source]);
+        const card = document.createElement("article");
+        const title = document.createElement("h3");
+        const status = document.createElement("span");
+
+        card.className = `data-fetch-status-card ${viewModel.presentation.className}`;
+        title.textContent = viewModel.label;
+        status.className = `data-fetch-status-badge ${viewModel.presentation.className}`;
+        status.textContent = `${viewModel.presentation.icon} ${viewModel.presentation.label}`;
+        card.append(title, status);
+
+        if (viewModel.meta) {
+            const meta = document.createElement("p");
+            meta.className = "data-fetch-status-meta";
+            meta.textContent = viewModel.meta;
+            card.append(meta);
+        }
+
+        viewModel.notes.forEach(note => {
+            const notePresentation = getFetchStatusPresentation(note.status);
+            const noteElement = document.createElement("p");
+            noteElement.className = `data-fetch-status-note ${notePresentation.className}`;
+            noteElement.textContent = `${note.label}：${notePresentation.label}`;
+            card.append(noteElement);
+        });
+
+        fragment.append(card);
+    });
+
+    grid.replaceChildren(fragment);
+
+    const latestFetchedAt = sources
+        .map(source => parseFetchDate(state[source]?.fetchedAt))
+        .filter(Boolean)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    lastUpdated.textContent = latestFetchedAt
+        ? `最終取得完了：${formatFetchDateTime(latestFetchedAt)}`
+        : "最終取得完了：未取得";
+}
+
+let dataFetchStatusRenderScheduled = false;
+
+function scheduleRenderDataFetchStatus() {
+    if (dataFetchStatusRenderScheduled) {
+        return;
+    }
+
+    dataFetchStatusRenderScheduled = true;
+    queueMicrotask(() => {
+        dataFetchStatusRenderScheduled = false;
+        renderDataFetchStatus(dataFetchState);
+    });
+}
+
 function updateFetchState(source, patch) {
     const sourceState = dataFetchState[source];
 
@@ -62,6 +296,7 @@ function updateFetchState(source, patch) {
     }
 
     Object.assign(sourceState, patch);
+    scheduleRenderDataFetchStatus();
     return sourceState;
 }
 
@@ -73,6 +308,7 @@ function updateFetchDetail(source, detail, patch) {
     }
 
     Object.assign(detailState, patch);
+    scheduleRenderDataFetchStatus();
     return detailState;
 }
 
@@ -89,6 +325,9 @@ window.dataFetchState = dataFetchState;
 window.updateFetchState = updateFetchState;
 window.updateFetchDetail = updateFetchDetail;
 window.createFetchRequestId = createFetchRequestId;
+window.renderDataFetchStatus = renderDataFetchStatus;
+
+renderDataFetchStatus(dataFetchState);
 
 let myChart = null;
 let futureOpenInterestChart = null;
