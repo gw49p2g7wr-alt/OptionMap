@@ -735,8 +735,13 @@ async function findLatestParticipantDate(startDate, maxDays = 10) {
 async function downloadAndParseParticipantExcel(
     excelUrl,
     label,
-    detail
+    detail,
+    requestId
 ) {
+    if (!isCurrentFetchRequest("participant", requestId)) {
+        return null;
+    }
+
     window.updateFetchDetail("participant", detail, {
         status: window.FETCH_STATUS.LOADING,
         startedAt: new Date().toISOString(),
@@ -775,20 +780,24 @@ async function downloadAndParseParticipantExcel(
         const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         const parsedData = parseDayTradingExcel(json);
 
-        window.updateFetchDetail("participant", detail, {
-            status: window.FETCH_STATUS.SUCCESS,
-            fetchedAt: new Date().toISOString(),
-            error: null
-        });
+        if (isCurrentFetchRequest("participant", requestId)) {
+            window.updateFetchDetail("participant", detail, {
+                status: window.FETCH_STATUS.SUCCESS,
+                fetchedAt: new Date().toISOString(),
+                error: null
+            });
+        }
 
         console.log(`${label}解析結果:`, parsedData);
         return parsedData;
     } catch (error) {
-        window.updateFetchDetail("participant", detail, {
-            status: window.FETCH_STATUS.FAILED,
-            fetchedAt: new Date().toISOString(),
-            error: error?.message || String(error)
-        });
+        if (isCurrentFetchRequest("participant", requestId)) {
+            window.updateFetchDetail("participant", detail, {
+                status: window.FETCH_STATUS.FAILED,
+                fetchedAt: new Date().toISOString(),
+                error: error?.message || String(error)
+            });
+        }
         throw error;
     }
 }
@@ -1191,11 +1200,11 @@ async function fetchWeeklyOptionsData({
     }
 }
 
-async function fetchWeeklyData() {
+async function fetchWeeklyData({ requestId } = {}) {
     const startedAt = new Date().toISOString();
-    const futuresRequestId =
+    const futuresRequestId = requestId ||
         window.createFetchRequestId("weeklyFutures");
-    const optionsRequestId =
+    const optionsRequestId = requestId ||
         window.createFetchRequestId("weeklyOptions");
 
     window.updateFetchState("weeklyFutures", {
@@ -1234,7 +1243,18 @@ async function fetchWeeklyData() {
                 });
             }
         });
-        throw error;
+        return {
+            weeklyPage: null,
+            futuresResult: {
+                status: window.FETCH_STATUS.FAILED,
+                error: error?.message || String(error)
+            },
+            optionsResult: {
+                status: window.FETCH_STATUS.FAILED,
+                error: error?.message || String(error)
+            },
+            error: error?.message || String(error)
+        };
     }
 
     console.log("週次Excelリンク一覧:", weeklyPage.weeklyLinks.all);
@@ -1259,248 +1279,299 @@ async function fetchWeeklyData() {
     return { weeklyPage, futuresResult, optionsResult };
 }
 
-const qriRequestId = window.createFetchRequestId("qri");
-const qriStartedAt = new Date().toISOString();
+function createQriPayload(html) {
+    const referencePrices = parseJpxReferencePrices(html);
+    const sourceDate = extractQriSourceDate(html);
+    const parsedRows = parseJpxHtml(html);
+    const sortedRows = [...parsedRows].sort(
+        (left, right) => left.strike - right.strike
+    );
 
-window.updateFetchState("qri", {
-    status: window.FETCH_STATUS.LOADING,
-    startedAt: qriStartedAt,
-    fetchedAt: null,
-    sourceDate: null,
-    sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
-    error: null,
-    requestId: qriRequestId
-});
+    return {
+        referencePrices,
+        sourceDate,
+        labels: sortedRows.map(item => item.strike.toLocaleString()),
+        callOpenInterest: sortedRows.map(item => item.callOI),
+        putOpenInterest: sortedRows.map(item => item.putOI),
+        callVolume: sortedRows.map(item => item.callVolume),
+        putVolume: sortedRows.map(item => item.putVolume),
+        openInterestAvailable:
+            parsedRows.openInterestAvailable === true,
+        callOpenInterestAvailable:
+            parsedRows.callOpenInterestAvailable === true,
+        putOpenInterestAvailable:
+            parsedRows.putOpenInterestAvailable === true,
+        parsedRows
+    };
+}
 
-[
-    "html",
-    "referencePrice",
-    "optionRows",
-    "openInterest",
-    "volume"
-].forEach(detail => {
-    window.updateFetchDetail("qri", detail, {
-        status: window.FETCH_STATUS.LOADING,
-        startedAt: qriStartedAt,
-        fetchedAt: null,
-        sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
+function validateQriPayload(payload) {
+    if (
+        !payload ||
+        !(payload.sourceDate instanceof Date) ||
+        Number.isNaN(payload.sourceDate.getTime())
+    ) {
+        return false;
+    }
+
+    const arrays = [
+        payload.labels,
+        payload.callOpenInterest,
+        payload.putOpenInterest,
+        payload.callVolume,
+        payload.putVolume
+    ];
+
+    if (
+        arrays.some(value => !Array.isArray(value)) ||
+        payload.labels.length === 0 ||
+        arrays.some(value => value.length !== payload.labels.length)
+    ) {
+        return false;
+    }
+
+    return payload.labels.every((label, index) => {
+        const strike = Number(String(label).replace(/,/g, ""));
+        const values = [
+            payload.callOpenInterest[index],
+            payload.putOpenInterest[index],
+            payload.callVolume[index],
+            payload.putVolume[index]
+        ].map(Number);
+
+        return (
+            Number.isFinite(strike) &&
+            strike > 0 &&
+            values.every(Number.isFinite)
+        );
+    });
+}
+
+function updateQriDetailStates(payload, fetchedAt) {
+    const referencePriceAvailable =
+        payload.referencePrices?.nikkei225?.available === true ||
+        payload.referencePrices?.nikkei225Futures?.available === true;
+    const optionRowsAvailable = payload.labels.length > 0;
+
+    window.updateFetchDetail("qri", "html", {
+        status: window.FETCH_STATUS.SUCCESS,
+        fetchedAt,
         error: null
     });
-});
+    window.updateFetchDetail("qri", "referencePrice", {
+        status: referencePriceAvailable
+            ? window.FETCH_STATUS.SUCCESS
+            : window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt,
+        error: null
+    });
+    window.updateFetchDetail("qri", "optionRows", {
+        status: optionRowsAvailable
+            ? window.FETCH_STATUS.SUCCESS
+            : window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt,
+        error: null
+    });
+    window.updateFetchDetail("qri", "openInterest", {
+        status: payload.openInterestAvailable
+            ? window.FETCH_STATUS.SUCCESS
+            : window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt,
+        error: null
+    });
+    window.updateFetchDetail("qri", "volume", {
+        status: optionRowsAvailable
+            ? window.FETCH_STATUS.SUCCESS
+            : window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt,
+        error: null
+    });
 
-ipcRenderer
-    .invoke(
-        "fetch-option-page",
-        "https://svc.qri.jp/jpx/nkopm/"
-    )
-    .then(result => {
+    return {
+        referencePriceAvailable,
+        optionRowsAvailable
+    };
+}
+
+async function fetchQriData({ requestId } = {}) {
+    const source = "qri";
+    const sourceUrl = "https://svc.qri.jp/jpx/nkopm/";
+    const activeRequestId = requestId ||
+        window.createFetchRequestId(source);
+    const startedAt = new Date().toISOString();
+
+    window.updateFetchState(source, {
+        status: window.FETCH_STATUS.LOADING,
+        startedAt,
+        fetchedAt: null,
+        sourceDate: null,
+        sourceUrl,
+        error: null,
+        requestId: activeRequestId
+    });
+    [
+        "html",
+        "referencePrice",
+        "optionRows",
+        "openInterest",
+        "volume"
+    ].forEach(detail => {
+        window.updateFetchDetail(source, detail, {
+            status: window.FETCH_STATUS.LOADING,
+            startedAt,
+            fetchedAt: null,
+            sourceUrl,
+            error: null
+        });
+    });
+
+    try {
+        const result = await ipcRenderer.invoke(
+            "fetch-option-page",
+            sourceUrl
+        );
+
         if (!result.success) {
             throw new Error(
                 result.error || "オプションページの取得に失敗しました"
             );
         }
 
-        const html = result.html;
-        const htmlFetchedAt = new Date().toISOString();
+        const payload = createQriPayload(result.html);
 
-        window.updateFetchDetail("qri", "html", {
-            status: window.FETCH_STATUS.SUCCESS,
-            fetchedAt: htmlFetchedAt
-        });
+        if (!validateQriPayload(payload)) {
+            throw new Error("QRIオプションデータの解析結果が不正です");
+        }
 
-        const referencePrices =
-            parseJpxReferencePrices(html);
-        const referencePriceAvailable =
-            referencePrices.nikkei225?.available === true ||
-            referencePrices.nikkei225Futures?.available === true;
+        if (!isCurrentFetchRequest(source, activeRequestId)) {
+            return {
+                source,
+                status: "stale",
+                requestId: activeRequestId,
+                sourceUrl,
+                sourceDate: payload.sourceDate.toISOString(),
+                fetchedAt: null,
+                data: null,
+                error: null
+            };
+        }
 
-        window.updateFetchDetail("qri", "referencePrice", {
-            status: referencePriceAvailable
-                ? window.FETCH_STATUS.SUCCESS
-                : window.FETCH_STATUS.UNAVAILABLE,
-            fetchedAt: htmlFetchedAt
-        });
+        const fetchedAt = new Date().toISOString();
+        const sourceDate = payload.sourceDate.toISOString();
 
+        if (typeof window.setJpxSourceTime === "function") {
+            window.setJpxSourceTime(payload.sourceDate);
+        }
+
+        let priceResult = null;
         if (
             typeof window.applyQriNikkei225FuturesPrice ===
             "function"
         ) {
-            const priceResult =
-                window.applyQriNikkei225FuturesPrice(
-                    referencePrices,
-                    new Date().toISOString()
-                );
-
+            priceResult = window.applyQriNikkei225FuturesPrice(
+                payload.referencePrices,
+                fetchedAt,
+                { redraw: false }
+            );
             console.log(
                 "QRI日経225先物参考価格の反映結果:",
                 priceResult
             );
         }
 
-        console.log(
-    "自動取得HTMLを解析します:",
-    html.length,
-    "文字"
-);
+        if (typeof window.drawJpxPriceChart === "function") {
+            window.drawJpxPriceChart(
+                payload.labels,
+                payload.callOpenInterest,
+                payload.putOpenInterest,
+                payload.callVolume,
+                payload.putVolume,
+                {
+                    openInterestAvailable:
+                        payload.openInterestAvailable,
+                    callOpenInterestAvailable:
+                        payload.callOpenInterestAvailable,
+                    putOpenInterestAvailable:
+                        payload.putOpenInterestAvailable
+                }
+            );
 
-           // sample.html全体を文字として取り出す
-const sourceDocument =
-    new DOMParser().parseFromString(html, "text/html");
+            if (
+                typeof window.autoSelectComparisonSnapshot ===
+                "function"
+            ) {
+                window.autoSelectComparisonSnapshot();
+            }
+        } else {
+            console.error("drawJpxPriceChart が見つかりません");
+        }
 
-    const links = [
-    ...sourceDocument.querySelectorAll("a[href$='.xlsx']")
-];
+        const output = document.getElementById("parserOutput");
+        if (output) {
+            output.textContent = "";
+        }
 
-console.log(
-    "Excelリンク一覧:",
-    links.map(link => link.getAttribute("href"))
-);
+        const detailAvailability =
+            updateQriDetailStates(payload, fetchedAt);
+        const hasUnavailableDetail =
+            !detailAvailability.referencePriceAvailable ||
+            !detailAvailability.optionRowsAvailable ||
+            !payload.openInterestAvailable;
+        const status = hasUnavailableDetail
+            ? window.FETCH_STATUS.PARTIAL
+            : window.FETCH_STATUS.SUCCESS;
 
-let qriSourceDate = null;
-const sourceDate = extractQriSourceDate(html);
+        if (!isCurrentFetchRequest(source, activeRequestId)) {
+            return {
+                source,
+                status: "stale",
+                requestId: activeRequestId,
+                sourceUrl,
+                sourceDate,
+                fetchedAt,
+                data: null,
+                error: null
+            };
+        }
 
-if (sourceDate) {
-    qriSourceDate = sourceDate.toISOString();
+        window.updateFetchState(source, {
+            status,
+            fetchedAt,
+            sourceDate,
+            error: null
+        });
 
-    console.log("見つけた元データ日時:", sourceDate);
-
-    if (typeof window.setJpxSourceTime === "function") {
-        window.setJpxSourceTime(sourceDate);
-    }
-
-} else {
-    console.warn("sample.html内に日時が見つかりません");
-}
-
-            const data = parseJpxHtml(html);
-            const optionRowsAvailable = data.length > 0;
-            const openInterestAvailable =
-                data.openInterestAvailable === true;
-
-            window.updateFetchDetail("qri", "optionRows", {
-                status: optionRowsAvailable
-                    ? window.FETCH_STATUS.SUCCESS
-                    : window.FETCH_STATUS.UNAVAILABLE,
-                fetchedAt: htmlFetchedAt
-            });
-            window.updateFetchDetail("qri", "openInterest", {
-                status: openInterestAvailable
-                    ? window.FETCH_STATUS.SUCCESS
-                    : window.FETCH_STATUS.UNAVAILABLE,
-                fetchedAt: htmlFetchedAt
-            });
-            window.updateFetchDetail("qri", "volume", {
-                status: optionRowsAvailable
-                    ? window.FETCH_STATUS.SUCCESS
-                    : window.FETCH_STATUS.UNAVAILABLE,
-                fetchedAt: htmlFetchedAt
-            });
-
-            console.log(
-    "自動取得データ解析件数:",
-    data.length
-);
-
-            console.log("JPX Parser Result");
-
-            console.table(data);
-
-            const sortedData = [...data]
-
-        .sort((a, b) => a.strike - b.strike);
-
-        console.log(
-    "価格帯用JPXデータ先頭5件:",
-    sortedData.slice(0, 5)
-);
-
-            const labels = sortedData.map(item =>
-                item.strike.toLocaleString()
-);
-
-            const callValues = sortedData.map(item =>
-                item.callOI
-);
-
-            const putValues = sortedData.map(item =>
-                item.putOI
-);
-
-            const callVolumes = sortedData.map(item =>
-                item.callVolume
-);
-
-            const putVolumes = sortedData.map(item =>
-                item.putVolume
-);
-
-console.log(
-    "グラフ関数:",
-    typeof window.drawJpxPriceChart
-);
-
-console.log("グラフ用データ件数:", labels.length);
-console.log("CALL先頭5件:", callValues.slice(0, 5));
-console.log("PUT先頭5件:", putValues.slice(0, 5));
-
-if (typeof window.drawJpxPriceChart === "function") {
-    window.drawJpxPriceChart(
-    labels,
-    callValues,
-    putValues,
-    callVolumes,
-    putVolumes,
-    {
-        openInterestAvailable:
-            data.openInterestAvailable === true,
-        callOpenInterestAvailable:
-            data.callOpenInterestAvailable === true,
-        putOpenInterestAvailable:
-            data.putOpenInterestAvailable === true
-    }
-);
-
-    if (
-        typeof window.autoSelectComparisonSnapshot ===
-        "function"
-    ) {
-        window.autoSelectComparisonSnapshot();
-    }
-} else {
-    console.error("drawJpxPriceChart が見つかりません");
-}
-
-            const output = document.getElementById("parserOutput");
-
-            if (output) {
-    output.textContent = "";
-}
-
-const qriHasUnavailableDetail = [
-    "referencePrice",
-    "optionRows",
-    "openInterest",
-    "volume"
-].some(detail =>
-    window.dataFetchState.qri.details[detail].status ===
-        window.FETCH_STATUS.UNAVAILABLE
-);
-
-window.updateFetchState("qri", {
-    status: qriHasUnavailableDetail
-        ? window.FETCH_STATUS.PARTIAL
-        : window.FETCH_STATUS.SUCCESS,
-    fetchedAt: new Date().toISOString(),
-    sourceDate: qriSourceDate,
-    error: null
-});
-})
-    .catch(error => {
+        return {
+            source,
+            status,
+            requestId: activeRequestId,
+            sourceUrl,
+            sourceDate,
+            fetchedAt,
+            data: payload,
+            priceResult,
+            error: null
+        };
+    } catch (error) {
         const errorMessage = error?.message || String(error);
 
-        window.updateFetchState("qri", {
+        if (!isCurrentFetchRequest(source, activeRequestId)) {
+            return {
+                source,
+                status: "stale",
+                requestId: activeRequestId,
+                sourceUrl,
+                sourceDate: null,
+                fetchedAt: null,
+                data: null,
+                error: null
+            };
+        }
+
+        const fetchedAt = new Date().toISOString();
+        window.updateFetchState(source, {
             status: window.FETCH_STATUS.FAILED,
-            fetchedAt: new Date().toISOString(),
+            fetchedAt,
             error: errorMessage
         });
         Object.entries(window.dataFetchState.qri.details)
@@ -1508,9 +1579,9 @@ window.updateFetchState("qri", {
                 detailState.status === window.FETCH_STATUS.LOADING
             )
             .forEach(([detail]) => {
-                window.updateFetchDetail("qri", detail, {
+                window.updateFetchDetail(source, detail, {
                     status: window.FETCH_STATUS.FAILED,
-                    fetchedAt: new Date().toISOString(),
+                    fetchedAt,
                     error: errorMessage
                 });
             });
@@ -1519,9 +1590,24 @@ window.updateFetchState("qri", {
             "オプションデータの自動取得・解析に失敗:",
             error
         );
-    });
 
-async function fetchParticipantData({ requestId } = {}) {
+        return {
+            source,
+            status: window.FETCH_STATUS.FAILED,
+            requestId: activeRequestId,
+            sourceUrl,
+            sourceDate: null,
+            fetchedAt,
+            data: null,
+            error: errorMessage
+        };
+    }
+}
+
+async function fetchParticipantData({
+    requestId,
+    beforeParticipantData
+} = {}) {
     const participantRequestId = requestId ||
         window.createFetchRequestId("participant");
     const participantStartedAt = new Date().toISOString();
@@ -1543,13 +1629,15 @@ async function fetchParticipantData({ requestId } = {}) {
 
         console.log("日中データ取得結果:", result);
 
+        if (typeof beforeParticipantData === "function") {
+            await beforeParticipantData();
+        }
+
         if (!result.success) {
             throw new Error(
                 result.error || "日中データページの取得に失敗しました"
             );
         }
-
-        await fetchWeeklyData();
 
         console.log(
             "日中データページHTML文字数:",
@@ -1560,6 +1648,18 @@ const targetDate = await findLatestParticipantDate(
     getPreviousWeekday()
 );
 console.log("手口データ対象日 =", targetDate);
+
+if (!isCurrentFetchRequest("participant", participantRequestId)) {
+    return {
+        source: "participant",
+        status: "stale",
+        requestId: participantRequestId,
+        sourceDate: targetDate,
+        fetchedAt: null,
+        data: null,
+        error: null
+    };
+}
 
 window.updateFetchState("participant", {
     sourceDate: targetDate
@@ -1577,24 +1677,40 @@ const [
     downloadAndParseParticipantExcel(
         dayData.dayAuctionUrl,
         "日中立会",
-        "dayRegular"
+        "dayRegular",
+        participantRequestId
     ),
     downloadAndParseParticipantExcel(
         dayData.dayJnetUrl,
         "日中J-NET",
-        "dayJnet"
+        "dayJnet",
+        participantRequestId
     ),
     downloadAndParseParticipantExcel(
         dayData.nightAuctionUrl,
         "夜間立会",
-        "nightRegular"
+        "nightRegular",
+        participantRequestId
     ),
     downloadAndParseParticipantExcel(
         dayData.nightJnetUrl,
         "夜間J-NET",
-        "nightJnet"
+        "nightJnet",
+        participantRequestId
     )
 ]);
+
+if (!isCurrentFetchRequest("participant", participantRequestId)) {
+    return {
+        source: "participant",
+        status: "stale",
+        requestId: participantRequestId,
+        sourceDate: targetDate,
+        fetchedAt: null,
+        data: null,
+        error: null
+    };
+}
     
 
 
@@ -1628,40 +1744,124 @@ console.log(
     "4種類のExcel解析完了:",
     latestParsedDayData
 );
+
+return {
+    source: "participant",
+    status: participantHasUnavailableDetail
+        ? window.FETCH_STATUS.PARTIAL
+        : window.FETCH_STATUS.SUCCESS,
+    requestId: participantRequestId,
+    sourceDate: targetDate,
+    fetchedAt: window.dataFetchState.participant.fetchedAt,
+    data: latestParsedDayData,
+    error: null
+};
 }
 
-fetchParticipantData().catch(error => {
-        const errorMessage = error?.message || String(error);
+function handleParticipantFetchError(error, requestId) {
+    const errorMessage = error?.message || String(error);
+    const fetchedAt = new Date().toISOString();
 
-        if (
-            window.dataFetchState.participant.status ===
-            window.FETCH_STATUS.LOADING
-        ) {
-            window.updateFetchState("participant", {
-                status: window.FETCH_STATUS.FAILED,
-                fetchedAt: new Date().toISOString(),
-                error: errorMessage
-            });
+    if (isCurrentFetchRequest("participant", requestId)) {
+        window.updateFetchState("participant", {
+            status: window.FETCH_STATUS.FAILED,
+            fetchedAt,
+            error: errorMessage
+        });
+    }
+
+    console.error("日中データページ取得エラー:", error);
+
+    return {
+        source: "participant",
+        status: window.FETCH_STATUS.FAILED,
+        requestId,
+        sourceDate: null,
+        fetchedAt,
+        data: null,
+        error: errorMessage
+    };
+}
+
+function calculateMarketRefreshStatus(results) {
+    const statuses = Object.values(results)
+        .map(result => result?.status)
+        .filter(Boolean);
+
+    if (
+        statuses.length > 0 &&
+        statuses.every(status => status === window.FETCH_STATUS.SUCCESS)
+    ) {
+        return window.FETCH_STATUS.SUCCESS;
+    }
+
+    if (
+        statuses.length > 0 &&
+        statuses.every(status => status === window.FETCH_STATUS.FAILED)
+    ) {
+        return window.FETCH_STATUS.FAILED;
+    }
+
+    return window.FETCH_STATUS.PARTIAL;
+}
+
+let marketRefreshPromise = null;
+
+function refreshAllMarketData() {
+    if (marketRefreshPromise) {
+        return marketRefreshPromise;
+    }
+
+    const requestId = window.createFetchRequestId("marketRefresh");
+    const startedAt = new Date().toISOString();
+
+    const runRefresh = async () => {
+        let weeklyResult = null;
+        const qriPromise = fetchQriData({ requestId });
+        const participantPromise = fetchParticipantData({
+            requestId,
+            beforeParticipantData: async () => {
+                weeklyResult = await fetchWeeklyData({ requestId });
+            }
+        }).catch(error =>
+            handleParticipantFetchError(error, requestId)
+        );
+
+        const [qriResult, participantResult] = await Promise.all([
+            qriPromise,
+            participantPromise
+        ]);
+
+        if (!weeklyResult) {
+            weeklyResult = await fetchWeeklyData({ requestId });
         }
 
-        ["weeklyFutures", "weeklyOptions"].forEach(source => {
-            if (
-                window.dataFetchState[source].status ===
-                window.FETCH_STATUS.LOADING
-            ) {
-                window.updateFetchState(source, {
-                    status: window.FETCH_STATUS.FAILED,
-                    fetchedAt: new Date().toISOString(),
-                    error: errorMessage
-                });
-            }
-        });
+        const results = {
+            qri: qriResult,
+            participant: participantResult,
+            weeklyFutures: weeklyResult.futuresResult,
+            weeklyOptions: weeklyResult.optionsResult
+        };
 
-        console.error(
-            "日中データページ取得エラー:",
-            error
-        );
+        return {
+            status: calculateMarketRefreshStatus(results),
+            requestId,
+            startedAt,
+            fetchedAt: new Date().toISOString(),
+            results
+        };
+    };
+
+    marketRefreshPromise = runRefresh().finally(() => {
+        marketRefreshPromise = null;
     });
+
+    return marketRefreshPromise;
+}
+
+window.refreshAllMarketData = refreshAllMarketData;
+
+refreshAllMarketData();
    
     function parseDayTradingHtml(html) {
     const doc = new DOMParser().parseFromString(html, "text/html");

@@ -2243,7 +2243,8 @@ function restoreLastQriFuturesPrice() {
 
 function applyQriNikkei225FuturesPrice(
     referencePrices,
-    fetchedAt = new Date().toISOString()
+    fetchedAt = new Date().toISOString(),
+    { redraw = true } = {}
 ) {
     const futures = referencePrices?.nikkei225Futures;
     const price = Number(futures?.price);
@@ -2298,7 +2299,8 @@ function applyQriNikkei225FuturesPrice(
 
     return applyCurrentPrice({
         ...latestQriPrice,
-        mode: "automatic"
+        mode: "automatic",
+        redraw
     });
 }
 
