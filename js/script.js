@@ -1668,10 +1668,19 @@ function drawChart(labels, values) {
     latestBrokerValues = [...values];
 
     const ctx = document.getElementById("myChart");
+    const statusElement =
+        document.getElementById("brokerChartStatus");
 
     if (!ctx) {
         console.error("myChartのcanvasが見つかりません");
         return;
+    }
+
+    ctx.hidden = false;
+
+    if (statusElement) {
+        statusElement.hidden = true;
+        statusElement.textContent = "";
     }
 
     const existingChart = Chart.getChart(ctx);
@@ -2032,6 +2041,33 @@ const rows = Array.from(rowMap.values());
   function updateBrokerChartFromExcel(records) {
     if (!Array.isArray(records) || records.length === 0) {
         console.warn("Excel由来の証券会社データがありません");
+
+        latestBrokerLabels = [];
+        latestBrokerValues = [];
+
+        const canvas = document.getElementById("myChart");
+        const statusElement =
+            document.getElementById("brokerChartStatus");
+        const existingChart = canvas
+            ? Chart.getChart(canvas)
+            : null;
+
+        if (existingChart) {
+            existingChart.destroy();
+        }
+
+        myChart = null;
+
+        if (canvas) {
+            canvas.hidden = true;
+        }
+
+        if (statusElement) {
+            statusElement.textContent =
+                "選択商品のデータがありません";
+            statusElement.hidden = false;
+        }
+
         return;
     }
 

@@ -569,6 +569,7 @@
         </select>
       </div>
     <canvas id="myChart"></canvas>
+    <p id="brokerChartStatus" role="status" hidden></p>
 
 
 </div>
@@ -2006,7 +2007,7 @@ console.log("📋 手口Excelの商品一覧 =", productList);
         );
 
         const largeRecords = makeRecords("NK225F");
-        const miniRecords = makeRecords("NK225M");
+        const miniRecords = makeRecords("NK225MF");
         const topixRecords = makeRecords("TOPIXF");
         const microRecords = makeRecords("NK225E");
         
