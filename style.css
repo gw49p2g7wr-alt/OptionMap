@@ -179,6 +179,12 @@ canvas {
     
 }
 
+.open-interest-data-status {
+    margin: 8px 0 4px;
+    color: #8a5a00;
+    font-size: 0.9rem;
+}
+
 /* CALL・PUT 壁候補カード */
 .wall-summary {
     display: grid;

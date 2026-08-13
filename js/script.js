@@ -51,6 +51,8 @@ let allJpxCallValues = [];
 let allJpxPutValues = [];
 let allJpxCallVolumes = [];
 let allJpxPutVolumes = [];
+let allJpxOpenInterestLabels = [];
+let jpxOpenInterestAvailable = null;
 let currentChartMode = "openInterest";
 let lastJpxFetchedAt = null;
 let currentPrice = 70000;
@@ -2393,6 +2395,20 @@ function switchChartMode(mode) {
     }
 }
 
+function updateOpenInterestDataStatus() {
+    const statusElement =
+        document.getElementById("openInterestDataStatus");
+
+    if (!statusElement) return;
+
+    const unavailable = jpxOpenInterestAvailable === false;
+
+    statusElement.hidden = !unavailable;
+    statusElement.textContent = unavailable
+        ? "QRI建玉残データ未提供（本日の取引高は利用できます）"
+        : "";
+}
+
 if (showOpenInterestButton) {
     showOpenInterestButton.addEventListener(
         "click",
@@ -2843,6 +2859,10 @@ function isValidOptionSnapshot(snapshot) {
         return false;
     }
 
+    if (snapshot.openInterestAvailable === false) {
+        return false;
+    }
+
     const sourceDate = new Date(snapshot.sourceDate);
 
     if (Number.isNaN(sourceDate.getTime())) {
@@ -2974,6 +2994,13 @@ function applyComparisonSnapshot(
     snapshot,
     { selectionMode = "manual" } = {}
 ) {
+    if (jpxOpenInterestAvailable === false) {
+        resetComparisonSelection(
+            "建玉残データ未提供のため市場診断を算出できません"
+        );
+        return false;
+    }
+
     if (!isValidOptionSnapshot(snapshot)) {
         return false;
     }
@@ -3027,7 +3054,7 @@ function applyComparisonSnapshot(
 
     const callDifferenceData =
         createDifferenceData(
-            allJpxLabels,
+            allJpxOpenInterestLabels,
             allJpxCallValues,
             comparisonSnapshot.labels,
             comparisonSnapshot.callOpenInterest
@@ -3035,7 +3062,7 @@ function applyComparisonSnapshot(
 
     const putDifferenceData =
         createDifferenceData(
-            allJpxLabels,
+            allJpxOpenInterestLabels,
             allJpxPutValues,
             comparisonSnapshot.labels,
             comparisonSnapshot.putOpenInterest
@@ -3053,15 +3080,26 @@ function applyComparisonSnapshot(
 }
 
 function autoSelectComparisonSnapshot() {
+    if (jpxOpenInterestAvailable === false) {
+        resetComparisonSelection(
+            "建玉残データ未提供のため市場診断を算出できません",
+            lastJpxFetchedAt instanceof Date &&
+            !Number.isNaN(lastJpxFetchedAt.getTime())
+                ? lastJpxFetchedAt.toISOString()
+                : null
+        );
+        return null;
+    }
+
     if (
         !(lastJpxFetchedAt instanceof Date) ||
         Number.isNaN(lastJpxFetchedAt.getTime()) ||
-        !Array.isArray(allJpxLabels) ||
+        !Array.isArray(allJpxOpenInterestLabels) ||
         !Array.isArray(allJpxCallValues) ||
         !Array.isArray(allJpxPutValues) ||
-        allJpxLabels.length === 0 ||
-        allJpxLabels.length !== allJpxCallValues.length ||
-        allJpxLabels.length !== allJpxPutValues.length
+        allJpxOpenInterestLabels.length === 0 ||
+        allJpxOpenInterestLabels.length !== allJpxCallValues.length ||
+        allJpxOpenInterestLabels.length !== allJpxPutValues.length
     ) {
         resetComparisonSelection("比較データ不足");
         return null;
@@ -4063,6 +4101,17 @@ allJpxLabels =
         ? [...snapshot.labels]
         : [];
 
+jpxOpenInterestAvailable =
+    snapshot.openInterestAvailable !== false &&
+    Array.isArray(snapshot.callOpenInterest) &&
+    Array.isArray(snapshot.putOpenInterest) &&
+    snapshot.callOpenInterest.length === allJpxLabels.length &&
+    snapshot.putOpenInterest.length === allJpxLabels.length;
+
+allJpxOpenInterestLabels = jpxOpenInterestAvailable
+    ? [...allJpxLabels]
+    : [];
+
 allJpxCallValues =
     Array.isArray(snapshot.callOpenInterest)
         ? [...snapshot.callOpenInterest]
@@ -4097,7 +4146,10 @@ window.drawJpxPriceChart(
     allJpxCallValues,
     allJpxPutValues,
     allJpxCallVolumes,
-    allJpxPutVolumes
+    allJpxPutVolumes,
+    {
+        openInterestAvailable: jpxOpenInterestAvailable
+    }
 );
 
 console.log(
@@ -4204,9 +4256,7 @@ if (cumulativePeriodSelect) {
     function saveCurrentJpxSnapshot() {
 
     if (
-        allJpxLabels.length === 0 ||
-        allJpxCallValues.length === 0 ||
-        allJpxPutValues.length === 0
+        allJpxLabels.length === 0
     ) {
         alert("保存できるJPXデータがありません");
         return;
@@ -4244,8 +4294,16 @@ if (cumulativePeriodSelect) {
        
         labels: [...allJpxLabels],
 
-        callOpenInterest: [...allJpxCallValues],
-        putOpenInterest: [...allJpxPutValues],
+        openInterestAvailable:
+            jpxOpenInterestAvailable === true,
+        callOpenInterest:
+            jpxOpenInterestAvailable === true
+                ? [...allJpxCallValues]
+                : [],
+        putOpenInterest:
+            jpxOpenInterestAvailable === true
+                ? [...allJpxPutValues]
+                : [],
 
         callVolume: [...allJpxCallVolumes],
         putVolume: [...allJpxPutVolumes],
@@ -4268,6 +4326,55 @@ if (cumulativePeriodSelect) {
         savedSnapshots.findIndex(item =>
             item.sourceDate === snapshot.sourceDate
         );
+
+    if (
+        existingIndex >= 0 &&
+        jpxOpenInterestAvailable === false
+    ) {
+        const existingSnapshot =
+            savedSnapshots[existingIndex];
+
+        if (
+            isValidOptionSnapshot(existingSnapshot)
+        ) {
+            const currentVolumeByStrike = new Map(
+                snapshot.labels.map((label, index) => [
+                    String(label).replace(/,/g, ""),
+                    {
+                        callVolume:
+                            snapshot.callVolume[index] ?? 0,
+                        putVolume:
+                            snapshot.putVolume[index] ?? 0
+                    }
+                ])
+            );
+
+            snapshot.labels = [...existingSnapshot.labels];
+            snapshot.openInterestAvailable = true;
+            snapshot.callOpenInterest = [
+                ...existingSnapshot.callOpenInterest
+            ];
+            snapshot.putOpenInterest = [
+                ...existingSnapshot.putOpenInterest
+            ];
+            snapshot.callVolume = snapshot.labels.map(
+                (label, index) =>
+                    currentVolumeByStrike.get(
+                        String(label).replace(/,/g, "")
+                    )?.callVolume ??
+                    existingSnapshot.callVolume?.[index] ??
+                    0
+            );
+            snapshot.putVolume = snapshot.labels.map(
+                (label, index) =>
+                    currentVolumeByStrike.get(
+                        String(label).replace(/,/g, "")
+                    )?.putVolume ??
+                    existingSnapshot.putVolume?.[index] ??
+                    0
+            );
+        }
+    }
 
     if (existingIndex >= 0) {
         savedSnapshots[existingIndex] = snapshot;
@@ -4321,8 +4428,18 @@ window.drawJpxPriceChart = function (
     callValues,
     putValues,
     callVolumes,
-    putVolumes
+    putVolumes,
+    sourceAvailability = {}
 ) {    
+    const previousOpenInterestAvailability =
+        jpxOpenInterestAvailable;
+    const hasExplicitOpenInterestAvailability =
+        typeof sourceAvailability.openInterestAvailable === "boolean";
+
+    if (hasExplicitOpenInterestAvailability) {
+        jpxOpenInterestAvailable =
+            sourceAvailability.openInterestAvailable;
+    }
 
     callVolumes = Array.isArray(callVolumes)
     ? callVolumes
@@ -4334,10 +4451,23 @@ putVolumes = Array.isArray(putVolumes)
 
 const optionSourceDataChanged =
     !areJudgmentSourceArraysEqual(labels, allJpxLabels) ||
-    !areJudgmentSourceArraysEqual(callValues, allJpxCallValues) ||
-    !areJudgmentSourceArraysEqual(putValues, allJpxPutValues) ||
     !areJudgmentSourceArraysEqual(callVolumes, allJpxCallVolumes) ||
-    !areJudgmentSourceArraysEqual(putVolumes, allJpxPutVolumes);
+    !areJudgmentSourceArraysEqual(putVolumes, allJpxPutVolumes) ||
+    (
+        jpxOpenInterestAvailable !== false &&
+        (
+            !areJudgmentSourceArraysEqual(
+                callValues,
+                allJpxCallValues
+            ) ||
+            !areJudgmentSourceArraysEqual(
+                putValues,
+                allJpxPutValues
+            )
+        )
+    ) ||
+    previousOpenInterestAvailability !==
+        jpxOpenInterestAvailable;
 
 if (optionSourceDataChanged) {
     invalidateOptionMarketJudgment();
@@ -4346,10 +4476,20 @@ if (optionSourceDataChanged) {
 
        // 新しく読み込んだJPXデータで毎回更新
 allJpxLabels = [...labels];
-allJpxCallValues = [...callValues];
-allJpxPutValues = [...putValues];
 allJpxCallVolumes = [...callVolumes];
 allJpxPutVolumes = [...putVolumes];
+
+if (jpxOpenInterestAvailable !== false) {
+    allJpxOpenInterestLabels = [...labels];
+    allJpxCallValues = [...callValues];
+    allJpxPutValues = [...putValues];
+} else {
+    resetComparisonSelection(
+        "建玉残データ未提供のため市場診断を算出できません"
+    );
+}
+
+updateOpenInterestDataStatus();
 
 console.log(
     "JPX全データ更新:",
@@ -4396,12 +4536,16 @@ if (putWallTitle) {
 const selectedCallValues =
     isVolumeMode
         ? callVolumes
-        : callValues;
+        : jpxOpenInterestAvailable === false
+            ? labels.map(() => 0)
+            : callValues;
 
 const selectedPutValues =
     isVolumeMode
         ? putVolumes
-        : putValues;
+        : jpxOpenInterestAvailable === false
+            ? labels.map(() => 0)
+            : putValues;
 
         const minStrike = currentPrice - 12000;
         const maxStrike = currentPrice + 22000;

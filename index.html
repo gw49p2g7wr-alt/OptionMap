@@ -477,6 +477,12 @@
                 </button>
             </div>
 
+            <div
+                id="openInterestDataStatus"
+                class="open-interest-data-status"
+                hidden
+            ></div>
+
             <div class="chart-container combined-chart-container">
                 <canvas id="combinedPriceChart"></canvas>
             </div>
@@ -717,7 +723,15 @@ if (typeof window.drawJpxPriceChart === "function") {
     callValues,
     putValues,
     callVolumes,
-    putVolumes
+    putVolumes,
+    {
+        openInterestAvailable:
+            data.openInterestAvailable === true,
+        callOpenInterestAvailable:
+            data.callOpenInterestAvailable === true,
+        putOpenInterestAvailable:
+            data.putOpenInterestAvailable === true
+    }
 );
 
     if (

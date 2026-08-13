@@ -4,6 +4,8 @@ export function parseJpxHtml(htmlText) {
 
     const rows = doc.querySelectorAll("tr.row-num");
     const result = [];
+    let callOpenInterestAvailable = false;
+    let putOpenInterestAvailable = false;
 
     rows.forEach(row => {
         const strikeCell = row.querySelector("td.price");
@@ -19,19 +21,41 @@ export function parseJpxHtml(htmlText) {
         }
 
         const cells = row.querySelectorAll("td");
+        const callOpenInterest = parseOptionalNumber(
+            cells[1]?.textContent
+        );
+        const putOpenInterest = parseOptionalNumber(
+            cells[15]?.textContent
+        );
+
+        if (callOpenInterest.available) {
+            callOpenInterestAvailable = true;
+        }
+
+        if (putOpenInterest.available) {
+            putOpenInterestAvailable = true;
+        }
 
         result.push({
             strike,
         
             // CALL
-            callOI: toNumber(cells[1]?.textContent),
+            callOI: callOpenInterest.value,
             callVolume: toNumber(cells[2]?.textContent),
         
             // PUT
             putVolume: toNumber(cells[14]?.textContent),
-            putOI: toNumber(cells[15]?.textContent)
+            putOI: putOpenInterest.value
         });
     });
+
+    result.callOpenInterestAvailable =
+        callOpenInterestAvailable;
+    result.putOpenInterestAvailable =
+        putOpenInterestAvailable;
+    result.openInterestAvailable =
+        callOpenInterestAvailable &&
+        putOpenInterestAvailable;
 
     return result;
 }
@@ -187,4 +211,38 @@ function toNumber(text) {
     return Number.isFinite(number)
         ? number
         : 0;
+}
+
+function parseOptionalNumber(text) {
+    if (text === undefined || text === null) {
+        return {
+            available: false,
+            value: 0
+        };
+    }
+
+    const normalized = String(text).trim();
+
+    if (
+        normalized === "" ||
+        /^[－—–-]$/.test(normalized)
+    ) {
+        return {
+            available: false,
+            value: 0
+        };
+    }
+
+    const cleaned = normalized.replace(/,/g, "");
+    const number = Number(cleaned);
+
+    return Number.isFinite(number)
+        ? {
+            available: true,
+            value: number
+        }
+        : {
+            available: false,
+            value: 0
+        };
 }
