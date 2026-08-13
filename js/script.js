@@ -45,11 +45,13 @@ const dataFetchState = {
     weeklyFutures: {
         ...createFetchSourceState({}),
         signature: null,
+        metadata: null,
         isNew: null
     },
     weeklyOptions: {
         ...createFetchSourceState({}),
         signature: null,
+        metadata: null,
         isNew: null
     }
 };
@@ -153,7 +155,11 @@ function createFetchSourceViewModel(source, sourceState) {
     let meta = null;
 
     if (sourceState?.sourceDate) {
-        const formattedSourceDate = source === "participant"
+        const formattedSourceDate = [
+            "participant",
+            "weeklyFutures",
+            "weeklyOptions"
+        ].includes(source)
             ? formatParticipantSourceDate(sourceState.sourceDate)
             : formatFetchDateTime(sourceState.sourceDate);
 

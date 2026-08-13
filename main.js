@@ -2,8 +2,44 @@ const {
   app,
   BrowserWindow,
   ipcMain,
+  net,
 } = require("electron");
 require("dotenv").config();
+
+ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
+  try {
+    const parsedUrl = new URL(jsonUrl);
+
+    if (
+      parsedUrl.hostname !== "www.jpx.co.jp" ||
+      !/^\/automation\/markets\/derivatives\/open-interest\/json\/open_interest_20\d{2}\.json$/.test(
+        parsedUrl.pathname
+      )
+    ) {
+      throw new Error("許可されていないJPX週次JSON取得先です");
+    }
+
+    const response = await net.fetch(parsedUrl.href, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `JPX週次JSONの取得に失敗しました（HTTP ${response.status}）`
+      );
+    }
+
+    return {
+      success: true,
+      data: await response.json()
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || String(error)
+    };
+  }
+});
 
 
 ipcMain.handle("fetch-option-page", async (event, pageUrl) => {

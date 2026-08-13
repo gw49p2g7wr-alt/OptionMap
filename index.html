@@ -991,6 +991,247 @@ function extractWeeklyExcelLinks(weeklyHtml) {
     };
 }
 
+function parseIsoCalendarDate(year, month, day) {
+    const numericYear = Number(year);
+    const numericMonth = Number(month);
+    const numericDay = Number(day);
+    const candidate = new Date(Date.UTC(
+        numericYear,
+        numericMonth - 1,
+        numericDay
+    ));
+
+    if (
+        !Number.isInteger(numericYear) ||
+        !Number.isInteger(numericMonth) ||
+        !Number.isInteger(numericDay) ||
+        candidate.getUTCFullYear() !== numericYear ||
+        candidate.getUTCMonth() !== numericMonth - 1 ||
+        candidate.getUTCDate() !== numericDay
+    ) {
+        return null;
+    }
+
+    return [
+        String(numericYear).padStart(4, "0"),
+        String(numericMonth).padStart(2, "0"),
+        String(numericDay).padStart(2, "0")
+    ].join("-");
+}
+
+function extractJapaneseCalendarDate(value, { asOf = false } = {}) {
+    const text = String(value ?? "").trim();
+    const pattern = asOf
+        ? /(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日\s*現在/
+        : /^(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日$/;
+    const match = text.match(pattern);
+
+    return match
+        ? parseIsoCalendarDate(match[1], match[2], match[3])
+        : null;
+}
+
+function parseListingTradeDate(value) {
+    const match = String(value ?? "").match(
+        /^(20\d{2})(\d{2})(\d{2})$/
+    );
+
+    return match
+        ? parseIsoCalendarDate(match[1], match[2], match[3])
+        : null;
+}
+
+function parseWeeklySourceUrlDate(sourceUrl, fileName) {
+    if (typeof sourceUrl !== "string") return null;
+
+    let pathname;
+
+    try {
+        pathname = new URL(sourceUrl).pathname;
+    } catch (_error) {
+        return null;
+    }
+
+    const escapedFileName = fileName.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+    );
+    const match = pathname.match(
+        new RegExp(`/(20\\d{6})_${escapedFileName}$`)
+    );
+
+    return match ? parseListingTradeDate(match[1]) : null;
+}
+
+function parseListingUpdatedAt(value) {
+    const match = String(value ?? "").trim().match(
+        /^(20\d{2})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/
+    );
+
+    if (!match) return null;
+
+    const date = parseIsoCalendarDate(match[1], match[2], match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+
+    if (!date || hour > 23 || minute > 59) return null;
+
+    return `${date}T${match[4]}:${match[5]}:00+09:00`;
+}
+
+function selectLatestWeeklyListingRow(listing) {
+    if (!Array.isArray(listing?.TableDatas)) return null;
+
+    return [...listing.TableDatas]
+        .filter(row =>
+            parseListingTradeDate(row?.TradeDate) &&
+            (row?.IndexFutures || row?.IndexOptions)
+        )
+        .sort((left, right) =>
+            String(right.TradeDate).localeCompare(String(left.TradeDate))
+        )[0] || null;
+}
+
+function createWeeklyLinksFromListing(listing) {
+    const row = selectLatestWeeklyListingRow(listing);
+
+    if (!row) return null;
+
+    const resolveUrl = value => value
+        ? new URL(value, "https://www.jpx.co.jp").href
+        : null;
+
+    return {
+        all: [row.IndexFutures, row.IndexOptions].filter(Boolean),
+        weeklyFuturesUrl: resolveUrl(row.IndexFutures),
+        weeklyOptionsUrl: resolveUrl(row.IndexOptions),
+        tradeDate: parseListingTradeDate(row.TradeDate),
+        listingUpdatedAt: parseListingUpdatedAt(listing.UpdateDate)
+    };
+}
+
+function normalizeWeeklyFuturesForSignature(data) {
+    const records = [];
+
+    Object.entries(data?.products || {}).forEach(
+        ([product, productData]) => {
+            Object.entries(productData?.brokers || {}).forEach(
+                ([broker, position]) => {
+                    Object.entries(position?.expiries || {}).forEach(
+                        ([expiry, values]) => {
+                            records.push([
+                                product,
+                                expiry,
+                                broker,
+                                Number(values?.sell) || 0,
+                                Number(values?.buy) || 0,
+                                Number(values?.net) || 0
+                            ]);
+                        }
+                    );
+                }
+            );
+        }
+    );
+
+    return records.sort((left, right) =>
+        String(left[0]).localeCompare(String(right[0]), "ja") ||
+        String(left[1]).localeCompare(String(right[1]), "ja") ||
+        String(left[2]).localeCompare(String(right[2]), "ja")
+    );
+}
+
+function normalizeWeeklyOptionsForSignature(data) {
+    const records = [];
+
+    Object.entries(data?.optionMap || {}).forEach(
+        ([strike, brokers]) => {
+            Object.entries(brokers || {}).forEach(
+                ([broker, position]) => {
+                    records.push([
+                        Number(strike),
+                        broker,
+                        Number(position) || 0
+                    ]);
+                }
+            );
+        }
+    );
+
+    return records.sort((left, right) =>
+        left[0] - right[0] ||
+        String(left[1]).localeCompare(String(right[1]), "ja")
+    );
+}
+
+async function createSha256Signature(normalizedData) {
+    const bytes = new TextEncoder().encode(
+        JSON.stringify(normalizedData)
+    );
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+    return Array.from(new Uint8Array(digest))
+        .map(value => value.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+async function createWeeklyVersionMetadata({
+    source,
+    sourceUrl,
+    sheet,
+    listingTradeDate,
+    listingUpdatedAt,
+    data
+}) {
+    const excelAsOf = extractJapaneseCalendarDate(
+        sheet?.A2?.v,
+        { asOf: true }
+    );
+    const publishedDate = extractJapaneseCalendarDate(sheet?.A3?.v);
+    const fileName = source === "weeklyFutures"
+        ? "indexfut_oi_by_tp.xlsx"
+        : "nk225op_oi_by_tp.xlsx";
+    const urlDate = parseWeeklySourceUrlDate(sourceUrl, fileName);
+    const dateEvidence = {
+        excelAsOf,
+        listingTradeDate: listingTradeDate || null,
+        urlDate,
+        consistent: Boolean(
+            excelAsOf &&
+            listingTradeDate &&
+            urlDate &&
+            excelAsOf === listingTradeDate &&
+            excelAsOf === urlDate
+        )
+    };
+    const normalizedData = source === "weeklyFutures"
+        ? normalizeWeeklyFuturesForSignature(data)
+        : normalizeWeeklyOptionsForSignature(data);
+    const signature = await createSha256Signature(normalizedData);
+    const versionPrefix = source === "weeklyFutures"
+        ? "weekly-futures"
+        : "weekly-options";
+
+    return {
+        sourceDate: excelAsOf,
+        sourceDateKind: "jpx_open_interest_as_of",
+        publishedDate,
+        publishedAt: null,
+        listingUpdatedAt: listingUpdatedAt || null,
+        listingUpdatedAtKind: "jpx_listing_updated_at",
+        sourceUrl,
+        signatureAlgorithm: "sha256",
+        signature,
+        versionKey: excelAsOf
+            ? `${versionPrefix}|${excelAsOf}|sha256:${signature}`
+            : null,
+        dateEvidence,
+        versionAssessment: dateEvidence.consistent
+            ? "confirmed"
+            : "indeterminate"
+    };
+}
+
 function isCurrentFetchRequest(source, requestId) {
     return window.dataFetchState?.[source]?.requestId === requestId;
 }
@@ -1032,13 +1273,43 @@ async function fetchWeeklyPage({ requestId } = {}) {
     }
 
     const weeklyHtml = result.html;
+    const fallbackWeeklyLinks = extractWeeklyExcelLinks(weeklyHtml);
+    const listingJsonUrl =
+        "https://www.jpx.co.jp/automation/markets/derivatives/" +
+        `open-interest/json/open_interest_${new Date().getFullYear()}.json`;
+    let listing = null;
+
+    try {
+        const listingResult = await ipcRenderer.invoke(
+            "fetch-jpx-open-interest-json",
+            listingJsonUrl
+        );
+
+        if (listingResult.success) {
+            listing = listingResult.data;
+        }
+    } catch (error) {
+        console.warn(
+            "週次建玉一覧JSONを取得できませんでした。HTMLリンクを使用します:",
+            error
+        );
+    }
+
+    const listingWeeklyLinks = createWeeklyLinksFromListing(listing);
+    const weeklyLinks = listingWeeklyLinks || {
+        ...fallbackWeeklyLinks,
+        tradeDate: null,
+        listingUpdatedAt: null
+    };
 
     return {
         requestId,
         sourceUrl: WEEKLY_PAGE_URL,
         fetchedAt: new Date().toISOString(),
         weeklyHtml,
-        weeklyLinks: extractWeeklyExcelLinks(weeklyHtml)
+        listingJsonUrl,
+        listing,
+        weeklyLinks
     };
 }
 
@@ -1093,11 +1364,27 @@ async function fetchWeeklyFuturesData({
             return { status: "stale", sourceUrl, data: null };
         }
 
+        const metadata = await createWeeklyVersionMetadata({
+            source,
+            sourceUrl,
+            sheet,
+            listingTradeDate: weeklyLinks.tradeDate,
+            listingUpdatedAt: weeklyLinks.listingUpdatedAt,
+            data
+        });
+
+        if (!isCurrentFetchRequest(source, requestId)) {
+            return { status: "stale", sourceUrl, data: null };
+        }
+
         window.setLatestFutureOpenInterestResult(data);
         const fetchedAt = new Date().toISOString();
         window.updateFetchState(source, {
             status: window.FETCH_STATUS.SUCCESS,
             fetchedAt,
+            sourceDate: metadata.sourceDate,
+            signature: metadata.signature,
+            metadata,
             error: null
         });
 
@@ -1105,6 +1392,7 @@ async function fetchWeeklyFuturesData({
             status: window.FETCH_STATUS.SUCCESS,
             sourceUrl,
             fetchedAt,
+            metadata,
             data
         };
     } catch (error) {
@@ -1175,6 +1463,19 @@ async function fetchWeeklyOptionsData({
             return { status: "stale", sourceUrl, data: null };
         }
 
+        const metadata = await createWeeklyVersionMetadata({
+            source,
+            sourceUrl,
+            sheet,
+            listingTradeDate: weeklyLinks.tradeDate,
+            listingUpdatedAt: weeklyLinks.listingUpdatedAt,
+            data
+        });
+
+        if (!isCurrentFetchRequest(source, requestId)) {
+            return { status: "stale", sourceUrl, data: null };
+        }
+
         if (typeof window.setWeeklyOptionMap === "function") {
             window.setWeeklyOptionMap(data);
         }
@@ -1182,6 +1483,9 @@ async function fetchWeeklyOptionsData({
         window.updateFetchState(source, {
             status: window.FETCH_STATUS.SUCCESS,
             fetchedAt,
+            sourceDate: metadata.sourceDate,
+            signature: metadata.signature,
+            metadata,
             error: null
         });
 
@@ -1189,6 +1493,7 @@ async function fetchWeeklyOptionsData({
             status: window.FETCH_STATUS.SUCCESS,
             sourceUrl,
             fetchedAt,
+            metadata,
             data
         };
     } catch (error) {
@@ -1220,6 +1525,8 @@ async function fetchWeeklyData({ requestId } = {}) {
         startedAt,
         fetchedAt: null,
         sourceDate: null,
+        signature: null,
+        metadata: null,
         sourceUrl: WEEKLY_PAGE_URL,
         error: null,
         requestId: futuresRequestId
@@ -1229,6 +1536,8 @@ async function fetchWeeklyData({ requestId } = {}) {
         startedAt,
         fetchedAt: null,
         sourceDate: null,
+        signature: null,
+        metadata: null,
         sourceUrl: WEEKLY_PAGE_URL,
         error: null,
         requestId: optionsRequestId
