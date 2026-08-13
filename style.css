@@ -56,9 +56,36 @@ h1{
 }
 
 .data-fetch-status-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
     color: #667085;
     font-size: 13px;
     text-align: right;
+}
+
+.data-fetch-refresh-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 126px;
+    margin: 0;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #1b3b6f;
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.data-fetch-refresh-button:hover:not(:disabled) {
+    background: #29508d;
+}
+
+.data-fetch-refresh-button:disabled {
+    background: #8d9bb0;
+    cursor: wait;
+    opacity: .85;
 }
 
 .data-fetch-status-grid {
@@ -139,6 +166,8 @@ h1{
     }
 
     .data-fetch-status-actions {
+        width: 100%;
+        justify-content: space-between;
         text-align: left;
     }
 

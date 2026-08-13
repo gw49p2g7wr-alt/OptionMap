@@ -329,6 +329,43 @@ window.renderDataFetchStatus = renderDataFetchStatus;
 
 renderDataFetchStatus(dataFetchState);
 
+const refreshAllMarketDataButton =
+    document.getElementById("refreshAllMarketDataButton");
+
+async function handleRefreshAllMarketDataClick() {
+    if (
+        !refreshAllMarketDataButton ||
+        refreshAllMarketDataButton.disabled
+    ) {
+        return null;
+    }
+
+    if (typeof window.refreshAllMarketData !== "function") {
+        console.error("refreshAllMarketData が見つかりません");
+        return null;
+    }
+
+    refreshAllMarketDataButton.disabled = true;
+    refreshAllMarketDataButton.textContent = "更新中…";
+
+    try {
+        return await window.refreshAllMarketData();
+    } catch (error) {
+        console.error("市場データの一括更新に失敗:", error);
+        return null;
+    } finally {
+        refreshAllMarketDataButton.disabled = false;
+        refreshAllMarketDataButton.textContent = "🔄 すべて更新";
+    }
+}
+
+if (refreshAllMarketDataButton) {
+    refreshAllMarketDataButton.addEventListener(
+        "click",
+        handleRefreshAllMarketDataClick
+    );
+}
+
 let myChart = null;
 let futureOpenInterestChart = null;
 let latestFutureOpenInterestResult = null;
