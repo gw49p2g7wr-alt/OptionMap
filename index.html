@@ -340,6 +340,10 @@
                 <div class="weekly-broker-summary">
 
                     <h4>📊 主要5社 週次判定</h4>
+
+                    <p id="weeklyBrokerVersionStatus">
+                        正式な異なる2週分のデータ待ち
+                    </p>
                 
                     <div id="weeklyBrokerSummary">
                 
@@ -1587,6 +1591,94 @@ async function validateWeeklyCache(cache, source) {
 
     return recalculatedSignature === cache.signature;
 }
+
+async function getActiveWeeklyFuturesSnapshotMetadata() {
+    const cache = activeWeeklyFuturesCache;
+
+    if (
+        !cache ||
+        !(await validateWeeklyCache(cache, "weeklyFutures"))
+    ) {
+        return null;
+    }
+
+    return {
+        metadataVersion: 1,
+        source: cache.source,
+        sourceDate: cache.sourceDate,
+        sourceDateKind: cache.sourceDateKind,
+        publishedDate: cache.publishedDate,
+        publishedAt: cache.publishedAt,
+        listingUpdatedAt: cache.listingUpdatedAt,
+        listingUpdatedAtKind: cache.listingUpdatedAtKind,
+        sourceUrl: cache.sourceUrl,
+        signatureAlgorithm: cache.signatureAlgorithm,
+        signature: cache.signature,
+        versionKey: cache.versionKey,
+        versionAssessment: cache.versionAssessment,
+        dateEvidence: { ...cache.dateEvidence },
+        origin: window.weeklyFuturesDataState?.origin || null,
+        dataStatus: window.weeklyFuturesDataState?.status || null,
+        remoteCheckStatus:
+            window.weeklyFuturesDataState?.remoteCheckStatus || null,
+        observedLatestTradeDate:
+            window.weeklyFuturesDataState?.observedLatestTradeDate || null
+    };
+}
+
+async function validateWeeklyFuturesSnapshotMetadata(
+    metadata,
+    futureOpenInterest
+) {
+    const validObservedDate =
+        metadata?.observedLatestTradeDate === null ||
+        parseIsoCalendarDate(
+            ...String(metadata?.observedLatestTradeDate || "").split("-")
+        ) === metadata.observedLatestTradeDate;
+
+    if (
+        !isPlainWeeklyObject(metadata) ||
+        !["live", "cache"].includes(metadata.origin) ||
+        ![null, "latest", "waiting_update"].includes(
+            metadata.dataStatus
+        ) ||
+        ![
+            "current",
+            "pending",
+            "newer_available",
+            "failed"
+        ].includes(metadata.remoteCheckStatus) ||
+        !validObservedDate
+    ) {
+        return false;
+    }
+
+    const cache = {
+        version: metadata.metadataVersion,
+        source: metadata.source,
+        sourceDate: metadata.sourceDate,
+        sourceDateKind: metadata.sourceDateKind,
+        publishedDate: metadata.publishedDate,
+        publishedAt: metadata.publishedAt,
+        listingUpdatedAt: metadata.listingUpdatedAt,
+        listingUpdatedAtKind: metadata.listingUpdatedAtKind,
+        fetchedAt: new Date().toISOString(),
+        sourceUrl: metadata.sourceUrl,
+        signatureAlgorithm: metadata.signatureAlgorithm,
+        signature: metadata.signature,
+        versionKey: metadata.versionKey,
+        dateEvidence: metadata.dateEvidence,
+        versionAssessment: metadata.versionAssessment,
+        data: futureOpenInterest
+    };
+
+    return validateWeeklyCache(cache, "weeklyFutures");
+}
+
+window.getActiveWeeklyFuturesSnapshotMetadata =
+    getActiveWeeklyFuturesSnapshotMetadata;
+window.validateWeeklyFuturesSnapshotMetadata =
+    validateWeeklyFuturesSnapshotMetadata;
 
 function createWeeklyCache({ source, metadata, fetchedAt, data }) {
     const configuration = getWeeklyCacheConfiguration(source);

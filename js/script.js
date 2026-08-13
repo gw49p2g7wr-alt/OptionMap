@@ -90,6 +90,13 @@ function updateWeeklyDataState(source, patch) {
 
     Object.assign(state, patch);
     scheduleRenderDataFetchStatus();
+
+    if (
+        source === "weeklyFutures" &&
+        typeof renderSavedSnapshots === "function"
+    ) {
+        setTimeout(() => renderSavedSnapshots(), 0);
+    }
     return state;
 }
 
@@ -4187,7 +4194,289 @@ function calculateWeeklyBrokerJudgment(
     };
 }
 
-function renderSavedSnapshots() {
+async function getConfirmedWeeklyFuturesSnapshotCandidates(snapshots) {
+    if (
+        !Array.isArray(snapshots) ||
+        typeof window.validateWeeklyFuturesSnapshotMetadata !== "function"
+    ) {
+        return [];
+    }
+
+    const candidates = [];
+    let metadataSnapshotCount = 0;
+    let invalidMetadataCount = 0;
+    let legacySnapshotCount = 0;
+
+    for (const snapshot of snapshots) {
+        if (
+            snapshot?.futureOpenInterest &&
+            !snapshot?.weeklyFutures
+        ) {
+            legacySnapshotCount += 1;
+        }
+
+        if (
+            !snapshot?.futureOpenInterest ||
+            !snapshot?.weeklyFutures
+        ) {
+            continue;
+        }
+
+        metadataSnapshotCount += 1;
+
+        let valid = false;
+
+        try {
+            valid = await window.validateWeeklyFuturesSnapshotMetadata(
+                snapshot.weeklyFutures,
+                snapshot.futureOpenInterest
+            );
+        } catch (error) {
+            console.warn("週次先物snapshotの検証に失敗:", error);
+        }
+
+        if (!valid) {
+            invalidMetadataCount += 1;
+            continue;
+        }
+
+        candidates.push({
+            date: snapshot.weeklyFutures.sourceDate,
+            sourceDate: snapshot.weeklyFutures.sourceDate,
+            signature: snapshot.weeklyFutures.signature,
+            versionKey: snapshot.weeklyFutures.versionKey,
+            listingUpdatedAt:
+                snapshot.weeklyFutures.listingUpdatedAt,
+            savedAt: snapshot.savedAt || null,
+            futureOpenInterest: snapshot.futureOpenInterest,
+            weeklyFutures: {
+                ...snapshot.weeklyFutures,
+                dateEvidence: {
+                    ...snapshot.weeklyFutures.dateEvidence
+                }
+            }
+        });
+    }
+
+    Object.assign(candidates, {
+        metadataSnapshotCount,
+        invalidMetadataCount,
+        legacySnapshotCount
+    });
+
+    return candidates;
+}
+
+function selectLatestTwoConfirmedWeeklyFuturesVersions(candidates) {
+    if (!Array.isArray(candidates)) {
+        return {
+            versions: [],
+            allVersions: [],
+            confirmedVersionCount: 0,
+            ambiguousSourceDates: [],
+            metadataSnapshotCount: 0,
+            invalidMetadataCount: 0,
+            legacySnapshotCount: 0
+        };
+    }
+
+    const byVersionKey = new Map();
+
+    candidates.forEach(candidate => {
+        const existing = byVersionKey.get(candidate.versionKey);
+        const candidateSavedAt = new Date(candidate.savedAt).getTime();
+        const existingSavedAt = new Date(existing?.savedAt).getTime();
+
+        if (
+            !existing ||
+            (Number.isFinite(candidateSavedAt) &&
+                (!Number.isFinite(existingSavedAt) ||
+                    candidateSavedAt >= existingSavedAt))
+        ) {
+            byVersionKey.set(candidate.versionKey, candidate);
+        }
+    });
+
+    const bySourceDate = new Map();
+
+    [...byVersionKey.values()].forEach(candidate => {
+        const versions = bySourceDate.get(candidate.sourceDate) || [];
+        versions.push(candidate);
+        bySourceDate.set(candidate.sourceDate, versions);
+    });
+
+    const resolvedVersions = [];
+    const ambiguousSourceDates = [];
+
+    bySourceDate.forEach((versions, sourceDate) => {
+        if (versions.length === 1) {
+            resolvedVersions.push(versions[0]);
+            return;
+        }
+
+        const sorted = [...versions].sort((left, right) => {
+            const listingDifference =
+                new Date(right.listingUpdatedAt).getTime() -
+                new Date(left.listingUpdatedAt).getTime();
+
+            if (listingDifference !== 0) return listingDifference;
+
+            return (
+                new Date(right.savedAt).getTime() -
+                new Date(left.savedAt).getTime()
+            );
+        });
+        const first = sorted[0];
+        const second = sorted[1];
+        const firstListing = new Date(first.listingUpdatedAt).getTime();
+        const secondListing = new Date(second.listingUpdatedAt).getTime();
+        const firstSaved = new Date(first.savedAt).getTime();
+        const secondSaved = new Date(second.savedAt).getTime();
+
+        if (
+            !Number.isFinite(firstListing) ||
+            !Number.isFinite(secondListing) ||
+            (firstListing === secondListing &&
+                (!Number.isFinite(firstSaved) ||
+                    !Number.isFinite(secondSaved) ||
+                    firstSaved === secondSaved))
+        ) {
+            ambiguousSourceDates.push(sourceDate);
+            return;
+        }
+
+        resolvedVersions.push(first);
+    });
+
+    resolvedVersions.sort((left, right) =>
+        left.sourceDate.localeCompare(right.sourceDate)
+    );
+
+    return {
+        versions: resolvedVersions.slice(-2),
+        allVersions: [...resolvedVersions],
+        confirmedVersionCount: resolvedVersions.length,
+        ambiguousSourceDates,
+        metadataSnapshotCount:
+            Number(candidates.metadataSnapshotCount) || 0,
+        invalidMetadataCount:
+            Number(candidates.invalidMetadataCount) || 0,
+        legacySnapshotCount:
+            Number(candidates.legacySnapshotCount) || 0
+    };
+}
+
+function getWeeklyJudgmentAvailability(selection) {
+    const state = weeklyFuturesDataState;
+    const current = selection.versions.at(-1) || null;
+
+    if (state.remoteCheckStatus === "pending") {
+        return { available: false, reason: "remote_check_pending" };
+    }
+
+    if (state.remoteCheckStatus === "failed") {
+        return { available: false, reason: "remote_check_failed" };
+    }
+
+    if (
+        state.status === "waiting_update" ||
+        state.remoteCheckStatus === "newer_available"
+    ) {
+        return { available: false, reason: "waiting_for_newer_version" };
+    }
+
+    if (selection.versions.length < 2) {
+        let reason = "distinct_confirmed_versions_required";
+
+        if (selection.ambiguousSourceDates.length > 0) {
+            reason = "ambiguous_revision";
+        } else if (
+            selection.invalidMetadataCount > 0 &&
+            selection.confirmedVersionCount === 0
+        ) {
+            reason = "invalid_metadata";
+        } else if (
+            selection.metadataSnapshotCount === 0 &&
+            selection.legacySnapshotCount > 0
+        ) {
+            reason = "legacy_snapshot_only";
+        }
+
+        return {
+            available: false,
+            reason
+        };
+    }
+
+    if (
+        state.status !== "latest" ||
+        state.remoteCheckStatus !== "current" ||
+        !state.versionKey ||
+        state.versionKey !== current.versionKey
+    ) {
+        return { available: false, reason: "active_version_mismatch" };
+    }
+
+    return { available: true, reason: null };
+}
+
+function formatWeeklyVersionDate(value) {
+    const match = String(value || "").match(
+        /^\d{4}-(\d{2})-(\d{2})$/
+    );
+    return match ? `${match[1]}/${match[2]}` : "--/--";
+}
+
+function renderWeeklyBrokerVersionStatus(selection, availability) {
+    const element = document.getElementById(
+        "weeklyBrokerVersionStatus"
+    );
+
+    if (!element) return;
+
+    if (availability.available) {
+        const [previous, current] = selection.versions;
+        element.textContent =
+            `比較：${formatWeeklyVersionDate(current.sourceDate)}現在 vs ` +
+            `${formatWeeklyVersionDate(previous.sourceDate)}現在`;
+        return;
+    }
+
+    const reasonMessages = {
+        remote_check_pending: "最新版確認中のため週次判定を保留",
+        remote_check_failed: "最新版確認失敗のため週次判定を保留",
+        waiting_for_newer_version:
+            weeklyFuturesDataState.observedLatestTradeDate
+                ? `新版 ${formatWeeklyVersionDate(
+                    weeklyFuturesDataState.observedLatestTradeDate
+                )} を確認済み・取得待ち`
+                : "新版を確認済み・取得待ち",
+        active_version_mismatch:
+            "現在の正式週次版と保存履歴が一致していません",
+        ambiguous_revision:
+            "同日訂正版の順序を確認できないため週次判定を保留",
+        invalid_metadata:
+            "週次版metadataを検証できないため正式比較不可",
+        legacy_snapshot_only:
+            "旧形式データのみのため正式比較不可"
+    };
+
+    if (
+        availability.reason ===
+            "distinct_confirmed_versions_required" &&
+        selection.confirmedVersionCount === 1
+    ) {
+        element.textContent = "正式週次版が1週分のみ";
+        return;
+    }
+
+    element.textContent = reasonMessages[availability.reason] ||
+        "正式な異なる2週分のデータ待ち";
+}
+
+let weeklySnapshotRenderRequestId = 0;
+
+async function renderSavedSnapshots() {
 
     if (!savedSnapshotList) {
         return;
@@ -4197,17 +4486,21 @@ function renderSavedSnapshots() {
 
     let savedSnapshots = [];
 
+    const renderRequestId = ++weeklySnapshotRenderRequestId;
+
     try {
         savedSnapshots = JSON.parse(
             localStorage.getItem(storageKey) || "[]"
         );
 
-        const weeklySnapshots = savedSnapshots
-        .filter(snapshot => snapshot?.futureOpenInterest)
-        .map(snapshot => ({
-            date: snapshot.sourceDate.slice(0, 10),
-            futureOpenInterest: snapshot.futureOpenInterest
-        }));
+        const weeklySnapshots =
+            await getConfirmedWeeklyFuturesSnapshotCandidates(
+                savedSnapshots
+            );
+
+        if (renderRequestId !== weeklySnapshotRenderRequestId) {
+            return;
+        }
     
     console.log(
         "📚 保存済み週次建玉一覧 =",
@@ -4230,19 +4523,19 @@ function renderSavedSnapshots() {
         weeklyCheck
     );
     
-    const uniqueWeeklySnapshots = [];
+    const weeklySelection =
+        selectLatestTwoConfirmedWeeklyFuturesVersions(
+            weeklySnapshots
+        );
+    const uniqueWeeklySnapshots = weeklySelection.versions;
+    const allConfirmedWeeklySnapshots = weeklySelection.allVersions;
+    const weeklyAvailability =
+        getWeeklyJudgmentAvailability(weeklySelection);
 
-    let previousSignature = null;
-    
-    weeklySnapshots.forEach(item => {
-        const signature =
-            JSON.stringify(item.futureOpenInterest);
-    
-        if (signature !== previousSignature) {
-            uniqueWeeklySnapshots.push(item);
-            previousSignature = signature;
-        }
-    });
+    renderWeeklyBrokerVersionStatus(
+        weeklySelection,
+        weeklyAvailability
+    );
     
     console.log(
         "✨ 重複除外した週次建玉 =",
@@ -4278,6 +4571,26 @@ function renderSavedSnapshots() {
             "比較できる週次データが不足しています。";
     }
 
+    const weeklyStatusIds = {
+        JPM: "weeklyStatusJPM",
+        GS: "weeklyStatusGS",
+        NOMURA: "weeklyStatusNOMURA",
+        BNP: "weeklyStatusBNP",
+        ABN: "weeklyStatusABN"
+    };
+
+    Object.values(weeklyStatusIds).forEach(elementId => {
+        const element = document.getElementById(elementId);
+        if (element) element.textContent = "○ 未確定";
+    });
+
+    const weeklyDirectionElement =
+        document.getElementById("weeklyBrokerDirection");
+
+    if (weeklyDirectionElement) {
+        weeklyDirectionElement.textContent = "判定待ち";
+    }
+
     const brokerMap = weeklyBrokerMap;
 
     const weeklyDirectionChangeElement =
@@ -4288,7 +4601,10 @@ function renderSavedSnapshots() {
             "比較データ不足";
     }
     
-    if (uniqueWeeklySnapshots.length >= 2) {
+    if (
+        uniqueWeeklySnapshots.length >= 2 &&
+        weeklyAvailability.available
+    ) {
         const previousWeekly =
             uniqueWeeklySnapshots[uniqueWeeklySnapshots.length - 2];
 
@@ -4305,8 +4621,23 @@ function renderSavedSnapshots() {
             available: true,
             judgment: currentWeeklyJudgment,
             metadata: {
-                from: previousWeekly.date,
-                to: currentWeekly.date
+                status: "complete",
+                previous: {
+                    sourceDate: previousWeekly.sourceDate,
+                    versionKey: previousWeekly.versionKey,
+                    signature: previousWeekly.signature
+                },
+                current: {
+                    sourceDate: currentWeekly.sourceDate,
+                    versionKey: currentWeekly.versionKey,
+                    signature: currentWeekly.signature
+                },
+                activeVersionKey: weeklyFuturesDataState.versionKey,
+                activeVersionMatched: true,
+                origin: weeklyFuturesDataState.origin,
+                dataStatus: weeklyFuturesDataState.status,
+                remoteCheckStatus:
+                    weeklyFuturesDataState.remoteCheckStatus
             }
         };
 
@@ -4328,17 +4659,6 @@ function renderSavedSnapshots() {
             unconfirmed: "○ 未確定"
         };
         
-        const weeklyStatusIds = {
-            JPM: "weeklyStatusJPM",
-            GS: "weeklyStatusGS",
-            NOMURA: "weeklyStatusNOMURA",
-            BNP: "weeklyStatusBNP",
-            ABN: "weeklyStatusABN"
-        };
-        
-        const weeklyDirectionElement =
-        document.getElementById("weeklyBrokerDirection");
-    
         if (weeklyDirectionElement) {
             const {
                 buyScore,
@@ -4489,12 +4809,12 @@ function renderSavedSnapshots() {
 
         if (
             weeklyDirectionChangeElement &&
-            uniqueWeeklySnapshots.length >= 3
+            allConfirmedWeeklySnapshots.length >= 3
         ) {
             const previousWeeklyJudgment =
                 calculateWeeklyBrokerJudgment(
-                    uniqueWeeklySnapshots[
-                        uniqueWeeklySnapshots.length - 3
+                    allConfirmedWeeklySnapshots[
+                        allConfirmedWeeklySnapshots.length - 3
                     ],
                     previousWeekly
                 );
@@ -4521,13 +4841,31 @@ function renderSavedSnapshots() {
 
     }
 
-    if (uniqueWeeklySnapshots.length >= 2) {
-        for (let i = 1; i < uniqueWeeklySnapshots.length; i++) {
+    if (!weeklyAvailability.available) {
+        optionMapJudgmentState.weekly = {
+            available: false,
+            judgment: null,
+            metadata: {
+                status: "insufficient_data",
+                reason: weeklyAvailability.reason,
+                confirmedVersionCount:
+                    weeklySelection.confirmedVersionCount,
+                origin: weeklyFuturesDataState.origin,
+                dataStatus: weeklyFuturesDataState.status,
+                remoteCheckStatus:
+                    weeklyFuturesDataState.remoteCheckStatus
+            }
+        };
+        renderOptionMapOverallJudgment();
+    }
+
+    if (allConfirmedWeeklySnapshots.length >= 2) {
+        for (let i = 1; i < allConfirmedWeeklySnapshots.length; i++) {
             const previousWeekly =
-                uniqueWeeklySnapshots[i - 1];
+                allConfirmedWeeklySnapshots[i - 1];
     
             const currentWeekly =
-                uniqueWeeklySnapshots[i];
+                allConfirmedWeeklySnapshots[i];
     
                 const intervalBrokers = {};
 
@@ -5177,7 +5515,7 @@ if (cumulativePeriodSelect) {
     );
 }
 
-    function saveCurrentJpxSnapshot() {
+    async function saveCurrentJpxSnapshot() {
 
     if (qriOpenInterestDataState.usingFallback === true) {
         const message =
@@ -5202,6 +5540,40 @@ if (cumulativePeriodSelect) {
         !Number.isNaN(lastJpxFetchedAt.getTime())
             ? lastJpxFetchedAt
             : new Date();
+
+    let weeklyFuturesMetadata = null;
+
+    if (
+        latestFutureOpenInterestResult &&
+        typeof window.getActiveWeeklyFuturesSnapshotMetadata ===
+            "function" &&
+        typeof window.validateWeeklyFuturesSnapshotMetadata ===
+            "function"
+    ) {
+        try {
+            const candidateMetadata =
+                await window.getActiveWeeklyFuturesSnapshotMetadata();
+            const validMetadata = candidateMetadata &&
+                await window.validateWeeklyFuturesSnapshotMetadata(
+                    candidateMetadata,
+                    latestFutureOpenInterestResult
+                );
+
+            if (validMetadata) {
+                weeklyFuturesMetadata = {
+                    ...candidateMetadata,
+                    dateEvidence: {
+                        ...candidateMetadata.dateEvidence
+                    }
+                };
+            }
+        } catch (error) {
+            console.warn(
+                "週次先物metadataをsnapshotへ追加できませんでした:",
+                error
+            );
+        }
+    }
 
     const snapshot = {
         sourceDate: sourceDate.toISOString(),
@@ -5244,6 +5616,10 @@ if (cumulativePeriodSelect) {
         putVolume: [...allJpxPutVolumes],
         futureOpenInterest: latestFutureOpenInterestResult,
     };
+
+    if (weeklyFuturesMetadata) {
+        snapshot.weeklyFutures = weeklyFuturesMetadata;
+    }
 
     console.log("保存直前snapshot =", snapshot);
     console.log("🟣 保存直前 parsedDayData =", latestParsedDayData);
