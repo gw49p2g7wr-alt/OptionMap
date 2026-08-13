@@ -1503,21 +1503,46 @@ async function fetchQriData({ requestId } = {}) {
         }
 
         if (typeof window.drawJpxPriceChart === "function") {
-            window.drawJpxPriceChart(
-                payload.labels,
-                payload.callOpenInterest,
-                payload.putOpenInterest,
-                payload.callVolume,
-                payload.putVolume,
-                {
-                    openInterestAvailable:
-                        payload.openInterestAvailable,
-                    callOpenInterestAvailable:
-                        payload.callOpenInterestAvailable,
-                    putOpenInterestAvailable:
-                        payload.putOpenInterestAvailable
+            let fallbackResult = null;
+
+            if (
+                payload.openInterestAvailable === false &&
+                typeof window.applyFallbackQriOpenInterest ===
+                    "function"
+            ) {
+                fallbackResult = window.applyFallbackQriOpenInterest({
+                    volumeLabels: payload.labels,
+                    callVolumes: payload.callVolume,
+                    putVolumes: payload.putVolume
+                });
+            }
+
+            if (!fallbackResult?.applied) {
+                if (
+                    payload.openInterestAvailable === false &&
+                    typeof window.setQriOpenInterestDataUnavailable ===
+                        "function"
+                ) {
+                    window.setQriOpenInterestDataUnavailable();
                 }
-            );
+
+                window.drawJpxPriceChart(
+                    payload.labels,
+                    payload.callOpenInterest,
+                    payload.putOpenInterest,
+                    payload.callVolume,
+                    payload.putVolume,
+                    {
+                        openInterestAvailable:
+                            payload.openInterestAvailable,
+                        openInterestLabels: payload.labels,
+                        callOpenInterestAvailable:
+                            payload.callOpenInterestAvailable,
+                        putOpenInterestAvailable:
+                            payload.putOpenInterestAvailable
+                    }
+                );
+            }
 
             if (
                 typeof window.autoSelectComparisonSnapshot ===
@@ -1737,7 +1762,7 @@ if (!isCurrentFetchRequest("participant", participantRequestId)) {
     
 
 
-latestParsedDayData = {
+const parsedParticipantData = {
     dayAuction,
     dayJnet,
     nightAuction,
@@ -1745,7 +1770,7 @@ latestParsedDayData = {
 };
 
 if (typeof window.setLatestParsedDayData === "function") {
-    window.setLatestParsedDayData(latestParsedDayData);
+    window.setLatestParsedDayData(parsedParticipantData);
 }
 
 const participantHasUnavailableDetail =
@@ -1765,7 +1790,7 @@ window.updateFetchState("participant", {
 
 console.log(
     "4種類のExcel解析完了:",
-    latestParsedDayData
+    parsedParticipantData
 );
 
 return {
@@ -1776,7 +1801,7 @@ return {
     requestId: participantRequestId,
     sourceDate: targetDate,
     fetchedAt: window.dataFetchState.participant.fetchedAt,
-    data: latestParsedDayData,
+    data: parsedParticipantData,
     error: null
 };
 }

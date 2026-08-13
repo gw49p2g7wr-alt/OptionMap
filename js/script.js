@@ -186,6 +186,27 @@ function createFetchSourceViewModel(source, sourceState) {
             label: "建玉残",
             status: FETCH_STATUS.UNAVAILABLE
         });
+
+    }
+
+    if (
+        source === "qri" &&
+        qriOpenInterestDataState.status === "waiting_update" &&
+        qriOpenInterestDataState.usingFallback === true
+    ) {
+        notes.push({
+            text: "分析建玉：直近正常値を使用中"
+        });
+
+        const fallbackSourceDate = formatFetchDateTime(
+            qriOpenInterestDataState.sourceDate
+        );
+
+        if (fallbackSourceDate) {
+            notes.push({
+                text: `建玉取得元ページ日時：${fallbackSourceDate}`
+            });
+        }
     }
 
     if (
@@ -252,6 +273,14 @@ function renderDataFetchStatus(state = dataFetchState) {
         }
 
         viewModel.notes.forEach(note => {
+            if (note.text) {
+                const noteElement = document.createElement("p");
+                noteElement.className = "data-fetch-status-note";
+                noteElement.textContent = note.text;
+                card.append(noteElement);
+                return;
+            }
+
             const notePresentation = getFetchStatusPresentation(note.status);
             const noteElement = document.createElement("p");
             noteElement.className = `data-fetch-status-note ${notePresentation.className}`;
@@ -297,6 +326,11 @@ function updateFetchState(source, patch) {
 
     Object.assign(sourceState, patch);
     scheduleRenderDataFetchStatus();
+
+    if (source === "qri") {
+        updateOpenInterestDataStatus();
+    }
+
     return sourceState;
 }
 
@@ -327,8 +361,6 @@ window.updateFetchDetail = updateFetchDetail;
 window.createFetchRequestId = createFetchRequestId;
 window.renderDataFetchStatus = renderDataFetchStatus;
 
-renderDataFetchStatus(dataFetchState);
-
 const LAST_VALID_QRI_OPEN_INTEREST_STORAGE_KEY =
     "optionMapLastValidQriOpenInterest";
 const QRI_OPEN_INTEREST_CACHE_VERSION = 1;
@@ -347,6 +379,8 @@ const qriOpenInterestDataState = {
     usingFallback: false,
     origin: null
 };
+
+renderDataFetchStatus(dataFetchState);
 
 function isPlainObject(value) {
     if (value === null || typeof value !== "object") {
@@ -546,6 +580,7 @@ function saveLastValidQriOpenInterest(input) {
         usingFallback: false,
         origin: "live"
     });
+    updateQriOpenInterestUiState();
 
     try {
         localStorage.setItem(
@@ -567,6 +602,95 @@ lastValidQriOpenInterestCache =
 
 window.saveLastValidQriOpenInterest =
     saveLastValidQriOpenInterest;
+
+function getCurrentQriOpenInterestSourceDate() {
+    return isValidIsoDateTime(qriOpenInterestDataState.sourceDate)
+        ? qriOpenInterestDataState.sourceDate
+        : null;
+}
+
+function setQriOpenInterestDataUnavailable() {
+    Object.assign(qriOpenInterestDataState, {
+        status: null,
+        sourceDate: null,
+        sourceDateKind: null,
+        fetchedAt: null,
+        usingFallback: false,
+        origin: null
+    });
+    updateQriOpenInterestUiState();
+}
+
+function applyFallbackQriOpenInterest({
+    volumeLabels,
+    callVolumes,
+    putVolumes
+} = {}) {
+    const cache = lastValidQriOpenInterestCache;
+
+    if (!isValidQriOpenInterestCache(cache)) {
+        return { applied: false, reason: "invalid_cache" };
+    }
+
+    if (
+        !Array.isArray(volumeLabels) ||
+        !Array.isArray(callVolumes) ||
+        !Array.isArray(putVolumes) ||
+        volumeLabels.length !== callVolumes.length ||
+        volumeLabels.length !== putVolumes.length
+    ) {
+        return { applied: false, reason: "invalid_volume_data" };
+    }
+
+    const positions = [...cache.positions]
+        .sort((left, right) => left.strike - right.strike);
+    const openInterestLabels = positions.map(position =>
+        position.strike.toLocaleString("ja-JP")
+    );
+    const callOpenInterest = positions.map(position =>
+        position.callOpenInterest
+    );
+    const putOpenInterest = positions.map(position =>
+        position.putOpenInterest
+    );
+
+    if (openInterestLabels.length === 0) {
+        return { applied: false, reason: "empty_positions" };
+    }
+
+    Object.assign(qriOpenInterestDataState, {
+        status: "waiting_update",
+        sourceDate: cache.sourceDate,
+        sourceDateKind: cache.sourceDateKind,
+        fetchedAt: cache.fetchedAt,
+        usingFallback: true,
+        origin: "cache"
+    });
+
+    window.drawJpxPriceChart(
+        volumeLabels,
+        callOpenInterest,
+        putOpenInterest,
+        callVolumes,
+        putVolumes,
+        {
+            openInterestAvailable: true,
+            openInterestLabels
+        }
+    );
+    updateQriOpenInterestUiState();
+
+    return {
+        applied: true,
+        reason: "fallback_applied",
+        sourceDate: cache.sourceDate
+    };
+}
+
+window.applyFallbackQriOpenInterest =
+    applyFallbackQriOpenInterest;
+window.setQriOpenInterestDataUnavailable =
+    setQriOpenInterestDataUnavailable;
 
 const refreshAllMarketDataButton =
     document.getElementById("refreshAllMarketDataButton");
@@ -2443,7 +2567,11 @@ function applyCurrentPrice({
             allJpxCallValues,
             allJpxPutValues,
             allJpxCallVolumes,
-            allJpxPutVolumes
+            allJpxPutVolumes,
+            {
+                openInterestAvailable: jpxOpenInterestAvailable === true,
+                openInterestLabels: allJpxOpenInterestLabels
+            }
         );
     }
 
@@ -2966,7 +3094,11 @@ function switchChartMode(mode) {
             allJpxCallValues,
             allJpxPutValues,
             allJpxCallVolumes,
-            allJpxPutVolumes
+            allJpxPutVolumes,
+            {
+                openInterestAvailable: jpxOpenInterestAvailable === true,
+                openInterestLabels: allJpxOpenInterestLabels
+            }
         );
     }
 }
@@ -2977,12 +3109,53 @@ function updateOpenInterestDataStatus() {
 
     if (!statusElement) return;
 
+    const usingFallback =
+        qriOpenInterestDataState.status === "waiting_update" &&
+        qriOpenInterestDataState.usingFallback === true;
     const unavailable = jpxOpenInterestAvailable === false;
 
-    statusElement.hidden = !unavailable;
+    statusElement.hidden = !unavailable && !usingFallback;
+
+    if (usingFallback) {
+        const sourceDate = formatFetchDateTime(
+            qriOpenInterestDataState.sourceDate
+        );
+        const fetchLead =
+            dataFetchState.qri.status === FETCH_STATUS.FAILED
+                ? "今回のQRI取得は失敗しました。"
+                : dataFetchState.qri.status === FETCH_STATUS.LOADING
+                    ? "QRIデータを更新中です。"
+                    : "今回のQRI建玉残は未提供です。";
+        statusElement.textContent =
+            fetchLead +
+            "建玉表示・分析には直近正常値を使用しています。" +
+            "本日の取引高は最新取得値です。" +
+            (sourceDate
+                ? ` 建玉取得元ページ日時：${sourceDate}`
+                : "");
+        return;
+    }
+
     statusElement.textContent = unavailable
         ? "QRI建玉残データ未提供（本日の取引高は利用できます）"
         : "";
+}
+
+function updateQriOpenInterestUiState() {
+    const usingFallback =
+        qriOpenInterestDataState.status === "waiting_update" &&
+        qriOpenInterestDataState.usingFallback === true;
+
+    updateOpenInterestDataStatus();
+
+    if (saveJpxSnapshotButton) {
+        saveJpxSnapshotButton.disabled = usingFallback;
+        saveJpxSnapshotButton.title = usingFallback
+            ? "直近正常建玉を使用中のため、スナップショットを保存できません"
+            : "";
+    }
+
+    scheduleRenderDataFetchStatus();
 }
 
 if (showOpenInterestButton) {
@@ -3421,6 +3594,35 @@ function invalidateOptionMarketJudgment() {
     renderOptionMapOverallJudgment();
 }
 
+function syncOptionMarketJudgmentOpenInterestMetadata() {
+    if (
+        optionMapJudgmentState.option.available !== true ||
+        !isPlainObject(optionMapJudgmentState.option.metadata)
+    ) {
+        return;
+    }
+
+    Object.assign(optionMapJudgmentState.option.metadata, {
+        currentSourceDate:
+            getCurrentQriOpenInterestSourceDate(),
+        currentOpenInterestSourceDate:
+            getCurrentQriOpenInterestSourceDate(),
+        currentOpenInterestSourceDateKind:
+            qriOpenInterestDataState.sourceDateKind,
+        openInterestOrigin:
+            qriOpenInterestDataState.origin,
+        usingFallback:
+            qriOpenInterestDataState.usingFallback === true,
+        qriPageSourceDate:
+            lastJpxFetchedAt instanceof Date &&
+            !Number.isNaN(lastJpxFetchedAt.getTime())
+                ? lastJpxFetchedAt.toISOString()
+                : null
+    });
+
+    renderOptionMapOverallJudgment();
+}
+
 function areJudgmentSourceArraysEqual(left, right) {
     return (
         Array.isArray(left) &&
@@ -3492,6 +3694,47 @@ function isValidOptionSnapshot(snapshot) {
             Number.isFinite(putValue)
         );
     });
+}
+
+function isCurrentQriOpenInterestDataValid() {
+    if (
+        jpxOpenInterestAvailable !== true ||
+        !getCurrentQriOpenInterestSourceDate() ||
+        !Array.isArray(allJpxOpenInterestLabels) ||
+        !Array.isArray(allJpxCallValues) ||
+        !Array.isArray(allJpxPutValues) ||
+        allJpxOpenInterestLabels.length === 0 ||
+        allJpxOpenInterestLabels.length !== allJpxCallValues.length ||
+        allJpxOpenInterestLabels.length !== allJpxPutValues.length
+    ) {
+        return false;
+    }
+
+    const strikes = new Set();
+    let totalOpenInterest = 0;
+
+    return allJpxOpenInterestLabels.every((label, index) => {
+        const strike = Number(String(label).replace(/,/g, ""));
+        const callValue = Number(allJpxCallValues[index]);
+        const putValue = Number(allJpxPutValues[index]);
+
+        if (
+            !Number.isFinite(strike) ||
+            strike <= 0 ||
+            strikes.has(strike) ||
+            !Number.isSafeInteger(callValue) ||
+            callValue < 0 ||
+            !Number.isSafeInteger(putValue) ||
+            putValue < 0
+        ) {
+            return false;
+        }
+
+        strikes.add(strike);
+        totalOpenInterest += callValue + putValue;
+
+        return Number.isSafeInteger(totalOpenInterest);
+    }) && totalOpenInterest > 0;
 }
 
 function selectLatestValidComparisonSnapshot(
@@ -3570,7 +3813,7 @@ function applyComparisonSnapshot(
     snapshot,
     { selectionMode = "manual" } = {}
 ) {
-    if (jpxOpenInterestAvailable === false) {
+    if (!isCurrentQriOpenInterestDataValid()) {
         resetComparisonSelection(
             "建玉残データ未提供のため市場診断を算出できません"
         );
@@ -3588,10 +3831,7 @@ function applyComparisonSnapshot(
             ? "automatic"
             : "manual";
     comparisonSelectionCurrentSourceDate =
-        lastJpxFetchedAt instanceof Date &&
-        !Number.isNaN(lastJpxFetchedAt.getTime())
-            ? lastJpxFetchedAt.toISOString()
-            : null;
+        getCurrentQriOpenInterestSourceDate();
 
     const comparisonStatusElement =
         document.getElementById("comparisonSnapshotStatus");
@@ -3656,33 +3896,25 @@ function applyComparisonSnapshot(
 }
 
 function autoSelectComparisonSnapshot() {
-    if (jpxOpenInterestAvailable === false) {
+    const openInterestSourceDate =
+        getCurrentQriOpenInterestSourceDate();
+
+    if (!isCurrentQriOpenInterestDataValid()) {
         resetComparisonSelection(
             "建玉残データ未提供のため市場診断を算出できません",
-            lastJpxFetchedAt instanceof Date &&
-            !Number.isNaN(lastJpxFetchedAt.getTime())
-                ? lastJpxFetchedAt.toISOString()
-                : null
+            openInterestSourceDate
         );
         return null;
     }
 
     if (
-        !(lastJpxFetchedAt instanceof Date) ||
-        Number.isNaN(lastJpxFetchedAt.getTime()) ||
-        !Array.isArray(allJpxOpenInterestLabels) ||
-        !Array.isArray(allJpxCallValues) ||
-        !Array.isArray(allJpxPutValues) ||
-        allJpxOpenInterestLabels.length === 0 ||
-        allJpxOpenInterestLabels.length !== allJpxCallValues.length ||
-        allJpxOpenInterestLabels.length !== allJpxPutValues.length
+        !openInterestSourceDate
     ) {
         resetComparisonSelection("比較データ不足");
         return null;
     }
 
-    const currentSourceDate =
-        lastJpxFetchedAt.toISOString();
+    const currentSourceDate = openInterestSourceDate;
 
     if (
         comparisonSelectionCurrentSourceDate ===
@@ -4724,7 +4956,8 @@ window.drawJpxPriceChart(
     allJpxCallVolumes,
     allJpxPutVolumes,
     {
-        openInterestAvailable: jpxOpenInterestAvailable
+        openInterestAvailable: jpxOpenInterestAvailable,
+        openInterestLabels: allJpxOpenInterestLabels
     }
 );
 
@@ -4830,6 +5063,17 @@ if (cumulativePeriodSelect) {
 }
 
     function saveCurrentJpxSnapshot() {
+
+    if (qriOpenInterestDataState.usingFallback === true) {
+        const message =
+            "直近正常建玉を使用中のため、スナップショットを保存できません";
+
+        if (snapshotSaveStatus) {
+            snapshotSaveStatus.textContent = message;
+        }
+        alert(message);
+        return;
+    }
 
     if (
         allJpxLabels.length === 0
@@ -5017,6 +5261,11 @@ window.drawJpxPriceChart = function (
             sourceAvailability.openInterestAvailable;
     }
 
+    const openInterestLabels =
+        Array.isArray(sourceAvailability.openInterestLabels)
+            ? sourceAvailability.openInterestLabels
+            : labels;
+
     callVolumes = Array.isArray(callVolumes)
     ? callVolumes
     : labels.map(() => 0);
@@ -5026,12 +5275,13 @@ putVolumes = Array.isArray(putVolumes)
     : labels.map(() => 0);
 
 const optionSourceDataChanged =
-    !areJudgmentSourceArraysEqual(labels, allJpxLabels) ||
-    !areJudgmentSourceArraysEqual(callVolumes, allJpxCallVolumes) ||
-    !areJudgmentSourceArraysEqual(putVolumes, allJpxPutVolumes) ||
     (
-        jpxOpenInterestAvailable !== false &&
+        jpxOpenInterestAvailable === true &&
         (
+            !areJudgmentSourceArraysEqual(
+                openInterestLabels,
+                allJpxOpenInterestLabels
+            ) ||
             !areJudgmentSourceArraysEqual(
                 callValues,
                 allJpxCallValues
@@ -5056,7 +5306,7 @@ allJpxCallVolumes = [...callVolumes];
 allJpxPutVolumes = [...putVolumes];
 
 if (jpxOpenInterestAvailable !== false) {
-    allJpxOpenInterestLabels = [...labels];
+    allJpxOpenInterestLabels = [...openInterestLabels];
     allJpxCallValues = [...callValues];
     allJpxPutValues = [...putValues];
 } else {
@@ -5065,6 +5315,7 @@ if (jpxOpenInterestAvailable !== false) {
     );
 }
 
+syncOptionMarketJudgmentOpenInterestMetadata();
 updateOpenInterestDataStatus();
 
 console.log(
@@ -5123,13 +5374,20 @@ const selectedPutValues =
             ? labels.map(() => 0)
             : putValues;
 
+const selectedLabels =
+    isVolumeMode
+        ? labels
+        : jpxOpenInterestAvailable === false
+            ? labels
+            : openInterestLabels;
+
         const minStrike = currentPrice - 12000;
         const maxStrike = currentPrice + 22000;
     
         // 元データを価格ごとに検索できる形にする
 const dataByStrike = new Map();
 
-labels.forEach((label, index) => {
+selectedLabels.forEach((label, index) => {
 
     const strike = Number(
         String(label).replace(/,/g, "")
@@ -6978,6 +7236,16 @@ optionMapJudgmentState.option = {
         comparisonSourceDate:
             comparisonSnapshot?.sourceDate || null,
         currentSourceDate:
+            getCurrentQriOpenInterestSourceDate(),
+        currentOpenInterestSourceDate:
+            getCurrentQriOpenInterestSourceDate(),
+        currentOpenInterestSourceDateKind:
+            qriOpenInterestDataState.sourceDateKind,
+        openInterestOrigin:
+            qriOpenInterestDataState.origin,
+        usingFallback:
+            qriOpenInterestDataState.usingFallback === true,
+        qriPageSourceDate:
             lastJpxFetchedAt instanceof Date &&
             !Number.isNaN(lastJpxFetchedAt.getTime())
                 ? lastJpxFetchedAt.toISOString()
