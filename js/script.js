@@ -329,6 +329,245 @@ window.renderDataFetchStatus = renderDataFetchStatus;
 
 renderDataFetchStatus(dataFetchState);
 
+const LAST_VALID_QRI_OPEN_INTEREST_STORAGE_KEY =
+    "optionMapLastValidQriOpenInterest";
+const QRI_OPEN_INTEREST_CACHE_VERSION = 1;
+const QRI_OPEN_INTEREST_CACHE_SOURCE =
+    "qri-nikkei225-options";
+const QRI_OPEN_INTEREST_SOURCE_DATE_KIND =
+    "qri_page_last_updated";
+
+let lastValidQriOpenInterestCache = null;
+
+const qriOpenInterestDataState = {
+    status: null,
+    sourceDate: null,
+    sourceDateKind: null,
+    fetchedAt: null,
+    usingFallback: false,
+    origin: null
+};
+
+function isPlainObject(value) {
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function isValidIsoDateTime(value) {
+    if (typeof value !== "string" || value.trim() === "") {
+        return false;
+    }
+
+    const match = value.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/
+    );
+
+    if (!match) {
+        return false;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const second = Number(match[6]);
+    const daysInMonth = new Date(
+        Date.UTC(year, month, 0)
+    ).getUTCDate();
+
+    return (
+        month >= 1 &&
+        month <= 12 &&
+        day >= 1 &&
+        day <= daysInMonth &&
+        hour >= 0 &&
+        hour <= 23 &&
+        minute >= 0 &&
+        minute <= 59 &&
+        second >= 0 &&
+        second <= 59 &&
+        !Number.isNaN(new Date(value).getTime())
+    );
+}
+
+function isValidQriOpenInterestCache(value) {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+
+    if (
+        value.version !== QRI_OPEN_INTEREST_CACHE_VERSION ||
+        value.source !== QRI_OPEN_INTEREST_CACHE_SOURCE ||
+        value.sourceUrl !== "https://svc.qri.jp/jpx/nkopm/" ||
+        value.sourceDateKind !==
+            QRI_OPEN_INTEREST_SOURCE_DATE_KIND ||
+        !isValidIsoDateTime(value.sourceDate) ||
+        !isValidIsoDateTime(value.fetchedAt) ||
+        value.officialAsOf !== null ||
+        value.contract !== null ||
+        !Array.isArray(value.positions) ||
+        value.positions.length === 0
+    ) {
+        return false;
+    }
+
+    const strikes = new Set();
+    let totalOpenInterest = 0;
+
+    for (const position of value.positions) {
+        if (!isPlainObject(position)) {
+            return false;
+        }
+
+        if (
+            !Object.prototype.hasOwnProperty.call(
+                position,
+                "callOpenInterest"
+            ) ||
+            !Object.prototype.hasOwnProperty.call(
+                position,
+                "putOpenInterest"
+            )
+        ) {
+            return false;
+        }
+
+        const {
+            strike,
+            callOpenInterest,
+            putOpenInterest
+        } = position;
+
+        if (
+            !Number.isFinite(strike) ||
+            strike <= 0 ||
+            !Number.isFinite(callOpenInterest) ||
+            !Number.isSafeInteger(callOpenInterest) ||
+            callOpenInterest < 0 ||
+            !Number.isFinite(putOpenInterest) ||
+            !Number.isSafeInteger(putOpenInterest) ||
+            putOpenInterest < 0 ||
+            strikes.has(strike)
+        ) {
+            return false;
+        }
+
+        strikes.add(strike);
+        totalOpenInterest += callOpenInterest + putOpenInterest;
+
+        if (!Number.isSafeInteger(totalOpenInterest)) {
+            return false;
+        }
+    }
+
+    return totalOpenInterest > 0;
+}
+
+function loadLastValidQriOpenInterestCache() {
+    try {
+        const serialized = localStorage.getItem(
+            LAST_VALID_QRI_OPEN_INTEREST_STORAGE_KEY
+        );
+
+        if (!serialized) {
+            return null;
+        }
+
+        const parsed = JSON.parse(serialized);
+        return isValidQriOpenInterestCache(parsed)
+            ? parsed
+            : null;
+    } catch (error) {
+        console.warn(
+            "最後の正常QRI建玉キャッシュを読み込めませんでした:",
+            error
+        );
+        return null;
+    }
+}
+
+function createQriOpenInterestCache({
+    sourceUrl,
+    sourceDate,
+    fetchedAt,
+    labels,
+    callOpenInterest,
+    putOpenInterest
+}) {
+    if (
+        !Array.isArray(labels) ||
+        !Array.isArray(callOpenInterest) ||
+        !Array.isArray(putOpenInterest) ||
+        labels.length !== callOpenInterest.length ||
+        labels.length !== putOpenInterest.length
+    ) {
+        return null;
+    }
+
+    const cache = {
+        version: QRI_OPEN_INTEREST_CACHE_VERSION,
+        source: QRI_OPEN_INTEREST_CACHE_SOURCE,
+        sourceUrl,
+        sourceDate,
+        sourceDateKind: QRI_OPEN_INTEREST_SOURCE_DATE_KIND,
+        officialAsOf: null,
+        fetchedAt,
+        contract: null,
+        positions: labels.map((label, index) => ({
+            strike: Number(String(label).replace(/,/g, "")),
+            callOpenInterest: callOpenInterest[index],
+            putOpenInterest: putOpenInterest[index]
+        }))
+    };
+
+    return isValidQriOpenInterestCache(cache)
+        ? cache
+        : null;
+}
+
+function saveLastValidQriOpenInterest(input) {
+    const cache = createQriOpenInterestCache(input || {});
+
+    if (!cache) {
+        return null;
+    }
+
+    lastValidQriOpenInterestCache = cache;
+    Object.assign(qriOpenInterestDataState, {
+        status: "latest",
+        sourceDate: cache.sourceDate,
+        sourceDateKind: cache.sourceDateKind,
+        fetchedAt: cache.fetchedAt,
+        usingFallback: false,
+        origin: "live"
+    });
+
+    try {
+        localStorage.setItem(
+            LAST_VALID_QRI_OPEN_INTEREST_STORAGE_KEY,
+            JSON.stringify(cache)
+        );
+    } catch (error) {
+        console.warn(
+            "最後の正常QRI建玉キャッシュを保存できませんでした:",
+            error
+        );
+    }
+
+    return cache;
+}
+
+lastValidQriOpenInterestCache =
+    loadLastValidQriOpenInterestCache();
+
+window.saveLastValidQriOpenInterest =
+    saveLastValidQriOpenInterest;
+
 const refreshAllMarketDataButton =
     document.getElementById("refreshAllMarketDataButton");
 

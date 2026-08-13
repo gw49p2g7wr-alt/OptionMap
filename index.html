@@ -1466,6 +1466,21 @@ async function fetchQriData({ requestId } = {}) {
         const fetchedAt = new Date().toISOString();
         const sourceDate = payload.sourceDate.toISOString();
 
+        if (
+            payload.openInterestAvailable === true &&
+            typeof window.saveLastValidQriOpenInterest ===
+                "function"
+        ) {
+            window.saveLastValidQriOpenInterest({
+                sourceUrl,
+                sourceDate,
+                fetchedAt,
+                labels: payload.labels,
+                callOpenInterest: payload.callOpenInterest,
+                putOpenInterest: payload.putOpenInterest
+            });
+        }
+
         if (typeof window.setJpxSourceTime === "function") {
             window.setJpxSourceTime(payload.sourceDate);
         }
