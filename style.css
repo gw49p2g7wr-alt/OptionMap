@@ -173,6 +173,25 @@ canvas {
     height: 320px !important;
 }
 
+.manual-recovery-inputs {
+    margin: 16px 0 24px;
+    padding: 14px 18px;
+    border: 1px solid #d8dde6;
+    border-radius: 10px;
+    background: #f8f9fb;
+}
+
+.manual-recovery-inputs > summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.manual-recovery-description {
+    margin: 14px 0;
+    color: #5f6673;
+    line-height: 1.6;
+}
+
 .combined-chart-container {
     height: 400px;
     width: 100%;

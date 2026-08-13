@@ -14,7 +14,16 @@
 
     <h1>📊 OptionMap</h1>
 
-    <div class="input-columns">
+    <details class="manual-recovery-inputs">
+        <summary>⚠️ 復旧用手動入力</summary>
+
+        <p class="manual-recovery-description">
+            通常は自動取得を使用します。自動取得に失敗した場合や、
+            復旧・確認が必要な場合のみ使用してください。手動解析を行うと、
+            入力した項目の自動取得済み状態を手動データで置き換える場合があります。
+        </p>
+
+        <div class="input-columns">
 
         <div class="input-column">
             <div class="card">
@@ -48,13 +57,14 @@
             </button>
         </div>
     
-    </div>
-    
-    <div class="analyze-button-area">
-        <button id="analyzeButton">
-            解析開始
-        </button>
-    </div>
+        </div>
+
+        <div class="analyze-button-area">
+            <button id="analyzeButton">
+                入力済みデータを解析
+            </button>
+        </div>
+    </details>
 
     <div class="card">
         <h2>📝 AIコメント設定</h2>

@@ -284,163 +284,96 @@ brokerMarketSelect.addEventListener("change", () => {
 });  
 
 button.addEventListener("click", function () {
-
-    
-    optionMap = {};
-
     setTimeout(function () {
-
-        const nightText = nightData.value;
-        const dayText = dayData.value;
-        const optionText = optionData.value;
-        const futureOpenInterestText = futureOpenInterestData.value;
-        const nightTotals = analyzeFutureData(nightText);
-        const dayTotals = analyzeFutureData(dayText);
-        latestNightFutureTotals = nightTotals;
-        latestDayFutureTotals = dayTotals;
-        const optionResult = analyzeOptionData(optionText);
-        const futureOpenInterestResult =
-        analyzeFutureOpenInterestData(futureOpenInterestText);
-        latestFutureOpenInterestResult = futureOpenInterestResult;
-        updateFutureOpenInterestExpiryOptions(
-            futureOpenInterestProduct.value
-        );
-
-        const aiData = {
-            currentPrice: currentPrice,
-            nightData: nightData.value,
-            dayData: dayData.value,
-            optionData: optionData.value,
-            
-            labels: [...allJpxLabels],
-            callOpenInterest: [...allJpxCallValues],
-            putOpenInterest: [...allJpxPutValues],
-            callVolume: [...allJpxCallVolumes],
-            putVolume: [...allJpxPutVolumes],
-            futureOpenInterest: futureOpenInterestResult
-        };
-        
-        console.log("AIに渡すデータ:", aiData);
-    
-        const aiResult = analyzeOptionMapData(aiData);
-    
-        console.log("ai.jsからの返事:", aiResult);
-    
-
-        drawFutureOpenInterestChart(
-          document.getElementById("futureOpenInterestProduct").value
-        );
-
-        if (latestParsedDayData) {
-            updateBrokerChartByProduct(latestParsedDayData);
-        } else {
-            updateBrokerChartFromSelection();
-        }
-
-      console.log(
-        "指数先物建玉の解析結果:",
-        futureOpenInterestResult
-      );
-
-        console.log("optionData文字数:", optionText.length);
-
-        console.log("オプション解析結果:", optionResult);
-        
-        console.log("価格帯別データ:", optionResult.priceTotals);
-        
+        const nightText = nightData.value.trim();
+        const dayText = dayData.value.trim();
+        const optionText = optionData.value.trim();
+        const futureOpenInterestText =
+            futureOpenInterestData.value.trim();
+        const hasNightData = nightText.length > 0;
+        const hasDayData = dayText.length > 0;
+        const hasOptionData = optionText.length > 0;
+        const hasFutureOpenInterestData =
+            futureOpenInterestText.length > 0;
 
         if (
-            optionResult?.optionMap &&
-            Object.keys(optionResult.optionMap).length > 0
+            !hasNightData &&
+            !hasDayData &&
+            !hasOptionData &&
+            !hasFutureOpenInterestData
         ) {
-            optionMap = optionResult.optionMap;
+            console.log(
+                "復旧用手動解析：入力がないため既存状態を維持します"
+            );
+            return;
         }
-        
-        console.log("価格帯マップ:", optionMap);
-        
-        const optionTotals = optionResult.priceTotals;
-        
+
         const selectedProduct = brokerProductSelect.value;
         const selectedMarket = brokerMarketSelect.value;
 
-        latestNightBrokerData = {
-          ...(nightTotals[selectedProduct]?.[selectedMarket] || {})
-};
-
-        latestDayBrokerData = {
-          ...(dayTotals[selectedProduct]?.[selectedMarket] || {})
-};
-        latestOptionBrokerData = {
-            ...optionResult.brokerTotals};
-        const allTotals = {};
-
-        const selectedNightTotals =
-        nightTotals[selectedProduct]?.[selectedMarket] || {};
-
-        const selectedDayTotals =
-        dayTotals[selectedProduct]?.[selectedMarket] || {};
-
-        for (const company in selectedNightTotals) {
-          allTotals[company] = selectedNightTotals[company];
-}
-
-        for (const company in selectedDayTotals) {
-          if (allTotals[company] === undefined) {
-            allTotals[company] = 0;
-  }
-
-          allTotals[company] += selectedDayTotals[company];
-}
-
-        for (const price in optionTotals) {
-
-            if (allTotals[price] === undefined) {
-                allTotals[price] = 0;
-            }
-
-            allTotals[price] += optionTotals[price];
-
+        if (hasNightData) {
+            latestNightFutureTotals =
+                analyzeFutureData(nightText);
+            latestNightBrokerData = {
+                ...(
+                    latestNightFutureTotals[selectedProduct]
+                        ?.[selectedMarket] || {}
+                )
+            };
         }
 
-        const ranking = Object.entries(allTotals);
-        ranking.sort((a, b) => b[1] - a[1]);
-        const top10 = ranking.slice(0, 10);
-
-        const labels = [];
-        const values = [];
-
-        for (const item of top10) {
-
-            labels.push(companyNames[item[0]] || item[0]);
-            values.push(item[1]);
-
+        if (hasDayData) {
+            latestDayFutureTotals =
+                analyzeFutureData(dayText);
+            latestDayBrokerData = {
+                ...(
+                    latestDayFutureTotals[selectedProduct]
+                        ?.[selectedMarket] || {}
+                )
+            };
         }
 
-        console.log("① 証券会社別グラフ・開始");
-        drawChart(labels, values);
-        console.log("② 証券会社別グラフ・完了");
+        if (hasNightData || hasDayData) {
+            updateBrokerChartFromSelection();
+        }
 
-    const priceRanking = Object.entries(optionTotals);
-          priceRanking.sort((a, b) => b[1] - a[1]);
+        if (hasOptionData) {
+            optionMap = {};
+            const optionResult = analyzeOptionData(optionText);
 
-    const priceLabels = [];
-    const priceValues = [];
+            optionMap = optionResult.optionMap;
+            latestOptionBrokerData = {
+                ...optionResult.brokerTotals
+            };
 
-for (const item of priceRanking) {
-    priceLabels.push(Number(item[0]).toLocaleString() + "円");
-    priceValues.push(item[1]);
-}
+            drawOptionTable();
+            showMaxPosition(optionResult.priceTotals);
+            showPriceRanking();
 
+            console.log(
+                "復旧用週次オプション解析結果:",
+                optionResult
+            );
+        }
 
+        if (hasFutureOpenInterestData) {
+            latestFutureOpenInterestResult =
+                analyzeFutureOpenInterestData(
+                    futureOpenInterestText
+                );
+            updateFutureOpenInterestExpiryOptions(
+                futureOpenInterestProduct.value
+            );
+            drawFutureOpenInterestChart(
+                futureOpenInterestProduct.value,
+                futureOpenInterestExpiry.value
+            );
 
-drawOptionTable();
-
-console.log("optionTotals =", optionTotals);
-showMaxPosition(optionTotals);
-
-
-
-showPriceRanking();
+            console.log(
+                "復旧用週次指数先物解析結果:",
+                latestFutureOpenInterestResult
+            );
+        }
 
     }, 1000);
 
