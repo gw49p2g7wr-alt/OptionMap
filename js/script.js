@@ -56,6 +56,47 @@ const dataFetchState = {
     }
 };
 
+const createWeeklyDataState = () => ({
+    status: null,
+    sourceDate: null,
+    versionKey: null,
+    signature: null,
+    origin: null,
+    remoteCheckStatus: "pending",
+    observedLatestTradeDate: null
+});
+
+const weeklyFuturesDataState = createWeeklyDataState();
+const weeklyOptionsDataState = createWeeklyDataState();
+
+function getWeeklyDataState(source) {
+    if (source === "weeklyFutures") {
+        return weeklyFuturesDataState;
+    }
+
+    if (source === "weeklyOptions") {
+        return weeklyOptionsDataState;
+    }
+
+    return null;
+}
+
+function updateWeeklyDataState(source, patch) {
+    const state = getWeeklyDataState(source);
+
+    if (!state || !patch || typeof patch !== "object") {
+        return null;
+    }
+
+    Object.assign(state, patch);
+    scheduleRenderDataFetchStatus();
+    return state;
+}
+
+window.weeklyFuturesDataState = weeklyFuturesDataState;
+window.weeklyOptionsDataState = weeklyOptionsDataState;
+window.updateWeeklyDataState = updateWeeklyDataState;
+
 const FETCH_STATUS_PRESENTATION = Object.freeze({
     [FETCH_STATUS.IDLE]: {
         label: "未取得",
@@ -150,7 +191,7 @@ function createFetchSourceViewModel(source, sourceState) {
         weeklyOptions: { label: "週次オプション", dateLabel: "データ日" }
     };
     const definition = definitions[source];
-    const presentation = getFetchStatusPresentation(sourceState?.status);
+    let presentation = getFetchStatusPresentation(sourceState?.status);
     const notes = [];
     let meta = null;
 
@@ -233,6 +274,72 @@ function createFetchSourceViewModel(source, sourceState) {
                 notes.push({ label, status: detailStatus });
             }
         });
+    }
+
+    if (source === "weeklyFutures" || source === "weeklyOptions") {
+        const weeklyDataState = getWeeklyDataState(source);
+        const dataSourceDate = formatParticipantSourceDate(
+            weeklyDataState?.sourceDate
+        );
+
+        if (
+            weeklyDataState?.origin === "cache" &&
+            weeklyDataState?.remoteCheckStatus === "pending" &&
+            sourceState?.status === FETCH_STATUS.IDLE
+        ) {
+            presentation = getFetchStatusPresentation(
+                FETCH_STATUS.LOADING
+            );
+        }
+
+        if (weeklyDataState?.origin === "cache") {
+            notes.push({
+                text: weeklyDataState.remoteCheckStatus === "pending"
+                    ? "分析データ：前回確認済み版を表示中"
+                    : "分析データ：直近正常版を使用中"
+            });
+        }
+
+        if (dataSourceDate) {
+            notes.push({
+                text: `分析データ基準日：${dataSourceDate}`
+            });
+        }
+
+        if (weeklyDataState?.remoteCheckStatus === "pending") {
+            notes.push({ text: "最新版を確認中" });
+        } else if (
+            weeklyDataState?.status === "latest" &&
+            weeklyDataState?.remoteCheckStatus === "current"
+        ) {
+            notes.push({ text: "状態：最新確認済み" });
+        } else if (
+            weeklyDataState?.status === "waiting_update" &&
+            weeklyDataState?.remoteCheckStatus === "newer_available"
+        ) {
+            const observedDate = formatParticipantSourceDate(
+                weeklyDataState.observedLatestTradeDate
+            );
+            notes.push({
+                text: observedDate
+                    ? `新版：${observedDate}を確認済み`
+                    : "新版を確認済み"
+            });
+        } else if (
+            weeklyDataState?.remoteCheckStatus === "failed" &&
+            weeklyDataState?.sourceDate
+        ) {
+            notes.push({ text: "最新版の確認に失敗" });
+        }
+
+        if (
+            sourceState?.status === FETCH_STATUS.FAILED &&
+            !weeklyDataState?.sourceDate
+        ) {
+            notes.push({
+                text: "分析データ：利用可能な正常版なし"
+            });
+        }
     }
 
     return {
@@ -769,7 +876,9 @@ let latestJpxLabels = [];
 let latestCallValues = [];
 let latestPutValues = [];
 let optionMap = {};
+let latestWeeklyOptionsResult = null;
 window.setWeeklyOptionMap = function (result) {
+    latestWeeklyOptionsResult = result || null;
     optionMap = result?.optionMap || {};
 
     console.log(

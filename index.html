@@ -1232,6 +1232,662 @@ async function createWeeklyVersionMetadata({
     };
 }
 
+const WEEKLY_CACHE_VERSION = 1;
+const WEEKLY_FUTURES_STORAGE_KEY =
+    "optionMapLastValidWeeklyFutures";
+const WEEKLY_OPTIONS_STORAGE_KEY =
+    "optionMapLastValidWeeklyOptions";
+const WEEKLY_FUTURES_SOURCE =
+    "jpx-weekly-index-futures-open-interest";
+const WEEKLY_OPTIONS_SOURCE =
+    "jpx-weekly-nikkei225-options-open-interest";
+const DANGEROUS_RECORD_KEYS = new Set([
+    "__proto__",
+    "prototype",
+    "constructor"
+]);
+
+let lastValidWeeklyFuturesCache = null;
+let lastValidWeeklyOptionsCache = null;
+let activeWeeklyFuturesCache = null;
+let activeWeeklyOptionsCache = null;
+
+function isPlainWeeklyObject(value) {
+    if (value === null || typeof value !== "object") return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function isSafeWeeklyRecordKey(value) {
+    return (
+        typeof value === "string" &&
+        value.trim() !== "" &&
+        !DANGEROUS_RECORD_KEYS.has(value)
+    );
+}
+
+function isValidIsoDateTime(value) {
+    if (
+        typeof value !== "string" ||
+        !/^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+        Number.isNaN(new Date(value).getTime())
+    ) {
+        return false;
+    }
+
+    const [year, month, day] = value.slice(0, 10).split("-");
+    return parseIsoCalendarDate(year, month, day) === value.slice(0, 10);
+}
+
+function isValidWeeklySourceUrl(value, fileName, sourceDate) {
+    try {
+        const url = new URL(value);
+        return (
+            url.protocol === "https:" &&
+            url.hostname === "www.jpx.co.jp" &&
+            url.pathname.endsWith(`_${fileName}`) &&
+            parseWeeklySourceUrlDate(value, fileName) === sourceDate
+        );
+    } catch (error) {
+        return false;
+    }
+}
+
+function getWeeklyCacheConfiguration(source) {
+    if (source === "weeklyFutures") {
+        return {
+            storageKey: WEEKLY_FUTURES_STORAGE_KEY,
+            cacheSource: WEEKLY_FUTURES_SOURCE,
+            versionPrefix: "weekly-futures",
+            fileName: "indexfut_oi_by_tp.xlsx"
+        };
+    }
+
+    if (source === "weeklyOptions") {
+        return {
+            storageKey: WEEKLY_OPTIONS_STORAGE_KEY,
+            cacheSource: WEEKLY_OPTIONS_SOURCE,
+            versionPrefix: "weekly-options",
+            fileName: "nk225op_oi_by_tp.xlsx"
+        };
+    }
+
+    return null;
+}
+
+function validateWeeklyFuturesData(data) {
+    if (
+        !isPlainWeeklyObject(data) ||
+        !isPlainWeeklyObject(data.products) ||
+        !isPlainWeeklyObject(data.brokerTotals) ||
+        Object.keys(data.products).length === 0
+    ) {
+        return false;
+    }
+
+    const calculatedBrokerTotals = new Map();
+    let detailCount = 0;
+
+    for (const [productName, product] of Object.entries(data.products)) {
+        if (
+            !isSafeWeeklyRecordKey(productName) ||
+            !isPlainWeeklyObject(product) ||
+            !isPlainWeeklyObject(product.brokers) ||
+            Object.keys(product.brokers).length === 0 ||
+            !Number.isSafeInteger(product.sellTotal) ||
+            product.sellTotal < 0 ||
+            !Number.isSafeInteger(product.buyTotal) ||
+            product.buyTotal < 0
+        ) {
+            return false;
+        }
+
+        let productSellTotal = 0;
+        let productBuyTotal = 0;
+
+        for (const [brokerName, broker] of Object.entries(product.brokers)) {
+            if (
+                !isSafeWeeklyRecordKey(brokerName) ||
+                !isPlainWeeklyObject(broker) ||
+                !Number.isSafeInteger(broker.sell) ||
+                broker.sell < 0 ||
+                !Number.isSafeInteger(broker.buy) ||
+                broker.buy < 0 ||
+                !Number.isSafeInteger(broker.net) ||
+                broker.net !== broker.buy - broker.sell ||
+                !isPlainWeeklyObject(broker.expiries) ||
+                Object.keys(broker.expiries).length === 0
+            ) {
+                return false;
+            }
+
+            let brokerSellTotal = 0;
+            let brokerBuyTotal = 0;
+
+            for (const [expiry, position] of Object.entries(
+                broker.expiries
+            )) {
+                if (
+                    !/^20\d{2}年\d{1,2}月限月$/.test(expiry) ||
+                    !isPlainWeeklyObject(position) ||
+                    !Number.isSafeInteger(position.sell) ||
+                    position.sell < 0 ||
+                    !Number.isSafeInteger(position.buy) ||
+                    position.buy < 0 ||
+                    !Number.isSafeInteger(position.net) ||
+                    position.net !== position.buy - position.sell
+                ) {
+                    return false;
+                }
+
+                brokerSellTotal += position.sell;
+                brokerBuyTotal += position.buy;
+                detailCount += 1;
+
+                if (
+                    !Number.isSafeInteger(brokerSellTotal) ||
+                    !Number.isSafeInteger(brokerBuyTotal)
+                ) {
+                    return false;
+                }
+            }
+
+            if (
+                broker.sell !== brokerSellTotal ||
+                broker.buy !== brokerBuyTotal
+            ) {
+                return false;
+            }
+
+            productSellTotal += broker.sell;
+            productBuyTotal += broker.buy;
+
+            const total = calculatedBrokerTotals.get(brokerName) || {
+                sell: 0,
+                buy: 0
+            };
+            total.sell += broker.sell;
+            total.buy += broker.buy;
+            calculatedBrokerTotals.set(brokerName, total);
+        }
+
+        if (
+            product.sellTotal !== productSellTotal ||
+            product.buyTotal !== productBuyTotal
+        ) {
+            return false;
+        }
+    }
+
+    if (
+        detailCount === 0 ||
+        Object.keys(data.brokerTotals).length !==
+            calculatedBrokerTotals.size
+    ) {
+        return false;
+    }
+
+    for (const [brokerName, total] of Object.entries(data.brokerTotals)) {
+        const calculated = calculatedBrokerTotals.get(brokerName);
+
+        if (
+            !isSafeWeeklyRecordKey(brokerName) ||
+            !isPlainWeeklyObject(total) ||
+            !calculated ||
+            !Number.isSafeInteger(total.sell) ||
+            !Number.isSafeInteger(total.buy) ||
+            !Number.isSafeInteger(total.net) ||
+            total.sell !== calculated.sell ||
+            total.buy !== calculated.buy ||
+            total.net !== total.buy - total.sell
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function validateWeeklyOptionsData(data) {
+    if (
+        !isPlainWeeklyObject(data) ||
+        !isPlainWeeklyObject(data.optionMap) ||
+        !isPlainWeeklyObject(data.priceTotals) ||
+        !isPlainWeeklyObject(data.brokerTotals) ||
+        Object.keys(data.optionMap).length === 0
+    ) {
+        return false;
+    }
+
+    const calculatedPriceTotals = new Map();
+    const calculatedBrokerTotals = new Map();
+    let detailCount = 0;
+
+    for (const [strikeKey, brokers] of Object.entries(data.optionMap)) {
+        const strike = Number(strikeKey);
+
+        if (
+            !Number.isFinite(strike) ||
+            strike <= 0 ||
+            !isPlainWeeklyObject(brokers) ||
+            Object.keys(brokers).length === 0
+        ) {
+            return false;
+        }
+
+        let priceTotal = 0;
+
+        for (const [brokerName, position] of Object.entries(brokers)) {
+            if (
+                !isSafeWeeklyRecordKey(brokerName) ||
+                !Number.isSafeInteger(position) ||
+                position <= 0
+            ) {
+                return false;
+            }
+
+            priceTotal += position;
+            calculatedBrokerTotals.set(
+                brokerName,
+                (calculatedBrokerTotals.get(brokerName) || 0) + position
+            );
+            detailCount += 1;
+        }
+
+        if (!Number.isSafeInteger(priceTotal)) return false;
+        calculatedPriceTotals.set(String(strike), priceTotal);
+    }
+
+    if (
+        detailCount === 0 ||
+        Object.keys(data.priceTotals).length !==
+            calculatedPriceTotals.size ||
+        Object.keys(data.brokerTotals).length !==
+            calculatedBrokerTotals.size
+    ) {
+        return false;
+    }
+
+    for (const [strikeKey, total] of Object.entries(data.priceTotals)) {
+        if (
+            !Number.isSafeInteger(total) ||
+            total <= 0 ||
+            calculatedPriceTotals.get(String(Number(strikeKey))) !== total
+        ) {
+            return false;
+        }
+    }
+
+    for (const [brokerName, total] of Object.entries(data.brokerTotals)) {
+        if (
+            !isSafeWeeklyRecordKey(brokerName) ||
+            !Number.isSafeInteger(total) ||
+            total <= 0 ||
+            calculatedBrokerTotals.get(brokerName) !== total
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+async function validateWeeklyCache(cache, source) {
+    const configuration = getWeeklyCacheConfiguration(source);
+
+    if (
+        !configuration ||
+        !isPlainWeeklyObject(cache) ||
+        cache.version !== WEEKLY_CACHE_VERSION ||
+        cache.source !== configuration.cacheSource ||
+        parseIsoCalendarDate(...String(cache.sourceDate || "").split("-")) !==
+            cache.sourceDate ||
+        cache.sourceDateKind !== "jpx_open_interest_as_of" ||
+        parseIsoCalendarDate(...String(cache.publishedDate || "").split("-")) !==
+            cache.publishedDate ||
+        cache.publishedAt !== null ||
+        !isValidIsoDateTime(cache.listingUpdatedAt) ||
+        cache.listingUpdatedAtKind !== "jpx_listing_updated_at" ||
+        !isValidIsoDateTime(cache.fetchedAt) ||
+        cache.signatureAlgorithm !== "sha256" ||
+        !/^[0-9a-f]{64}$/.test(cache.signature || "") ||
+        cache.versionAssessment !== "confirmed" ||
+        !isPlainWeeklyObject(cache.dateEvidence) ||
+        cache.dateEvidence.consistent !== true ||
+        cache.dateEvidence.excelAsOf !== cache.sourceDate ||
+        cache.dateEvidence.listingTradeDate !== cache.sourceDate ||
+        cache.dateEvidence.urlDate !== cache.sourceDate ||
+        !isValidWeeklySourceUrl(
+            cache.sourceUrl,
+            configuration.fileName,
+            cache.sourceDate
+        )
+    ) {
+        return false;
+    }
+
+    const expectedVersionKey =
+        `${configuration.versionPrefix}|${cache.sourceDate}|` +
+        `sha256:${cache.signature}`;
+
+    if (cache.versionKey !== expectedVersionKey) return false;
+
+    const validData = source === "weeklyFutures"
+        ? validateWeeklyFuturesData(cache.data)
+        : validateWeeklyOptionsData(cache.data);
+
+    if (!validData) return false;
+
+    const normalizedData = source === "weeklyFutures"
+        ? normalizeWeeklyFuturesForSignature(cache.data)
+        : normalizeWeeklyOptionsForSignature(cache.data);
+    const recalculatedSignature = await createSha256Signature(
+        normalizedData
+    );
+
+    return recalculatedSignature === cache.signature;
+}
+
+function createWeeklyCache({ source, metadata, fetchedAt, data }) {
+    const configuration = getWeeklyCacheConfiguration(source);
+
+    if (!configuration || !metadata) return null;
+
+    return {
+        version: WEEKLY_CACHE_VERSION,
+        source: configuration.cacheSource,
+        sourceDate: metadata.sourceDate,
+        sourceDateKind: metadata.sourceDateKind,
+        publishedDate: metadata.publishedDate,
+        publishedAt: metadata.publishedAt,
+        listingUpdatedAt: metadata.listingUpdatedAt,
+        listingUpdatedAtKind: metadata.listingUpdatedAtKind,
+        fetchedAt,
+        sourceUrl: metadata.sourceUrl,
+        signatureAlgorithm: metadata.signatureAlgorithm,
+        signature: metadata.signature,
+        versionKey: metadata.versionKey,
+        dateEvidence: { ...metadata.dateEvidence },
+        versionAssessment: metadata.versionAssessment,
+        data
+    };
+}
+
+function compareWeeklyVersions(savedCache, currentCache) {
+    if (
+        currentCache?.versionAssessment !== "confirmed" ||
+        currentCache?.dateEvidence?.consistent !== true
+    ) {
+        return {
+            assessment: "indeterminate",
+            reason: "current_version_not_confirmed"
+        };
+    }
+
+    if (!savedCache) {
+        return {
+            assessment: "new_version",
+            reason: "no_saved_version"
+        };
+    }
+
+    if (currentCache.sourceDate > savedCache.sourceDate) {
+        return {
+            assessment: "new_version",
+            reason: "newer_source_date"
+        };
+    }
+
+    if (currentCache.sourceDate < savedCache.sourceDate) {
+        return {
+            assessment: "older_or_inconsistent",
+            reason: "older_source_date"
+        };
+    }
+
+    if (currentCache.signature === savedCache.signature) {
+        return {
+            assessment: "same_version",
+            reason: "same_source_date_and_signature"
+        };
+    }
+
+    if (
+        isValidIsoDateTime(currentCache.listingUpdatedAt) &&
+        isValidIsoDateTime(savedCache.listingUpdatedAt) &&
+        new Date(currentCache.listingUpdatedAt).getTime() >=
+            new Date(savedCache.listingUpdatedAt).getTime()
+    ) {
+        return {
+            assessment: "revised_same_date",
+            reason: "same_date_new_signature_and_current_listing"
+        };
+    }
+
+    return {
+        assessment: "indeterminate",
+        reason: "same_date_revision_order_unknown"
+    };
+}
+
+function getLastValidWeeklyCache(source) {
+    return source === "weeklyFutures"
+        ? lastValidWeeklyFuturesCache
+        : lastValidWeeklyOptionsCache;
+}
+
+function setLastValidWeeklyCache(source, cache) {
+    if (source === "weeklyFutures") {
+        lastValidWeeklyFuturesCache = cache;
+    } else {
+        lastValidWeeklyOptionsCache = cache;
+    }
+}
+
+function getActiveWeeklyCache(source) {
+    return source === "weeklyFutures"
+        ? activeWeeklyFuturesCache
+        : activeWeeklyOptionsCache;
+}
+
+function setActiveWeeklyCache(source, cache) {
+    if (source === "weeklyFutures") {
+        activeWeeklyFuturesCache = cache;
+    } else {
+        activeWeeklyOptionsCache = cache;
+    }
+}
+
+function applyWeeklyData(source, cache, origin, statePatch = {}) {
+    if (source === "weeklyFutures") {
+        window.setLatestFutureOpenInterestResult(cache.data);
+    } else if (typeof window.setWeeklyOptionMap === "function") {
+        window.setWeeklyOptionMap(cache.data);
+    }
+
+    setActiveWeeklyCache(source, cache);
+    window.updateWeeklyDataState(source, {
+        status: statePatch.status ?? null,
+        sourceDate: cache.sourceDate,
+        versionKey: cache.versionKey,
+        signature: cache.signature,
+        origin,
+        remoteCheckStatus:
+            statePatch.remoteCheckStatus || "pending",
+        observedLatestTradeDate:
+            statePatch.observedLatestTradeDate || null
+    });
+}
+
+async function loadWeeklyCache(source) {
+    const configuration = getWeeklyCacheConfiguration(source);
+
+    try {
+        const serialized = localStorage.getItem(configuration.storageKey);
+
+        if (!serialized) return null;
+        const cache = JSON.parse(serialized);
+        return await validateWeeklyCache(cache, source) ? cache : null;
+    } catch (error) {
+        console.warn(`${source}の最終正常版を読み込めませんでした:`, error);
+        return null;
+    }
+}
+
+async function initializeWeeklyCaches() {
+    const [futuresCache, optionsCache] = await Promise.all([
+        loadWeeklyCache("weeklyFutures"),
+        loadWeeklyCache("weeklyOptions")
+    ]);
+
+    if (futuresCache) {
+        setLastValidWeeklyCache("weeklyFutures", futuresCache);
+        applyWeeklyData(
+            "weeklyFutures",
+            futuresCache,
+            "cache",
+            { remoteCheckStatus: "pending" }
+        );
+    }
+
+    if (optionsCache) {
+        setLastValidWeeklyCache("weeklyOptions", optionsCache);
+        applyWeeklyData(
+            "weeklyOptions",
+            optionsCache,
+            "cache",
+            { remoteCheckStatus: "pending" }
+        );
+    }
+}
+
+function updateWeeklyRemoteObservation(source, tradeDate, succeeded) {
+    const activeCache = getActiveWeeklyCache(source);
+
+    if (!succeeded || !tradeDate) {
+        window.updateWeeklyDataState(source, {
+            remoteCheckStatus: "failed"
+        });
+        return;
+    }
+
+    if (!activeCache) {
+        window.updateWeeklyDataState(source, {
+            remoteCheckStatus: "current",
+            observedLatestTradeDate: tradeDate
+        });
+        return;
+    }
+
+    if (tradeDate > activeCache.sourceDate) {
+        window.updateWeeklyDataState(source, {
+            status: "waiting_update",
+            remoteCheckStatus: "newer_available",
+            observedLatestTradeDate: tradeDate
+        });
+        return;
+    }
+
+    if (tradeDate === activeCache.sourceDate) {
+        window.updateWeeklyDataState(source, {
+            status: "latest",
+            remoteCheckStatus: "current",
+            observedLatestTradeDate: tradeDate
+        });
+        return;
+    }
+
+    window.updateWeeklyDataState(source, {
+        remoteCheckStatus: "failed",
+        observedLatestTradeDate: tradeDate
+    });
+}
+
+async function processWeeklyLiveResult({
+    source,
+    metadata,
+    fetchedAt,
+    data,
+    requestId
+}) {
+    const cache = createWeeklyCache({
+        source,
+        metadata,
+        fetchedAt,
+        data
+    });
+    const confirmedAndValid =
+        metadata?.versionAssessment === "confirmed" &&
+        metadata?.dateEvidence?.consistent === true &&
+        cache &&
+        await validateWeeklyCache(cache, source);
+
+    if (!isCurrentFetchRequest(source, requestId)) {
+        return { applied: false, reason: "stale_request" };
+    }
+
+    if (!confirmedAndValid) {
+        if (!getActiveWeeklyCache(source)) {
+            if (source === "weeklyFutures") {
+                window.setLatestFutureOpenInterestResult(data);
+            } else {
+                window.setWeeklyOptionMap(data);
+            }
+        }
+
+        return { applied: false, reason: "indeterminate_or_invalid" };
+    }
+
+    const savedCache = getLastValidWeeklyCache(source);
+    const comparisonBase = getActiveWeeklyCache(source) || savedCache;
+    const comparison = compareWeeklyVersions(comparisonBase, cache);
+
+    if (
+        comparison.assessment === "older_or_inconsistent" ||
+        comparison.assessment === "indeterminate"
+    ) {
+        return {
+            applied: false,
+            reason: comparison.reason,
+            comparison
+        };
+    }
+
+    applyWeeklyData(source, cache, "live", {
+        status: "latest",
+        remoteCheckStatus: "current",
+        observedLatestTradeDate: cache.sourceDate
+    });
+
+    if (
+        !savedCache ||
+        comparison.assessment === "new_version" ||
+        comparison.assessment === "revised_same_date"
+    ) {
+        if (!isCurrentFetchRequest(source, requestId)) {
+            return { applied: false, reason: "stale_request" };
+        }
+
+        const configuration = getWeeklyCacheConfiguration(source);
+
+        try {
+            localStorage.setItem(
+                configuration.storageKey,
+                JSON.stringify(cache)
+            );
+            setLastValidWeeklyCache(source, cache);
+        } catch (error) {
+            console.warn(`${source}の最終正常版を保存できませんでした:`, error);
+        }
+    }
+
+    return {
+        applied: true,
+        comparison,
+        cache
+    };
+}
+
 function isCurrentFetchRequest(source, requestId) {
     return window.dataFetchState?.[source]?.requestId === requestId;
 }
@@ -1377,8 +2033,19 @@ async function fetchWeeklyFuturesData({
             return { status: "stale", sourceUrl, data: null };
         }
 
-        window.setLatestFutureOpenInterestResult(data);
         const fetchedAt = new Date().toISOString();
+        const liveResult = await processWeeklyLiveResult({
+            source,
+            metadata,
+            fetchedAt,
+            data,
+            requestId
+        });
+
+        if (!isCurrentFetchRequest(source, requestId)) {
+            return { status: "stale", sourceUrl, data: null };
+        }
+
         window.updateFetchState(source, {
             status: window.FETCH_STATUS.SUCCESS,
             fetchedAt,
@@ -1393,7 +2060,8 @@ async function fetchWeeklyFuturesData({
             sourceUrl,
             fetchedAt,
             metadata,
-            data
+            data,
+            liveResult
         };
     } catch (error) {
         if (isCurrentFetchRequest(source, requestId)) {
@@ -1476,10 +2144,19 @@ async function fetchWeeklyOptionsData({
             return { status: "stale", sourceUrl, data: null };
         }
 
-        if (typeof window.setWeeklyOptionMap === "function") {
-            window.setWeeklyOptionMap(data);
-        }
         const fetchedAt = new Date().toISOString();
+        const liveResult = await processWeeklyLiveResult({
+            source,
+            metadata,
+            fetchedAt,
+            data,
+            requestId
+        });
+
+        if (!isCurrentFetchRequest(source, requestId)) {
+            return { status: "stale", sourceUrl, data: null };
+        }
+
         window.updateFetchState(source, {
             status: window.FETCH_STATUS.SUCCESS,
             fetchedAt,
@@ -1494,7 +2171,8 @@ async function fetchWeeklyOptionsData({
             sourceUrl,
             fetchedAt,
             metadata,
-            data
+            data,
+            liveResult
         };
     } catch (error) {
         if (isCurrentFetchRequest(source, requestId)) {
@@ -1542,6 +2220,14 @@ async function fetchWeeklyData({ requestId } = {}) {
         error: null,
         requestId: optionsRequestId
     });
+    window.updateWeeklyDataState("weeklyFutures", {
+        remoteCheckStatus: "pending",
+        observedLatestTradeDate: null
+    });
+    window.updateWeeklyDataState("weeklyOptions", {
+        remoteCheckStatus: "pending",
+        observedLatestTradeDate: null
+    });
 
     let weeklyPage;
 
@@ -1553,6 +2239,7 @@ async function fetchWeeklyData({ requestId } = {}) {
             ["weeklyOptions", optionsRequestId]
         ].forEach(([source, requestId]) => {
             if (isCurrentFetchRequest(source, requestId)) {
+                updateWeeklyRemoteObservation(source, null, false);
                 window.updateFetchState(source, {
                     status: window.FETCH_STATUS.FAILED,
                     fetchedAt: new Date().toISOString(),
@@ -1573,6 +2260,22 @@ async function fetchWeeklyData({ requestId } = {}) {
             error: error?.message || String(error)
         };
     }
+
+    [
+        ["weeklyFutures", futuresRequestId],
+        ["weeklyOptions", optionsRequestId]
+    ].forEach(([source, currentRequestId]) => {
+        if (isCurrentFetchRequest(source, currentRequestId)) {
+            updateWeeklyRemoteObservation(
+                source,
+                weeklyPage.weeklyLinks.tradeDate,
+                Boolean(
+                    weeklyPage.listing &&
+                    weeklyPage.weeklyLinks.tradeDate
+                )
+            );
+        }
+    });
 
     console.log("週次Excelリンク一覧:", weeklyPage.weeklyLinks.all);
     console.log(
@@ -2218,7 +2921,11 @@ function refreshAllMarketData() {
 
 window.refreshAllMarketData = refreshAllMarketData;
 
-refreshAllMarketData();
+initializeWeeklyCaches()
+    .catch(error => {
+        console.warn("週次キャッシュの初期化に失敗しました:", error);
+    })
+    .finally(() => refreshAllMarketData());
    
     function parseDayTradingHtml(html) {
     const doc = new DOMParser().parseFromString(html, "text/html");
