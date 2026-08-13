@@ -1,5 +1,95 @@
 console.log("script.js 読み込み成功！");
 
+const FETCH_STATUS = Object.freeze({
+    IDLE: "idle",
+    LOADING: "loading",
+    SUCCESS: "success",
+    PARTIAL: "partial",
+    UNAVAILABLE: "unavailable",
+    FAILED: "failed"
+});
+
+const createFetchDetailState = () => ({
+    status: FETCH_STATUS.IDLE,
+    startedAt: null,
+    fetchedAt: null,
+    sourceUrl: null,
+    error: null
+});
+
+const createFetchSourceState = details => ({
+    status: FETCH_STATUS.IDLE,
+    startedAt: null,
+    fetchedAt: null,
+    sourceDate: null,
+    sourceUrl: null,
+    error: null,
+    requestId: null,
+    details
+});
+
+const dataFetchState = {
+    qri: createFetchSourceState({
+        html: createFetchDetailState(),
+        referencePrice: createFetchDetailState(),
+        optionRows: createFetchDetailState(),
+        openInterest: createFetchDetailState(),
+        volume: createFetchDetailState()
+    }),
+    participant: createFetchSourceState({
+        dayRegular: createFetchDetailState(),
+        dayJnet: createFetchDetailState(),
+        nightRegular: createFetchDetailState(),
+        nightJnet: createFetchDetailState()
+    }),
+    weeklyFutures: {
+        ...createFetchSourceState({}),
+        signature: null,
+        isNew: null
+    },
+    weeklyOptions: {
+        ...createFetchSourceState({}),
+        signature: null,
+        isNew: null
+    }
+};
+
+function updateFetchState(source, patch) {
+    const sourceState = dataFetchState[source];
+
+    if (!sourceState || !patch || typeof patch !== "object") {
+        return null;
+    }
+
+    Object.assign(sourceState, patch);
+    return sourceState;
+}
+
+function updateFetchDetail(source, detail, patch) {
+    const detailState = dataFetchState[source]?.details?.[detail];
+
+    if (!detailState || !patch || typeof patch !== "object") {
+        return null;
+    }
+
+    Object.assign(detailState, patch);
+    return detailState;
+}
+
+function createFetchRequestId(source) {
+    return [
+        source,
+        Date.now(),
+        Math.random().toString(36).slice(2, 10)
+    ].join("-");
+}
+
+window.FETCH_STATUS = FETCH_STATUS;
+window.dataFetchState = dataFetchState;
+window.updateFetchState = updateFetchState;
+window.updateFetchDetail = updateFetchDetail;
+window.createFetchRequestId = createFetchRequestId;
+
 let myChart = null;
 let futureOpenInterestChart = null;
 let latestFutureOpenInterestResult = null;

@@ -588,7 +588,35 @@ import {
 
 const { ipcRenderer } = require("electron");
 const XLSX = require("xlsx");
- 
+
+const qriRequestId = window.createFetchRequestId("qri");
+const qriStartedAt = new Date().toISOString();
+
+window.updateFetchState("qri", {
+    status: window.FETCH_STATUS.LOADING,
+    startedAt: qriStartedAt,
+    fetchedAt: null,
+    sourceDate: null,
+    sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
+    error: null,
+    requestId: qriRequestId
+});
+
+[
+    "html",
+    "referencePrice",
+    "optionRows",
+    "openInterest",
+    "volume"
+].forEach(detail => {
+    window.updateFetchDetail("qri", detail, {
+        status: window.FETCH_STATUS.LOADING,
+        startedAt: qriStartedAt,
+        fetchedAt: null,
+        sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
+        error: null
+    });
+});
     
 ipcRenderer
     .invoke(
@@ -603,9 +631,25 @@ ipcRenderer
         }
 
         const html = result.html;
+        const htmlFetchedAt = new Date().toISOString();
+
+        window.updateFetchDetail("qri", "html", {
+            status: window.FETCH_STATUS.SUCCESS,
+            fetchedAt: htmlFetchedAt
+        });
 
         const referencePrices =
             parseJpxReferencePrices(html);
+        const referencePriceAvailable =
+            referencePrices.nikkei225?.available === true ||
+            referencePrices.nikkei225Futures?.available === true;
+
+        window.updateFetchDetail("qri", "referencePrice", {
+            status: referencePriceAvailable
+                ? window.FETCH_STATUS.SUCCESS
+                : window.FETCH_STATUS.UNAVAILABLE,
+            fetchedAt: htmlFetchedAt
+        });
 
         if (
             typeof window.applyQriNikkei225FuturesPrice ===
@@ -652,6 +696,8 @@ const dateMatch = sourceText.match(
     /(\d{1,2})\/(\d{1,2})\s*(?:\([^)]+\))?\s*(\d{1,2}):(\d{2})/
 );
 
+let qriSourceDate = null;
+
 if (dateMatch) {
 
     const year = new Date().getFullYear();
@@ -667,6 +713,7 @@ if (dateMatch) {
         hour,
         minute
     );
+    qriSourceDate = sourceDate.toISOString();
 
     console.log("見つけた元データ日時:", sourceDate);
 
@@ -679,6 +726,28 @@ if (dateMatch) {
 }
 
             const data = parseJpxHtml(html);
+            const optionRowsAvailable = data.length > 0;
+            const openInterestAvailable =
+                data.openInterestAvailable === true;
+
+            window.updateFetchDetail("qri", "optionRows", {
+                status: optionRowsAvailable
+                    ? window.FETCH_STATUS.SUCCESS
+                    : window.FETCH_STATUS.UNAVAILABLE,
+                fetchedAt: htmlFetchedAt
+            });
+            window.updateFetchDetail("qri", "openInterest", {
+                status: openInterestAvailable
+                    ? window.FETCH_STATUS.SUCCESS
+                    : window.FETCH_STATUS.UNAVAILABLE,
+                fetchedAt: htmlFetchedAt
+            });
+            window.updateFetchDetail("qri", "volume", {
+                status: optionRowsAvailable
+                    ? window.FETCH_STATUS.SUCCESS
+                    : window.FETCH_STATUS.UNAVAILABLE,
+                fetchedAt: htmlFetchedAt
+            });
     
             console.log(
     "自動取得データ解析件数:",
@@ -758,15 +827,68 @@ if (typeof window.drawJpxPriceChart === "function") {
 
             if (output) {
     output.textContent = "";
-}    
+}
+
+const qriHasUnavailableDetail = [
+    "referencePrice",
+    "optionRows",
+    "openInterest",
+    "volume"
+].some(detail =>
+    window.dataFetchState.qri.details[detail].status ===
+        window.FETCH_STATUS.UNAVAILABLE
+);
+
+window.updateFetchState("qri", {
+    status: qriHasUnavailableDetail
+        ? window.FETCH_STATUS.PARTIAL
+        : window.FETCH_STATUS.SUCCESS,
+    fetchedAt: new Date().toISOString(),
+    sourceDate: qriSourceDate,
+    error: null
+});
 })
     .catch(error => {
+        const errorMessage = error?.message || String(error);
+
+        window.updateFetchState("qri", {
+            status: window.FETCH_STATUS.FAILED,
+            fetchedAt: new Date().toISOString(),
+            error: errorMessage
+        });
+        Object.entries(window.dataFetchState.qri.details)
+            .filter(([, detailState]) =>
+                detailState.status === window.FETCH_STATUS.LOADING
+            )
+            .forEach(([detail]) => {
+                window.updateFetchDetail("qri", detail, {
+                    status: window.FETCH_STATUS.FAILED,
+                    fetchedAt: new Date().toISOString(),
+                    error: errorMessage
+                });
+            });
+
         console.error(
             "オプションデータの自動取得・解析に失敗:",
             error
         );
     });
- 
+
+    const participantRequestId =
+        window.createFetchRequestId("participant");
+    const participantStartedAt = new Date().toISOString();
+
+    window.updateFetchState("participant", {
+        status: window.FETCH_STATUS.LOADING,
+        startedAt: participantStartedAt,
+        fetchedAt: null,
+        sourceDate: null,
+        sourceUrl:
+            "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html",
+        error: null,
+        requestId: participantRequestId
+    });
+
     ipcRenderer
     .invoke(
         "fetch-daytrading-page",
@@ -780,6 +902,31 @@ if (typeof window.drawJpxPriceChart === "function") {
                 result.error || "日中データページの取得に失敗しました"
             );
         }
+
+        const weeklyStartedAt = new Date().toISOString();
+        const weeklyPageUrl =
+            "https://www.jpx.co.jp/markets/derivatives/open-interest/index.html";
+
+        window.updateFetchState("weeklyFutures", {
+            status: window.FETCH_STATUS.LOADING,
+            startedAt: weeklyStartedAt,
+            fetchedAt: null,
+            sourceDate: null,
+            sourceUrl: weeklyPageUrl,
+            error: null,
+            requestId:
+                window.createFetchRequestId("weeklyFutures")
+        });
+        window.updateFetchState("weeklyOptions", {
+            status: window.FETCH_STATUS.LOADING,
+            startedAt: weeklyStartedAt,
+            fetchedAt: null,
+            sourceDate: null,
+            sourceUrl: weeklyPageUrl,
+            error: null,
+            requestId:
+                window.createFetchRequestId("weeklyOptions")
+        });
 
         const weeklyPageResult = await ipcRenderer.invoke(
     "fetch-daytrading-page",
@@ -1071,6 +1218,22 @@ const latestNikkeiOptionLink = weeklyExcelLinks.find(link =>
     link.includes("nk225op_oi_by_tp.xlsx")
 );
 
+if (!latestIndexFutureLink) {
+    window.updateFetchState("weeklyFutures", {
+        status: window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt: new Date().toISOString(),
+        error: null
+    });
+}
+
+if (!latestNikkeiOptionLink) {
+    window.updateFetchState("weeklyOptions", {
+        status: window.FETCH_STATUS.UNAVAILABLE,
+        fetchedAt: new Date().toISOString(),
+        error: null
+    });
+}
+
 console.log("最新・指数先物URL:", latestIndexFutureLink);
 console.log("最新・日経225オプションURL:", latestNikkeiOptionLink);
 
@@ -1084,15 +1247,50 @@ const weeklyOptionUrl = new URL(
     "https://www.jpx.co.jp"
 ).href;
 
+window.updateFetchState("weeklyFutures", {
+    sourceUrl: weeklyFutureUrl
+});
+window.updateFetchState("weeklyOptions", {
+    sourceUrl: weeklyOptionUrl
+});
+
 const weeklyFutureExcel = await ipcRenderer.invoke(
     "download-daytrading-excel",
     weeklyFutureUrl
 );
 
+if (
+    !weeklyFutureExcel.success &&
+    window.dataFetchState.weeklyFutures.status !==
+        window.FETCH_STATUS.UNAVAILABLE
+) {
+    window.updateFetchState("weeklyFutures", {
+        status: window.FETCH_STATUS.FAILED,
+        fetchedAt: new Date().toISOString(),
+        error:
+            weeklyFutureExcel.error ||
+            "週次先物Excelの取得に失敗しました"
+    });
+}
+
 const weeklyOptionExcel = await ipcRenderer.invoke(
     "download-daytrading-excel",
     weeklyOptionUrl
 );
+
+if (
+    !weeklyOptionExcel.success &&
+    window.dataFetchState.weeklyOptions.status !==
+        window.FETCH_STATUS.UNAVAILABLE
+) {
+    window.updateFetchState("weeklyOptions", {
+        status: window.FETCH_STATUS.FAILED,
+        fetchedAt: new Date().toISOString(),
+        error:
+            weeklyOptionExcel.error ||
+            "週次オプションExcelの取得に失敗しました"
+    });
+}
 
 console.log("週次先物Excel:", weeklyFutureExcel);
 console.log("週次オプションExcel:", weeklyOptionExcel);
@@ -1127,6 +1325,12 @@ window.setLatestFutureOpenInterestResult(
     weeklyFutureResult
 );
 
+window.updateFetchState("weeklyFutures", {
+    status: window.FETCH_STATUS.SUCCESS,
+    fetchedAt: new Date().toISOString(),
+    error: null
+});
+
 
 const weeklyOptionWorkbook = XLSX.read(weeklyOptionExcel.data, {
     type: "array"
@@ -1156,6 +1360,12 @@ console.log(
 if (typeof window.setWeeklyOptionMap === "function") {
     window.setWeeklyOptionMap(weeklyOptionResult);
 }
+
+window.updateFetchState("weeklyOptions", {
+    status: window.FETCH_STATUS.SUCCESS,
+    fetchedAt: new Date().toISOString(),
+    error: null
+});
         console.log(
             "日中データページHTML文字数:",
             result.html.length
@@ -1220,17 +1430,40 @@ const targetDate = await findLatestParticipantDate(
 );
 console.log("手口データ対象日 =", targetDate);
 
+window.updateFetchState("participant", {
+    sourceDate: targetDate
+});
+
         const dayData = makeParticipantUrls(targetDate);
         console.log("日中データ解析結果", dayData);
 
-        const downloadAndParseExcel = async (excelUrl, label) => {
+        const downloadAndParseExcel = async (
+            excelUrl,
+            label,
+            detail
+        ) => {
+    window.updateFetchDetail("participant", detail, {
+        status: window.FETCH_STATUS.LOADING,
+        startedAt: new Date().toISOString(),
+        fetchedAt: null,
+        sourceUrl: excelUrl || null,
+        error: null
+    });
+
     if (!excelUrl) {
         console.warn(`${label}のURLがありません`);
+
+        window.updateFetchDetail("participant", detail, {
+            status: window.FETCH_STATUS.UNAVAILABLE,
+            fetchedAt: new Date().toISOString()
+        });
 
         return parseDayTradingExcel([]);
     }
 
     console.log(`${label} URL:`, excelUrl);
+
+    try {
 
     const excelResult = await ipcRenderer.invoke(
         "download-daytrading-excel",
@@ -1259,9 +1492,23 @@ console.log("手口データ対象日 =", targetDate);
 
     const parsedData = parseDayTradingExcel(json);
 
+    window.updateFetchDetail("participant", detail, {
+        status: window.FETCH_STATUS.SUCCESS,
+        fetchedAt: new Date().toISOString(),
+        error: null
+    });
+
     console.log(`${label}解析結果:`, parsedData);
 
     return parsedData;
+    } catch (error) {
+        window.updateFetchDetail("participant", detail, {
+            status: window.FETCH_STATUS.FAILED,
+            fetchedAt: new Date().toISOString(),
+            error: error?.message || String(error)
+        });
+        throw error;
+    }
 };
 
 
@@ -1273,19 +1520,23 @@ const [
 ] = await Promise.all([
     downloadAndParseExcel(
         dayData.dayAuctionUrl,
-        "日中立会"
+        "日中立会",
+        "dayRegular"
     ),
     downloadAndParseExcel(
         dayData.dayJnetUrl,
-        "日中J-NET"
+        "日中J-NET",
+        "dayJnet"
     ),
     downloadAndParseExcel(
         dayData.nightAuctionUrl,
-        "夜間立会"
+        "夜間立会",
+        "nightRegular"
     ),
     downloadAndParseExcel(
         dayData.nightJnetUrl,
-        "夜間J-NET"
+        "夜間J-NET",
+        "nightJnet"
     )
 ]);
     
@@ -1302,6 +1553,21 @@ if (typeof window.setLatestParsedDayData === "function") {
     window.setLatestParsedDayData(latestParsedDayData);
 }
 
+const participantHasUnavailableDetail =
+    Object.values(window.dataFetchState.participant.details)
+        .some(detailState =>
+            detailState.status ===
+                window.FETCH_STATUS.UNAVAILABLE
+        );
+
+window.updateFetchState("participant", {
+    status: participantHasUnavailableDetail
+        ? window.FETCH_STATUS.PARTIAL
+        : window.FETCH_STATUS.SUCCESS,
+    fetchedAt: new Date().toISOString(),
+    error: null
+});
+
 console.log(
     "4種類のExcel解析完了:",
     latestParsedDayData
@@ -1310,6 +1576,32 @@ console.log(
 
     
     .catch(error => {
+        const errorMessage = error?.message || String(error);
+
+        if (
+            window.dataFetchState.participant.status ===
+            window.FETCH_STATUS.LOADING
+        ) {
+            window.updateFetchState("participant", {
+                status: window.FETCH_STATUS.FAILED,
+                fetchedAt: new Date().toISOString(),
+                error: errorMessage
+            });
+        }
+
+        ["weeklyFutures", "weeklyOptions"].forEach(source => {
+            if (
+                window.dataFetchState[source].status ===
+                window.FETCH_STATUS.LOADING
+            ) {
+                window.updateFetchState(source, {
+                    status: window.FETCH_STATUS.FAILED,
+                    fetchedAt: new Date().toISOString(),
+                    error: errorMessage
+                });
+            }
+        });
+
         console.error(
             "日中データページ取得エラー:",
             error
