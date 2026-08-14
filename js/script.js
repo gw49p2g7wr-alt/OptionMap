@@ -3706,6 +3706,365 @@ function renderOptionMapOverallJudgment() {
     }
 }
 
+const OPTION_MAP_V2_ENABLED = true;
+const OPTION_MAP_V2_OPTION_QUALITY = Object.freeze({
+    live: 1.00,
+    fallback: 0.70
+});
+const OPTION_MAP_V2_WEEKLY_QUALITY = Object.freeze({
+    liveCurrent: 1.00,
+    cacheCurrent: 0.95,
+    waitingUpdate: 0.50,
+    remoteFailed: 0.70,
+    pending: 0.70
+});
+
+const optionMapJudgmentStateV2 = {
+    result: null,
+    weeklyCandidate: null,
+    lastError: null
+};
+
+window.optionMapJudgmentStateV2 = optionMapJudgmentStateV2;
+
+function createOptionComponentInputV2() {
+    const source = optionMapJudgmentState.option;
+    const judgment = source?.judgment;
+    const metadata = source?.metadata || {};
+    const sourceDate =
+        metadata.currentOpenInterestSourceDate || metadata.currentSourceDate;
+
+    if (source?.available !== true || !sourceDate) {
+        return {
+            available: false,
+            reason: source?.available === true
+                ? "QRI建玉の基準日を確認できません"
+                : "オプション市場データが利用できません"
+        };
+    }
+
+    const scoreDifference = Number(judgment?.scoreDifference);
+    const confidenceScore = Number(judgment?.confidenceScore);
+    const usingFallback = metadata.usingFallback === true;
+    const notes = [];
+
+    if (usingFallback) {
+        notes.push("QRI建玉は直近正常値を使用中");
+    }
+
+    if (currentPriceState?.mode === "manual") {
+        notes.push("現在値は手動入力です");
+    }
+
+    return {
+        available: true,
+        normalizedDirection: window.OptionMapOverallJudgmentV2.clamp(
+            scoreDifference /
+                window.OptionMapOverallJudgmentV2.CONFIG.optionNormalizationBase,
+            -1,
+            1
+        ),
+        qualityFactor: usingFallback
+            ? OPTION_MAP_V2_OPTION_QUALITY.fallback
+            : OPTION_MAP_V2_OPTION_QUALITY.live,
+        evidenceFactor: confidenceScore / 5,
+        notes,
+        metadata: {
+            marketLevel: judgment?.marketLevel || null,
+            bullishScore: judgment?.bullishScore ?? null,
+            bearishScore: judgment?.bearishScore ?? null,
+            scoreDifference,
+            confidenceScore,
+            confidence: judgment?.confidence || null,
+            confidenceReason: judgment?.confidenceReason || null,
+            usingFallback,
+            origin: metadata.openInterestOrigin || null,
+            sourceDate,
+            comparisonSourceDate: metadata.comparisonSourceDate || null,
+            currentPrice: metadata.currentPrice ?? currentPriceState?.value ?? null,
+            currentPriceMode: currentPriceState?.mode || null,
+            currentPriceSource: currentPriceState?.source || null,
+            currentPriceQuotedAt: currentPriceState?.quotedAt || null,
+            currentPriceFetchedAt: currentPriceState?.fetchedAt || null
+        }
+    };
+}
+
+function getWeeklyQualityV2(metadata) {
+    const dataStatus = metadata?.dataStatus;
+    const remoteCheckStatus = metadata?.remoteCheckStatus;
+    const origin = metadata?.origin;
+
+    if (
+        dataStatus === "waiting_update" ||
+        remoteCheckStatus === "newer_available"
+    ) {
+        return OPTION_MAP_V2_WEEKLY_QUALITY.waitingUpdate;
+    }
+
+    if (remoteCheckStatus === "failed") {
+        return OPTION_MAP_V2_WEEKLY_QUALITY.remoteFailed;
+    }
+
+    if (remoteCheckStatus === "pending") {
+        return OPTION_MAP_V2_WEEKLY_QUALITY.pending;
+    }
+
+    if (dataStatus === "latest" && remoteCheckStatus === "current") {
+        return origin === "cache"
+            ? OPTION_MAP_V2_WEEKLY_QUALITY.cacheCurrent
+            : OPTION_MAP_V2_WEEKLY_QUALITY.liveCurrent;
+    }
+
+    return 0;
+}
+
+function createWeeklyComponentInputV2() {
+    const candidate = optionMapJudgmentStateV2.weeklyCandidate;
+
+    if (!candidate?.available) {
+        return {
+            available: false,
+            reason: candidate?.reason || "主要5社週次データが利用できません"
+        };
+    }
+
+    const scoreDiff = Number(candidate.judgment?.scoreDiff);
+    const qualityFactor = getWeeklyQualityV2(candidate.metadata);
+    const normalizedDirection = window.OptionMapOverallJudgmentV2.clamp(
+        scoreDiff /
+            window.OptionMapOverallJudgmentV2.CONFIG.weeklyNormalizationBase,
+        -1,
+        1
+    );
+    const notes = [];
+
+    if (
+        candidate.metadata.dataStatus === "waiting_update" ||
+        candidate.metadata.remoteCheckStatus === "newer_available"
+    ) {
+        notes.push("週次データは新版確認済み・取得待ちです");
+    } else if (candidate.metadata.remoteCheckStatus === "failed") {
+        notes.push("週次データの最新版確認に失敗しました");
+    } else if (candidate.metadata.remoteCheckStatus === "pending") {
+        notes.push("週次データの最新版を確認中です");
+    } else if (candidate.metadata.origin === "cache") {
+        notes.push("週次データは確認済みキャッシュを使用中");
+    }
+
+    if (qualityFactor <= 0) {
+        return {
+            available: false,
+            reason: "週次データの品質状態を確認できません"
+        };
+    }
+
+    return {
+        available: true,
+        normalizedDirection,
+        qualityFactor,
+        evidenceFactor: Math.min(1, Math.abs(normalizedDirection)),
+        notes,
+        metadata: {
+            ...candidate.metadata,
+            buyScore: candidate.judgment.buyScore,
+            sellScore: candidate.judgment.sellScore,
+            scoreDiff,
+            direction: candidate.judgment.direction
+        }
+    };
+}
+
+function calculateOptionMapOverallJudgmentV2() {
+    if (!window.OptionMapOverallJudgmentV2) {
+        return {
+            status: "invalid_input",
+            direction: null,
+            directionLabel: null,
+            confidence: 0,
+            components: {},
+            metadata: {
+                calculatedAt: new Date().toISOString(),
+                availableComponentCount: 0,
+                plannedComponentCount: 2,
+                coverage: 0,
+                timeHorizon: { code: "multi_day", label: "1日～数日" },
+                warnings: ["v2計算モジュールを読み込めません"]
+            }
+        };
+    }
+
+    return window.OptionMapOverallJudgmentV2.calculateOverallJudgmentV2({
+        option: createOptionComponentInputV2(),
+        weekly: createWeeklyComponentInputV2()
+    });
+}
+
+function formatOptionMapV2SignedScore(value) {
+    if (!Number.isFinite(value)) return "算出不可";
+    const rounded = Math.round(value);
+    return `${rounded > 0 ? "+" : ""}${rounded}`;
+}
+
+function formatOptionMapV2Date(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "--";
+    return date.toLocaleDateString("ja-JP", {
+        month: "2-digit",
+        day: "2-digit"
+    });
+}
+
+function renderOptionMapOverallJudgmentV2Internal() {
+    const summaryElement = document.getElementById("optionMapOverallSummaryV2");
+    if (!summaryElement) return;
+
+    summaryElement.hidden = !OPTION_MAP_V2_ENABLED;
+    if (!OPTION_MAP_V2_ENABLED) return;
+
+    const result = calculateOptionMapOverallJudgmentV2();
+    optionMapJudgmentStateV2.result = result;
+    optionMapJudgmentStateV2.lastError = null;
+
+    const directionElement = document.getElementById("optionMapV2Direction");
+    const scoreElement = document.getElementById("optionMapV2DirectionScore");
+    const confidenceElement = document.getElementById("optionMapV2Confidence");
+    const statusElement = document.getElementById("optionMapV2Status");
+    const optionElement = document.getElementById("optionMapV2OptionComponent");
+    const weeklyElement = document.getElementById("optionMapV2WeeklyComponent");
+    const warningsElement = document.getElementById("optionMapV2Warnings");
+
+    if (
+        !directionElement || !scoreElement || !confidenceElement ||
+        !statusElement || !optionElement || !weeklyElement || !warningsElement
+    ) {
+        return;
+    }
+
+    directionElement.textContent = result.directionLabel ||
+        (result.status === "invalid_input" ? "判定材料エラー" : "判定材料不足");
+    scoreElement.textContent = Number.isFinite(result.direction)
+        ? `${formatOptionMapV2SignedScore(result.direction)} / 100`
+        : "算出不可";
+    confidenceElement.textContent = `${result.confidence}%`;
+    statusElement.textContent =
+        `材料 ${result.metadata.availableComponentCount} / ` +
+        `${result.metadata.plannedComponentCount}（${result.status}）`;
+
+    const formatComponent = (component, label) => {
+        if (!component?.available) return `${label}：未利用`;
+        return `${label}：${formatOptionMapV2SignedScore(component.directionScore)} ` +
+            `／ 品質 ${Math.round(component.qualityFactor * 100)}%`;
+    };
+
+    optionElement.textContent = formatComponent(
+        result.components.option,
+        "オプション市場"
+    );
+    weeklyElement.textContent = formatComponent(
+        result.components.weekly,
+        "主要5社週次"
+    );
+
+    const warnings = [...result.metadata.warnings];
+    const weeklyMetadata = result.components.weekly?.metadata;
+    if (weeklyMetadata?.previous?.sourceDate && weeklyMetadata?.current?.sourceDate) {
+        warnings.push(
+            `週次比較：${formatOptionMapV2Date(weeklyMetadata.current.sourceDate)}` +
+            `現在 vs ${formatOptionMapV2Date(weeklyMetadata.previous.sourceDate)}現在`
+        );
+    }
+
+    warningsElement.replaceChildren();
+    if (warnings.length === 0) {
+        const item = document.createElement("li");
+        item.textContent = "データ注意なし";
+        warningsElement.appendChild(item);
+    } else {
+        [...new Set(warnings)].forEach(warning => {
+            const item = document.createElement("li");
+            item.textContent = warning;
+            warningsElement.appendChild(item);
+        });
+    }
+
+    summaryElement.classList.remove(
+        "is-buy", "is-sell", "is-neutral", "is-insufficient", "is-invalid"
+    );
+    if (result.status === "invalid_input") {
+        summaryElement.classList.add("is-invalid");
+    } else if (result.status === "unavailable") {
+        summaryElement.classList.add("is-insufficient");
+    } else if (result.direction > 19) {
+        summaryElement.classList.add("is-buy");
+    } else if (result.direction < -19) {
+        summaryElement.classList.add("is-sell");
+    } else {
+        summaryElement.classList.add("is-neutral");
+    }
+}
+
+function safeRenderOptionMapOverallJudgmentV2() {
+    if (!OPTION_MAP_V2_ENABLED) return;
+
+    try {
+        renderOptionMapOverallJudgmentV2Internal();
+    } catch (error) {
+        optionMapJudgmentStateV2.lastError = error;
+        console.error("OptionMap総合判断 v2 の描画に失敗しました:", error);
+    }
+}
+
+function updateWeeklyCandidateV2(selection) {
+    const versions = selection?.versions;
+    const previous = Array.isArray(versions) ? versions.at(-2) : null;
+    const current = Array.isArray(versions) ? versions.at(-1) : null;
+    const activeVersionMatched = Boolean(
+        weeklyFuturesDataState.versionKey &&
+        current?.versionKey &&
+        weeklyFuturesDataState.versionKey === current.versionKey
+    );
+
+    if (
+        !previous?.sourceDate || !previous?.versionKey ||
+        !current?.sourceDate || !current?.versionKey ||
+        !activeVersionMatched
+    ) {
+        optionMapJudgmentStateV2.weeklyCandidate = {
+            available: false,
+            reason: "検証済みの正式週次2版を利用できません"
+        };
+        safeRenderOptionMapOverallJudgmentV2();
+        return;
+    }
+
+    optionMapJudgmentStateV2.weeklyCandidate = {
+        available: true,
+        judgment: calculateWeeklyBrokerJudgment(previous, current),
+        metadata: {
+            previous: {
+                sourceDate: previous.sourceDate,
+                versionKey: previous.versionKey
+            },
+            current: {
+                sourceDate: current.sourceDate,
+                versionKey: current.versionKey
+            },
+            activeVersionKey: weeklyFuturesDataState.versionKey,
+            activeVersionMatched,
+            origin: weeklyFuturesDataState.origin,
+            dataStatus: weeklyFuturesDataState.status,
+            remoteCheckStatus: weeklyFuturesDataState.remoteCheckStatus
+        }
+    };
+    safeRenderOptionMapOverallJudgmentV2();
+}
+
+window.calculateOptionMapOverallJudgmentV2 =
+    calculateOptionMapOverallJudgmentV2;
+window.renderOptionMapOverallJudgmentV2 =
+    safeRenderOptionMapOverallJudgmentV2;
+
 function invalidateOptionMarketJudgment() {
     optionMapJudgmentState.option = {
         available: false,
@@ -3714,6 +4073,7 @@ function invalidateOptionMarketJudgment() {
     };
 
     renderOptionMapOverallJudgment();
+    safeRenderOptionMapOverallJudgmentV2();
 }
 
 function syncOptionMarketJudgmentOpenInterestMetadata() {
@@ -3743,6 +4103,7 @@ function syncOptionMarketJudgmentOpenInterestMetadata() {
     });
 
     renderOptionMapOverallJudgment();
+    safeRenderOptionMapOverallJudgmentV2();
 }
 
 function areJudgmentSourceArraysEqual(left, right) {
@@ -4531,6 +4892,8 @@ async function renderSavedSnapshots() {
     const allConfirmedWeeklySnapshots = weeklySelection.allVersions;
     const weeklyAvailability =
         getWeeklyJudgmentAvailability(weeklySelection);
+
+    updateWeeklyCandidateV2(weeklySelection);
 
     renderWeeklyBrokerVersionStatus(
         weeklySelection,
@@ -7746,6 +8109,7 @@ optionMapJudgmentState.option = {
 };
 
 renderOptionMapOverallJudgment();
+safeRenderOptionMapOverallJudgmentV2();
 
 const {
     bullishScore,

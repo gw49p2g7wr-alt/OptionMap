@@ -336,6 +336,47 @@
                         </div>
                     </div>
                 </div>
+
+                <div
+                    id="optionMapOverallSummaryV2"
+                    class="optionmap-overall-summary optionmap-overall-v2 is-insufficient"
+                    hidden
+                >
+                    <h4>🧭 OptionMap総合判断 v2</h4>
+
+                    <div class="optionmap-v2-headline">
+                        <div>
+                            <span>総合方向</span>
+                            <strong id="optionMapV2Direction">判定材料不足</strong>
+                            <b id="optionMapV2DirectionScore">算出不可</b>
+                        </div>
+                        <div>
+                            <span>信頼度</span>
+                            <strong id="optionMapV2Confidence">0%</strong>
+                            <b id="optionMapV2Status">材料 0 / 2</b>
+                        </div>
+                    </div>
+
+                    <div class="optionmap-v2-details">
+                        <h5>内訳</h5>
+                        <p id="optionMapV2OptionComponent">オプション市場：未利用</p>
+                        <p id="optionMapV2WeeklyComponent">主要5社週次：未利用</p>
+
+                        <h5>データ注意</h5>
+                        <ul id="optionMapV2Warnings">
+                            <li>利用可能な判定材料を確認中です</li>
+                        </ul>
+
+                        <p class="optionmap-v2-future-components">
+                            チャート：未接続 ／ 参加者別：未接続 ／
+                            世界市場：未接続 ／ IV：未接続
+                        </p>
+                        <p><strong>想定時間軸：</strong>1日～数日</p>
+                        <p class="optionmap-v2-disclaimer">
+                            総合方向は地合いを示すもので、売買タイミングを意味しません。
+                        </p>
+                    </div>
+                </div>
             
                 <div class="weekly-broker-summary">
 
@@ -608,6 +649,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/overallJudgmentV2.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">

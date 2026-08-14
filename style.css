@@ -851,9 +851,74 @@ canvas {
     background: #fff6ed;
 }
 
+.optionmap-overall-v2[hidden] {
+    display: none;
+}
+
+.optionmap-v2-headline {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.optionmap-v2-headline > div {
+    display: grid;
+    gap: 5px;
+    padding: 12px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.optionmap-v2-headline span,
+.optionmap-v2-headline b {
+    color: #667085;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.optionmap-v2-headline strong {
+    color: #26364d;
+    font-size: 19px;
+}
+
+.optionmap-v2-details {
+    margin-top: 14px;
+    color: #475467;
+    font-size: 14px;
+}
+
+.optionmap-v2-details h5 {
+    margin: 12px 0 6px;
+    color: #344054;
+    font-size: 14px;
+}
+
+.optionmap-v2-details p,
+.optionmap-v2-details ul {
+    margin: 5px 0;
+}
+
+.optionmap-v2-details ul {
+    padding-left: 20px;
+}
+
+.optionmap-v2-future-components {
+    color: #667085;
+    font-size: 12px;
+}
+
+.optionmap-v2-disclaimer {
+    padding-top: 8px;
+    border-top: 1px solid #dfe4ec;
+}
+
 @media (max-width: 750px) {
     .intelligence-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    .optionmap-v2-headline {
+        grid-template-columns: 1fr;
     }
 }
 
