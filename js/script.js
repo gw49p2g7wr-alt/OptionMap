@@ -874,6 +874,8 @@ window.setLatestFutureOpenInterestResult = function (result) {
 
 let latestBrokerLabels = [];
 let latestBrokerValues = [];
+let latestParticipantMetadata = null;
+let participantFetchDisplayState = null;
 let latestNightBrokerData = {};
 let latestDayBrokerData = {};
 let latestOptionBrokerData = {};
@@ -1924,7 +1926,7 @@ function drawChart(labels, values) {
 
     ctx.hidden = false;
 
-    if (statusElement) {
+    if (statusElement && !participantFetchDisplayState) {
         statusElement.hidden = true;
         statusElement.textContent = "";
     }
@@ -2374,10 +2376,6 @@ function updateBrokerChartByProduct(parsedDayData) {
             return data.topix?.records || [];
         }
 
-        if (product === "NK225E") {
-            return data.micro?.records || [];
-        }
-
         console.warn("未対応の商品です:", product);
         return [];
     };
@@ -2431,8 +2429,43 @@ function updateBrokerChartByProduct(parsedDayData) {
     updateBrokerChartFromExcel(records);
 }
 
-function setLatestParsedDayData(data) {
+function renderParticipantFetchDisplayState() {
+    const statusElement = document.getElementById("brokerChartStatus");
+    if (!statusElement) return;
+
+    if (!participantFetchDisplayState) {
+        statusElement.hidden = true;
+        statusElement.textContent = "";
+        return;
+    }
+
+    const { status, successCount, fileCount, sourceDate } =
+        participantFetchDisplayState;
+
+    if (status === FETCH_STATUS.PARTIAL) {
+        statusElement.textContent =
+            `一部データ未取得（${successCount}/${fileCount}、対象日 ${sourceDate}）`;
+    } else if (status === FETCH_STATUS.FAILED) {
+        statusElement.textContent = latestParsedDayData
+            ? "今回の取得に失敗しました（前回取得データを表示中）"
+            : "参加者別データの取得に失敗しました";
+    } else {
+        statusElement.hidden = true;
+        statusElement.textContent = "";
+        return;
+    }
+
+    statusElement.hidden = false;
+}
+
+function setParticipantFetchDisplayState(metadata) {
+    participantFetchDisplayState = metadata || null;
+    renderParticipantFetchDisplayState();
+}
+
+function setLatestParsedDayData(data, metadata = null) {
     latestParsedDayData = data;
+    latestParticipantMetadata = metadata;
 
     if (latestParsedDayData) {
         updateBrokerChartByProduct(latestParsedDayData);
@@ -2449,6 +2482,8 @@ function setLatestParsedDayData(data) {
 }
 
 window.setLatestParsedDayData = setLatestParsedDayData;
+window.setParticipantFetchDisplayState = setParticipantFetchDisplayState;
+window.getLatestParticipantMetadata = () => latestParticipantMetadata;
 
 function createBarColors(values, normalColor, strongColor) {
 
@@ -5956,6 +5991,16 @@ if (cumulativePeriodSelect) {
         },
 
         parsedDayData: latestParsedDayData,
+
+        participant: latestParticipantMetadata
+            ? {
+                sourceDate: latestParticipantMetadata.sourceDate,
+                status: latestParticipantMetadata.status,
+                fileStatuses: {
+                    ...latestParticipantMetadata.fileStatuses
+                }
+            }
+            : null,
 
         futureBrokerData: {
             night: latestNightFutureTotals,

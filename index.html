@@ -602,7 +602,6 @@
         <select id="brokerProductSelect">
           <option value="NK225F">日経225先物</option>
           <option value="NK225M">日経225mini</option>
-          <option value="NK225E">日経225マイクロ</option>
           <option value="TOPIXF">TOPIX先物</option>
         </select>
       
@@ -650,6 +649,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/overallJudgmentV2.js"></script>
+<script src="js/participantData.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">
@@ -790,7 +790,8 @@ async function downloadAndParseParticipantExcel(
     excelUrl,
     label,
     detail,
-    requestId
+    requestId,
+    targetDate
 ) {
     if (!isCurrentFetchRequest("participant", requestId)) {
         return null;
@@ -832,7 +833,8 @@ async function downloadAndParseParticipantExcel(
         const workbook = XLSX.read(excelResult.data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const parsedData = parseDayTradingExcel(json);
+        const parsedData = window.OptionMapParticipantData
+            .parseParticipantExcel(json, targetDate);
 
         if (isCurrentFetchRequest("participant", requestId)) {
             window.updateFetchDetail("participant", detail, {
@@ -2862,37 +2864,40 @@ window.updateFetchState("participant", {
         const dayData = makeParticipantUrls(targetDate);
         console.log("日中データ解析結果", dayData);
 
-const [
-    dayAuction,
-    dayJnet,
-    nightAuction,
-    nightJnet
-] = await Promise.all([
+const participantFiles = [
     downloadAndParseParticipantExcel(
         dayData.dayAuctionUrl,
         "日中立会",
         "dayRegular",
-        participantRequestId
+        participantRequestId,
+        targetDate
     ),
     downloadAndParseParticipantExcel(
         dayData.dayJnetUrl,
         "日中J-NET",
         "dayJnet",
-        participantRequestId
+        participantRequestId,
+        targetDate
     ),
     downloadAndParseParticipantExcel(
         dayData.nightAuctionUrl,
         "夜間立会",
         "nightRegular",
-        participantRequestId
+        participantRequestId,
+        targetDate
     ),
     downloadAndParseParticipantExcel(
         dayData.nightJnetUrl,
         "夜間J-NET",
         "nightJnet",
-        participantRequestId
+        participantRequestId,
+        targetDate
     )
-]);
+];
+
+const participantSettledResults = await Promise.allSettled(
+    participantFiles
+);
 
 if (!isCurrentFetchRequest("participant", participantRequestId)) {
     return {
@@ -2908,31 +2913,55 @@ if (!isCurrentFetchRequest("participant", participantRequestId)) {
     
 
 
-const parsedParticipantData = {
-    dayAuction,
-    dayJnet,
-    nightAuction,
-    nightJnet
+const participantResult = window.OptionMapParticipantData
+    .buildParticipantResult(participantSettledResults, targetDate);
+const parsedParticipantData = participantResult.data;
+const participantMetadata = participantResult.metadata;
+
+const detailKeys = {
+    dayAuction: "dayRegular",
+    dayJnet: "dayJnet",
+    nightAuction: "nightRegular",
+    nightJnet: "nightJnet"
 };
 
-if (typeof window.setLatestParsedDayData === "function") {
-    window.setLatestParsedDayData(parsedParticipantData);
+for (const [fileKey, fileStatus] of Object.entries(
+    participantMetadata.fileStatuses
+)) {
+    if (fileStatus === window.FETCH_STATUS.SUCCESS) continue;
+
+    window.updateFetchDetail(
+        "participant",
+        detailKeys[fileKey],
+        {
+            status: window.FETCH_STATUS.FAILED,
+            fetchedAt: new Date().toISOString(),
+            error: participantMetadata.errors[fileKey] || "取得失敗"
+        }
+    );
 }
 
-const participantHasUnavailableDetail =
-    Object.values(window.dataFetchState.participant.details)
-        .some(detailState =>
-            detailState.status ===
-                window.FETCH_STATUS.UNAVAILABLE
-        );
+if (
+    participantMetadata.successCount > 0 &&
+    typeof window.setLatestParsedDayData === "function"
+) {
+    window.setLatestParsedDayData(
+        parsedParticipantData,
+        participantMetadata
+    );
+}
 
 window.updateFetchState("participant", {
-    status: participantHasUnavailableDetail
-        ? window.FETCH_STATUS.PARTIAL
-        : window.FETCH_STATUS.SUCCESS,
+    status: participantMetadata.status,
     fetchedAt: new Date().toISOString(),
-    error: null
+    error: participantMetadata.status === window.FETCH_STATUS.FAILED
+        ? "参加者別4ファイルを取得できませんでした"
+        : null
 });
+
+if (typeof window.setParticipantFetchDisplayState === "function") {
+    window.setParticipantFetchDisplayState(participantMetadata);
+}
 
 console.log(
     "4種類のExcel解析完了:",
@@ -2941,20 +2970,24 @@ console.log(
 
 return {
     source: "participant",
-    status: participantHasUnavailableDetail
-        ? window.FETCH_STATUS.PARTIAL
-        : window.FETCH_STATUS.SUCCESS,
+    status: participantMetadata.status,
     requestId: participantRequestId,
     sourceDate: targetDate,
     fetchedAt: window.dataFetchState.participant.fetchedAt,
-    data: parsedParticipantData,
-    error: null
+    data: participantMetadata.successCount > 0
+        ? parsedParticipantData
+        : null,
+    metadata: participantMetadata,
+    error: participantMetadata.status === window.FETCH_STATUS.FAILED
+        ? "参加者別4ファイルを取得できませんでした"
+        : null
 };
 }
 
 function handleParticipantFetchError(error, requestId) {
     const errorMessage = error?.message || String(error);
     const fetchedAt = new Date().toISOString();
+    const sourceDate = window.dataFetchState?.participant?.sourceDate || null;
 
     if (isCurrentFetchRequest("participant", requestId)) {
         window.updateFetchState("participant", {
@@ -2962,6 +2995,16 @@ function handleParticipantFetchError(error, requestId) {
             fetchedAt,
             error: errorMessage
         });
+
+        if (typeof window.setParticipantFetchDisplayState === "function") {
+            window.setParticipantFetchDisplayState({
+                status: window.FETCH_STATUS.FAILED,
+                sourceDate,
+                successCount: 0,
+                fileCount: 4,
+                fileStatuses: {}
+            });
+        }
     }
 
     console.error("日中データページ取得エラー:", error);
@@ -2970,7 +3013,7 @@ function handleParticipantFetchError(error, requestId) {
         source: "participant",
         status: window.FETCH_STATUS.FAILED,
         requestId,
-        sourceDate: null,
+        sourceDate,
         fetchedAt,
         data: null,
         error: errorMessage
@@ -3147,76 +3190,9 @@ return {
 };    
 }
 
-function parseDayTradingExcel(json) {
-    const rows = json.filter(
-        row => Array.isArray(row) && row.length >= 8
-    );
-
-    const productList = [
-    ...new Set(
-        rows
-            .map(row => row[0])
-            .filter(product => product)
-    )
-];
-
-console.log("📋 手口Excelの商品一覧 =", productList);
-
-    const makeRecords = product =>
-    rows
-        .filter(row => row[0] === product)
-        .map(row => ({
-            product: row[0],
-            contractCode: row[1],
-            contractName: row[2],
-            rank: Number(row[3]),
-            reportedVolume: Number(row[4]),
-            company: row[5],
-            companyEnglish: row[6],
-            volume: Number(row[7])
-        }))
-        .filter(item =>
-            Number.isFinite(item.rank) &&
-            Number.isFinite(item.volume) &&
-            item.company
-        );
-
-        const largeRecords = makeRecords("NK225F");
-        const miniRecords = makeRecords("NK225MF");
-        const topixRecords = makeRecords("TOPIXF");
-        const microRecords = makeRecords("NK225E");
-        
-        console.log("🔬 マイクロ手口件数 =", microRecords.length);
-        
-        return {
-    large: {
-        records: largeRecords,
-        top10: [...largeRecords]
-            .sort((a, b) => a.rank - b.rank)
-            .slice(0, 10)
-    },
-
-    mini: {
-        records: miniRecords,
-        top10: [...miniRecords]
-            .sort((a, b) => a.rank - b.rank)
-            .slice(0, 10)
-    },
-
-    topix: {
-        records: topixRecords,
-        top10: [...topixRecords]
-            .sort((a, b) => a.rank - b.rank)
-            .slice(0, 10)
-    },
-
-    micro: {
-        records: microRecords,
-        top10: [...microRecords]
-            .sort((a, b) => a.rank - b.rank)
-            .slice(0, 10)
-    }
-};
+function parseDayTradingExcel(json, expectedSourceDate = null) {
+    return window.OptionMapParticipantData
+        .parseParticipantExcel(json, expectedSourceDate);
 }
     </script>
 
