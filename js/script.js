@@ -68,6 +68,26 @@ const createWeeklyDataState = () => ({
 
 const weeklyFuturesDataState = createWeeklyDataState();
 const weeklyOptionsDataState = createWeeklyDataState();
+const participantDataState = {
+    sourceDate: null,
+    versionKey: null,
+    signature: null,
+    origin: null,
+    dataStatus: null,
+    remoteCheckStatus: "pending",
+    observedLatestDate: null
+};
+
+function updateParticipantDataState(patch) {
+    if (!patch || typeof patch !== "object") return participantDataState;
+    Object.assign(participantDataState, patch);
+    scheduleRenderDataFetchStatus();
+    renderParticipantFetchDisplayState();
+    return participantDataState;
+}
+
+window.participantDataState = participantDataState;
+window.updateParticipantDataState = updateParticipantDataState;
 
 function getWeeklyDataState(source) {
     if (source === "weeklyFutures") {
@@ -267,6 +287,12 @@ function createFetchSourceViewModel(source, sourceState) {
         source === "participant" &&
         [FETCH_STATUS.PARTIAL, FETCH_STATUS.FAILED].includes(sourceState?.status)
     ) {
+        if (
+            Number.isSafeInteger(sourceState?.successCount) &&
+            sourceState.successCount > 0
+        ) {
+            notes.push({ text: `${sourceState.successCount}/4取得` });
+        }
         const participantDetails = {
             dayRegular: "日中立会",
             dayJnet: "日中J-NET",
@@ -281,6 +307,57 @@ function createFetchSourceViewModel(source, sourceState) {
                 notes.push({ label, status: detailStatus });
             }
         });
+    }
+
+    if (source === "participant") {
+        const activeDate = formatParticipantSourceDate(
+            participantDataState.sourceDate
+        );
+        const observedDate = formatParticipantSourceDate(
+            participantDataState.observedLatestDate
+        );
+
+        if (
+            participantDataState.origin === "cache" &&
+            participantDataState.remoteCheckStatus === "pending" &&
+            sourceState?.status === FETCH_STATUS.IDLE
+        ) {
+            presentation = getFetchStatusPresentation(FETCH_STATUS.LOADING);
+        }
+
+        if (
+            participantDataState.origin === "cache" &&
+            participantDataState.remoteCheckStatus === "pending"
+        ) {
+            notes.push({ text: "分析データ：前回確認済み版を表示中" });
+        } else if (participantDataState.dataStatus === "waiting_update") {
+            notes.push({ text: "分析データ：直近正常版を表示中" });
+        } else if (participantDataState.dataStatus === "partial") {
+            notes.push({ text: "分析データ：一部データのみ" });
+        }
+
+        if (activeDate) {
+            notes.push({ text: `分析データ対象日：${activeDate}` });
+        }
+
+        if (participantDataState.remoteCheckStatus === "pending") {
+            notes.push({ text: "最新版を確認中" });
+        } else if (
+            participantDataState.dataStatus === "latest" &&
+            participantDataState.remoteCheckStatus === "current"
+        ) {
+            notes.push({ text: "状態：最新確認済み" });
+        } else if (
+            participantDataState.remoteCheckStatus === "newer_available"
+        ) {
+            notes.push({
+                text: observedDate
+                    ? `新版：${observedDate}を確認済み`
+                    : "新版を確認済み"
+            });
+        } else if (participantDataState.remoteCheckStatus === "failed") {
+            notes.push({ text: "最新版の確認に失敗" });
+        }
     }
 
     if (source === "weeklyFutures" || source === "weeklyOptions") {
@@ -2433,22 +2510,34 @@ function renderParticipantFetchDisplayState() {
     const statusElement = document.getElementById("brokerChartStatus");
     if (!statusElement) return;
 
-    if (!participantFetchDisplayState) {
+    if (!participantFetchDisplayState && !participantDataState.sourceDate) {
         statusElement.hidden = true;
         statusElement.textContent = "";
         return;
     }
 
-    const { status, successCount, fileCount, sourceDate } =
-        participantFetchDisplayState;
+    const { status, successCount, fileCount } =
+        participantFetchDisplayState || {};
+    const sourceDate = participantDataState.sourceDate;
 
-    if (status === FETCH_STATUS.PARTIAL) {
+    if (participantDataState.dataStatus === "waiting_update") {
+        statusElement.textContent = sourceDate
+            ? `対象日：${sourceDate}　直近正常版を表示中／新版取得待ち`
+            : "新版取得待ち";
+    } else if (participantDataState.dataStatus === "partial") {
         statusElement.textContent =
-            `一部データ未取得（${successCount}/${fileCount}、対象日 ${sourceDate}）`;
+            `一部データのみ（${successCount}/${fileCount}、対象日 ${sourceDate || "不明"}）`;
     } else if (status === FETCH_STATUS.FAILED) {
         statusElement.textContent = latestParsedDayData
             ? "今回の取得に失敗しました（前回取得データを表示中）"
             : "参加者別データの取得に失敗しました";
+    } else if (sourceDate) {
+        const stateLabel = participantDataState.dataStatus === "latest"
+            ? "最新確認済み"
+            : participantDataState.remoteCheckStatus === "pending"
+                ? "最新版を確認中"
+                : "直近正常版";
+        statusElement.textContent = `対象日：${sourceDate}　${stateLabel}`;
     } else {
         statusElement.hidden = true;
         statusElement.textContent = "";
@@ -2478,6 +2567,8 @@ function setLatestParsedDayData(data, metadata = null) {
 
         );
 
+    } else {
+        updateBrokerChartFromExcel([]);
     }
 }
 
@@ -5994,11 +6085,19 @@ if (cumulativePeriodSelect) {
 
         participant: latestParticipantMetadata
             ? {
-                sourceDate: latestParticipantMetadata.sourceDate,
+                metadataVersion: latestParticipantMetadata.versionKey ? 2 : 1,
+                sourceDate: participantDataState.sourceDate ||
+                    latestParticipantMetadata.sourceDate,
                 status: latestParticipantMetadata.status,
                 fileStatuses: {
                     ...latestParticipantMetadata.fileStatuses
-                }
+                },
+                ...(latestParticipantMetadata.versionKey ? {
+                    versionKey: latestParticipantMetadata.versionKey,
+                    signature: latestParticipantMetadata.signature,
+                    origin: participantDataState.origin,
+                    dataStatus: participantDataState.dataStatus
+                } : {})
             }
             : null,
 

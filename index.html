@@ -666,6 +666,104 @@ const PARTICIPANT_PAGE_URL =
     "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html";
 const WEEKLY_PAGE_URL =
     "https://www.jpx.co.jp/markets/derivatives/open-interest/index.html";
+const PARTICIPANT_STORAGE_KEY = "optionMapLastValidParticipantData";
+
+let lastValidParticipantCache = null;
+let activeParticipantCache = null;
+
+function createParticipantActiveMetadata(cache, dataStatus = null) {
+    return {
+        sourceDate: cache.sourceDate,
+        status: "success",
+        successCount: 4,
+        fileCount: 4,
+        fileStatuses: Object.fromEntries(
+            window.OptionMapParticipantData.FILE_KEYS.map(key => [key, "success"])
+        ),
+        versionKey: cache.versionKey,
+        signature: cache.signature,
+        dataStatus
+    };
+}
+
+function applyParticipantCache(cache, origin, statePatch = {}) {
+    const parsedDayData = window.OptionMapParticipantData
+        .cacheToParsedDayData(cache);
+    const dataStatus = statePatch.dataStatus ?? null;
+
+    activeParticipantCache = cache;
+    window.setLatestParsedDayData(
+        parsedDayData,
+        createParticipantActiveMetadata(cache, dataStatus)
+    );
+    window.updateParticipantDataState({
+        sourceDate: cache.sourceDate,
+        versionKey: cache.versionKey,
+        signature: cache.signature,
+        origin,
+        dataStatus,
+        remoteCheckStatus: statePatch.remoteCheckStatus || "pending",
+        observedLatestDate: statePatch.observedLatestDate || null
+    });
+}
+
+async function loadParticipantCache() {
+    try {
+        const serialized = localStorage.getItem(PARTICIPANT_STORAGE_KEY);
+        if (!serialized) return null;
+        return window.OptionMapParticipantData
+            .parseParticipantCache(serialized);
+    } catch (error) {
+        console.warn("参加者別の最終正常版を読み込めませんでした:", error);
+        return null;
+    }
+}
+
+async function initializeParticipantCache() {
+    const cache = await loadParticipantCache();
+    if (!cache) return;
+
+    lastValidParticipantCache = cache;
+    applyParticipantCache(cache, "cache", {
+        dataStatus: null,
+        remoteCheckStatus: "pending"
+    });
+}
+
+function updateParticipantRemoteObservation(observation, succeeded) {
+    const observedLatestDate = observation?.sourceDate || null;
+
+    if (!succeeded || !observedLatestDate) {
+        window.updateParticipantDataState({ remoteCheckStatus: "failed" });
+        return;
+    }
+
+    if (!activeParticipantCache) {
+        window.updateParticipantDataState({
+            remoteCheckStatus: "current",
+            observedLatestDate
+        });
+        return;
+    }
+
+    if (observedLatestDate > activeParticipantCache.sourceDate) {
+        window.updateParticipantDataState({
+            dataStatus: "waiting_update",
+            remoteCheckStatus: "newer_available",
+            observedLatestDate
+        });
+    } else if (observedLatestDate === activeParticipantCache.sourceDate) {
+        window.updateParticipantDataState({
+            remoteCheckStatus: "current",
+            observedLatestDate
+        });
+    } else {
+        window.updateParticipantDataState({
+            remoteCheckStatus: "failed",
+            observedLatestDate
+        });
+    }
+}
 
 function getParticipantVolumePage(targetDate) {
     const [year, month] = targetDate.split("-").map(Number);
@@ -811,7 +909,9 @@ async function downloadAndParseParticipantExcel(
             status: window.FETCH_STATUS.UNAVAILABLE,
             fetchedAt: new Date().toISOString()
         });
-        return parseDayTradingExcel([]);
+        const error = new Error(`${label}は公式ページに掲載されていません`);
+        error.participantStatus = "unavailable";
+        throw error;
     }
 
     console.log(`${label} URL:`, excelUrl);
@@ -2815,7 +2915,8 @@ async function fetchParticipantData({
         sourceDate: null,
         sourceUrl: PARTICIPANT_PAGE_URL,
         error: null,
-        requestId: participantRequestId
+        requestId: participantRequestId,
+        successCount: null
     });
 
     const result = await ipcRenderer.invoke(
@@ -2829,20 +2930,37 @@ async function fetchParticipantData({
             await beforeParticipantData();
         }
 
-        if (!result.success) {
-            throw new Error(
-                result.error || "日中データページの取得に失敗しました"
+        if (result.success) {
+            console.log(
+                "日中データページHTML文字数:",
+                result.html.length
             );
         }
 
-        console.log(
-            "日中データページHTML文字数:",
-            result.html.length
-        );
-
-const targetDate = await findLatestParticipantDate(
-    getPreviousWeekday()
+const officialObservation = result.success
+    ? parseLatestParticipantListing(result.html)
+    : null;
+const officialObservationSucceeded = Boolean(
+    officialObservation?.sourceDate
 );
+let targetDate;
+let participantUrls;
+
+if (officialObservationSucceeded) {
+    targetDate = officialObservation.sourceDate;
+    participantUrls = officialObservation.urls;
+} else {
+    targetDate = await findLatestParticipantDate(
+        getPreviousWeekday()
+    );
+    const fallbackUrls = makeParticipantUrls(targetDate);
+    participantUrls = {
+        dayAuction: fallbackUrls.dayAuctionUrl,
+        dayJnet: fallbackUrls.dayJnetUrl,
+        nightAuction: fallbackUrls.nightAuctionUrl,
+        nightJnet: fallbackUrls.nightJnetUrl
+    };
+}
 console.log("手口データ対象日 =", targetDate);
 
 if (!isCurrentFetchRequest("participant", participantRequestId)) {
@@ -2860,34 +2978,37 @@ if (!isCurrentFetchRequest("participant", participantRequestId)) {
 window.updateFetchState("participant", {
     sourceDate: targetDate
 });
+updateParticipantRemoteObservation(
+    officialObservation,
+    officialObservationSucceeded
+);
 
-        const dayData = makeParticipantUrls(targetDate);
-        console.log("日中データ解析結果", dayData);
+        console.log("参加者別データURL", participantUrls);
 
 const participantFiles = [
     downloadAndParseParticipantExcel(
-        dayData.dayAuctionUrl,
+        participantUrls.dayAuction,
         "日中立会",
         "dayRegular",
         participantRequestId,
         targetDate
     ),
     downloadAndParseParticipantExcel(
-        dayData.dayJnetUrl,
+        participantUrls.dayJnet,
         "日中J-NET",
         "dayJnet",
         participantRequestId,
         targetDate
     ),
     downloadAndParseParticipantExcel(
-        dayData.nightAuctionUrl,
+        participantUrls.nightAuction,
         "夜間立会",
         "nightRegular",
         participantRequestId,
         targetDate
     ),
     downloadAndParseParticipantExcel(
-        dayData.nightJnetUrl,
+        participantUrls.nightJnet,
         "夜間J-NET",
         "nightJnet",
         participantRequestId,
@@ -2934,30 +3055,157 @@ for (const [fileKey, fileStatus] of Object.entries(
         "participant",
         detailKeys[fileKey],
         {
-            status: window.FETCH_STATUS.FAILED,
+            status: fileStatus,
             fetchedAt: new Date().toISOString(),
             error: participantMetadata.errors[fileKey] || "取得失敗"
         }
     );
 }
 
+let liveCache = null;
+let versionComparison = null;
+
 if (
-    participantMetadata.successCount > 0 &&
-    typeof window.setLatestParsedDayData === "function"
+    participantMetadata.status === window.FETCH_STATUS.SUCCESS
 ) {
-    window.setLatestParsedDayData(
-        parsedParticipantData,
-        participantMetadata
-    );
+    liveCache = await window.OptionMapParticipantData.createCompleteCache({
+        data: parsedParticipantData,
+        sourceUrls: participantUrls,
+        sourceDate: targetDate,
+        fetchedAt: new Date().toISOString()
+    });
+
+    if (
+        liveCache &&
+        await window.OptionMapParticipantData.validateParticipantCache(liveCache) &&
+        officialObservationSucceeded &&
+        officialObservation.complete === true
+    ) {
+        versionComparison = window.OptionMapParticipantData.compareVersions(
+            activeParticipantCache || lastValidParticipantCache,
+            liveCache,
+            true
+        );
+    }
 }
 
+if (!isCurrentFetchRequest("participant", participantRequestId)) {
+    return {
+        source: "participant",
+        status: "stale",
+        requestId: participantRequestId,
+        sourceDate: targetDate,
+        fetchedAt: null,
+        data: null,
+        error: null
+    };
+}
+
+const liveCanBeApplied = liveCache && versionComparison && ![
+    "older_or_inconsistent",
+    "indeterminate"
+].includes(versionComparison.assessment);
+
+if (liveCanBeApplied) {
+    applyParticipantCache(liveCache, "live", {
+        dataStatus: "latest",
+        remoteCheckStatus: "current",
+        observedLatestDate: targetDate
+    });
+
+    if (!isCurrentFetchRequest("participant", participantRequestId)) {
+        return {
+            source: "participant",
+            status: "stale",
+            requestId: participantRequestId,
+            sourceDate: targetDate,
+            fetchedAt: null,
+            data: null,
+            error: null
+        };
+    }
+
+    if (
+        !lastValidParticipantCache ||
+        ["new_version", "revised_same_date"].includes(
+            versionComparison.assessment
+        )
+    ) {
+        try {
+            localStorage.setItem(
+                PARTICIPANT_STORAGE_KEY,
+                JSON.stringify(liveCache)
+            );
+            lastValidParticipantCache = liveCache;
+        } catch (error) {
+            console.warn("参加者別の最終正常版を保存できませんでした:", error);
+        }
+    }
+} else if (activeParticipantCache) {
+    const newerAvailable = officialObservationSucceeded &&
+        targetDate > activeParticipantCache.sourceDate;
+    const inconsistentVersion = [
+        "older_or_inconsistent",
+        "indeterminate"
+    ].includes(versionComparison?.assessment);
+    window.updateParticipantDataState({
+        dataStatus: newerAvailable || participantMetadata.status !== "success"
+            ? "waiting_update"
+            : window.participantDataState.dataStatus,
+        remoteCheckStatus: newerAvailable
+            ? "newer_available"
+            : officialObservationSucceeded && !inconsistentVersion
+                ? "current"
+                : "failed",
+        observedLatestDate: officialObservationSucceeded
+            ? targetDate
+            : window.participantDataState.observedLatestDate
+    });
+} else if (participantMetadata.successCount > 0) {
+    window.setLatestParsedDayData(parsedParticipantData, participantMetadata);
+    window.updateParticipantDataState({
+        sourceDate: targetDate,
+        versionKey: null,
+        signature: null,
+        origin: "live",
+        dataStatus: "partial",
+        remoteCheckStatus: officialObservationSucceeded ? "current" : "failed",
+        observedLatestDate: officialObservationSucceeded ? targetDate : null
+    });
+} else {
+    window.setLatestParsedDayData(null, null);
+    window.updateParticipantDataState({
+        sourceDate: null,
+        versionKey: null,
+        signature: null,
+        origin: null,
+        dataStatus: null,
+        remoteCheckStatus: officialObservationSucceeded ? "current" : "failed",
+        observedLatestDate: officialObservationSucceeded ? targetDate : null
+    });
+}
+
+const completeValidationFailed =
+    participantMetadata.status === window.FETCH_STATUS.SUCCESS &&
+    officialObservationSucceeded &&
+    officialObservation.complete === true &&
+    (!liveCache || !versionComparison);
+const participantFetchStatus = completeValidationFailed
+    ? window.FETCH_STATUS.FAILED
+    : participantMetadata.status;
+
 window.updateFetchState("participant", {
-    status: participantMetadata.status,
+    status: participantFetchStatus,
     fetchedAt: new Date().toISOString(),
-    error: participantMetadata.status === window.FETCH_STATUS.FAILED
-        ? "参加者別4ファイルを取得できませんでした"
+    successCount: participantMetadata.successCount,
+    error: participantFetchStatus === window.FETCH_STATUS.FAILED
+        ? completeValidationFailed
+            ? "参加者別complete版の検証に失敗しました"
+            : "参加者別4ファイルを取得できませんでした"
         : null
 });
+
+participantMetadata.status = participantFetchStatus;
 
 if (typeof window.setParticipantFetchDisplayState === "function") {
     window.setParticipantFetchDisplayState(participantMetadata);
@@ -2978,6 +3226,7 @@ return {
         ? parsedParticipantData
         : null,
     metadata: participantMetadata,
+    versionComparison,
     error: participantMetadata.status === window.FETCH_STATUS.FAILED
         ? "参加者別4ファイルを取得できませんでした"
         : null
@@ -2993,7 +3242,8 @@ function handleParticipantFetchError(error, requestId) {
         window.updateFetchState("participant", {
             status: window.FETCH_STATUS.FAILED,
             fetchedAt,
-            error: errorMessage
+            error: errorMessage,
+            successCount: 0
         });
 
         if (typeof window.setParticipantFetchDisplayState === "function") {
@@ -3003,6 +3253,29 @@ function handleParticipantFetchError(error, requestId) {
                 successCount: 0,
                 fileCount: 4,
                 fileStatuses: {}
+            });
+        }
+
+        if (activeParticipantCache) {
+            window.updateParticipantDataState({
+                dataStatus: window.participantDataState.observedLatestDate >
+                    activeParticipantCache.sourceDate
+                    ? "waiting_update"
+                    : window.participantDataState.dataStatus,
+                remoteCheckStatus: window.participantDataState.observedLatestDate >
+                    activeParticipantCache.sourceDate
+                    ? "newer_available"
+                    : "failed"
+            });
+        } else {
+            window.setLatestParsedDayData(null, null);
+            window.updateParticipantDataState({
+                sourceDate: null,
+                versionKey: null,
+                signature: null,
+                origin: null,
+                dataStatus: null,
+                remoteCheckStatus: "failed"
             });
         }
     }
@@ -3098,12 +3371,25 @@ function refreshAllMarketData() {
 
 window.refreshAllMarketData = refreshAllMarketData;
 
-initializeWeeklyCaches()
+Promise.all([
+    initializeWeeklyCaches(),
+    initializeParticipantCache()
+])
     .catch(error => {
-        console.warn("週次キャッシュの初期化に失敗しました:", error);
+        console.warn("市場データcacheの初期化に失敗しました:", error);
     })
     .finally(() => refreshAllMarketData());
-   
+
+function parseLatestParticipantListing(html) {
+    if (typeof html !== "string" || html.trim() === "") return null;
+
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const hrefs = [...doc.querySelectorAll("a[href]")]
+        .map(link => link.getAttribute("href"));
+    return window.OptionMapParticipantData
+        .selectLatestParticipantListing(hrefs);
+}
+
     function parseDayTradingHtml(html) {
     const doc = new DOMParser().parseFromString(html, "text/html");
 
