@@ -77,6 +77,15 @@ const participantDataState = {
     remoteCheckStatus: "pending",
     observedLatestDate: null
 };
+const participantHistoryState = {
+    status: "empty",
+    entryCount: 0,
+    latestSourceDate: null,
+    earliestSourceDate: null,
+    revisionCount: 0,
+    lastSavedAt: null,
+    error: null
+};
 
 function updateParticipantDataState(patch) {
     if (!patch || typeof patch !== "object") return participantDataState;
@@ -88,6 +97,16 @@ function updateParticipantDataState(patch) {
 
 window.participantDataState = participantDataState;
 window.updateParticipantDataState = updateParticipantDataState;
+
+function updateParticipantHistoryState(patch) {
+    if (!patch || typeof patch !== "object") return participantHistoryState;
+    Object.assign(participantHistoryState, patch);
+    renderParticipantHistoryState();
+    return participantHistoryState;
+}
+
+window.participantHistoryState = participantHistoryState;
+window.updateParticipantHistoryState = updateParticipantHistoryState;
 
 function getWeeklyDataState(source) {
     if (source === "weeklyFutures") {
@@ -2545,6 +2564,35 @@ function renderParticipantFetchDisplayState() {
     }
 
     statusElement.hidden = false;
+}
+
+function renderParticipantHistoryState() {
+    const element = document.getElementById("participantHistoryStatus");
+    if (!element) return;
+
+    if (participantHistoryState.status === "invalid") {
+        element.textContent = "参加者別履歴　履歴データを利用できません";
+        return;
+    }
+    if (participantHistoryState.status === "save_failed") {
+        element.textContent = "参加者別履歴　履歴保存に失敗しました";
+        return;
+    }
+    if (participantHistoryState.entryCount === 0) {
+        element.textContent = "参加者別履歴　蓄積：0日";
+        return;
+    }
+
+    const earliest = formatParticipantSourceDate(
+        participantHistoryState.earliestSourceDate
+    );
+    const latest = formatParticipantSourceDate(
+        participantHistoryState.latestSourceDate
+    );
+    element.textContent =
+        `参加者別履歴　蓄積：${participantHistoryState.entryCount}日` +
+        (latest ? `　最新：${latest}` : "") +
+        (earliest && latest ? `　期間：${earliest} ～ ${latest}` : "");
 }
 
 function setParticipantFetchDisplayState(metadata) {

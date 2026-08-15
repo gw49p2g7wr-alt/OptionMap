@@ -614,6 +614,7 @@
       </div>
     <canvas id="myChart"></canvas>
     <p id="brokerChartStatus" role="status" hidden></p>
+    <p id="participantHistoryStatus" role="status"></p>
 
 
 </div>
@@ -650,6 +651,7 @@
 <script src="js/ai.js"></script>
 <script src="js/overallJudgmentV2.js"></script>
 <script src="js/participantData.js"></script>
+<script src="js/participantHistory.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">
@@ -667,9 +669,12 @@ const PARTICIPANT_PAGE_URL =
 const WEEKLY_PAGE_URL =
     "https://www.jpx.co.jp/markets/derivatives/open-interest/index.html";
 const PARTICIPANT_STORAGE_KEY = "optionMapLastValidParticipantData";
+const PARTICIPANT_HISTORY_STORAGE_KEY = "optionMapParticipantHistory";
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
+let participantHistory = null;
+let participantHistoryStorageInvalid = false;
 
 function createParticipantActiveMetadata(cache, dataStatus = null) {
     return {
@@ -728,6 +733,96 @@ async function initializeParticipantCache() {
         dataStatus: null,
         remoteCheckStatus: "pending"
     });
+}
+
+async function initializeParticipantHistory() {
+    let serialized = null;
+    try {
+        serialized = localStorage.getItem(PARTICIPANT_HISTORY_STORAGE_KEY);
+    } catch (error) {
+        participantHistoryStorageInvalid = true;
+        window.updateParticipantHistoryState({
+            status: "invalid",
+            error: error?.message || String(error)
+        });
+        return;
+    }
+
+    const parsed = await window.OptionMapParticipantHistory
+        .parseParticipantHistory(
+            serialized,
+            window.OptionMapParticipantData.validateParticipantCache
+        );
+
+    if (parsed.status === "invalid") {
+        participantHistoryStorageInvalid = true;
+        window.updateParticipantHistoryState({
+            status: "invalid",
+            error: "参加者別履歴の検証に失敗しました"
+        });
+        return;
+    }
+
+    participantHistory = parsed.history;
+    const summary = window.OptionMapParticipantHistory
+        .summarizeHistory(participantHistory);
+    window.updateParticipantHistoryState({
+        status: summary.entryCount > 0 ? "ready" : "empty",
+        ...summary,
+        error: null
+    });
+}
+
+async function saveParticipantHistoryVersion(
+    completeSet,
+    assessment,
+    confirmedAt,
+    requestId
+) {
+    if (
+        participantHistoryStorageInvalid ||
+        !participantHistory ||
+        !isCurrentFetchRequest("participant", requestId)
+    ) {
+        return;
+    }
+
+    const result = await window.OptionMapParticipantHistory
+        .upsertCompleteVersion(
+            participantHistory,
+            completeSet,
+            { assessment, confirmedAt },
+            window.OptionMapParticipantData.validateParticipantCache
+        );
+
+    if (
+        !isCurrentFetchRequest("participant", requestId) ||
+        !result.changed
+    ) {
+        return;
+    }
+
+    try {
+        localStorage.setItem(
+            PARTICIPANT_HISTORY_STORAGE_KEY,
+            JSON.stringify(result.history)
+        );
+        participantHistory = result.history;
+        const summary = window.OptionMapParticipantHistory
+            .summarizeHistory(participantHistory);
+        window.updateParticipantHistoryState({
+            status: "ready",
+            ...summary,
+            lastSavedAt: confirmedAt,
+            error: null
+        });
+    } catch (error) {
+        window.updateParticipantHistoryState({
+            status: "save_failed",
+            error: error?.message || String(error)
+        });
+        console.warn("参加者別履歴を保存できませんでした:", error);
+    }
 }
 
 function updateParticipantRemoteObservation(observation, succeeded) {
@@ -3125,6 +3220,32 @@ if (liveCanBeApplied) {
         };
     }
 
+    const participantHistoryConfirmedAt = new Date().toISOString();
+    await saveParticipantHistoryVersion(
+        liveCache,
+        versionComparison.assessment,
+        participantHistoryConfirmedAt,
+        participantRequestId
+    ).catch(error => {
+        window.updateParticipantHistoryState({
+            status: "save_failed",
+            error: error?.message || String(error)
+        });
+        console.warn("参加者別履歴の更新に失敗しました:", error);
+    });
+
+    if (!isCurrentFetchRequest("participant", participantRequestId)) {
+        return {
+            source: "participant",
+            status: "stale",
+            requestId: participantRequestId,
+            sourceDate: targetDate,
+            fetchedAt: null,
+            data: null,
+            error: null
+        };
+    }
+
     if (
         !lastValidParticipantCache ||
         ["new_version", "revised_same_date"].includes(
@@ -3373,7 +3494,8 @@ window.refreshAllMarketData = refreshAllMarketData;
 
 Promise.all([
     initializeWeeklyCaches(),
-    initializeParticipantCache()
+    initializeParticipantCache(),
+    initializeParticipantHistory()
 ])
     .catch(error => {
         console.warn("市場データcacheの初期化に失敗しました:", error);
