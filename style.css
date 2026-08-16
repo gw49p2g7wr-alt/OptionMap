@@ -312,6 +312,44 @@ button:hover{
     width: 900px !important;
 }
 
+.participant-activity-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.participant-activity-metrics > div {
+    padding: 10px 12px;
+    border: 1px solid #d9e1e8;
+    border-radius: 8px;
+    background: #f7f9fb;
+}
+
+.participant-activity-metrics span,
+.participant-activity-metrics strong {
+    display: block;
+}
+
+.participant-activity-metrics span {
+    margin-bottom: 4px;
+    color: #52606d;
+    font-size: 0.85rem;
+}
+
+.participant-activity-metrics strong {
+    font-size: 1.1rem;
+}
+
+#participantActivityContractWarning {
+    color: #8a5a00;
+}
+
+.participant-activity-disclaimer {
+    color: #52606d;
+    font-size: 0.85rem;
+}
+
 canvas {
     width: 100% !important;
     height: 320px !important;

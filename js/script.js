@@ -86,6 +86,7 @@ const participantHistoryState = {
     lastSavedAt: null,
     error: null
 };
+let participantActivityHistory = null;
 
 function updateParticipantDataState(patch) {
     if (!patch || typeof patch !== "object") return participantDataState;
@@ -102,6 +103,7 @@ function updateParticipantHistoryState(patch) {
     if (!patch || typeof patch !== "object") return participantHistoryState;
     Object.assign(participantHistoryState, patch);
     renderParticipantHistoryState();
+    renderParticipantActivityHistory();
     return participantHistoryState;
 }
 
@@ -2593,6 +2595,189 @@ function renderParticipantHistoryState() {
         `参加者別履歴　蓄積：${participantHistoryState.entryCount}日` +
         (latest ? `　最新：${latest}` : "") +
         (earliest && latest ? `　期間：${earliest} ～ ${latest}` : "");
+}
+
+function formatParticipantActivityNumber(value) {
+    return Number.isFinite(value) ? Math.round(value).toLocaleString("ja-JP") : "—";
+}
+
+function formatParticipantActivityRatio(value, digits = 2) {
+    return Number.isFinite(value) ? value.toFixed(digits) : "—";
+}
+
+function formatParticipantActivityPercent(value) {
+    if (!Number.isFinite(value)) return "—";
+    return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function clearParticipantActivityChart() {
+    if (window.participantActivityChartInstance) {
+        window.participantActivityChartInstance.destroy();
+        window.participantActivityChartInstance = null;
+    }
+}
+
+function renderParticipantActivityChart(series) {
+    const canvas = document.getElementById("participantActivityChart");
+    if (!canvas || typeof Chart !== "function") return;
+
+    clearParticipantActivityChart();
+    window.participantActivityChartInstance = new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: series.map(point => point.sourceDate),
+            datasets: [{
+                label: "公表上位volume",
+                data: series.map(point => point.value),
+                borderColor: "rgba(75, 104, 140, 0.95)",
+                backgroundColor: "rgba(75, 104, 140, 0.15)",
+                pointBackgroundColor: "rgba(75, 104, 140, 0.95)",
+                tension: 0.2,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: "sourceDate" }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: "公表上位行の取引高合計" }
+                }
+            }
+        }
+    });
+}
+
+function renderParticipantActivityHistory() {
+    const statusElement = document.getElementById("participantActivityStatus");
+    const comparisonElement = document.getElementById("participantActivityComparison");
+    const warningElement = document.getElementById("participantActivityContractWarning");
+    const productSelect = document.getElementById("participantActivityProduct");
+    if (!statusElement || !comparisonElement || !warningElement || !productSelect) {
+        return;
+    }
+
+    const metricElements = {
+        total: document.getElementById("participantActivityTotal"),
+        change: document.getElementById("participantActivityChange"),
+        day: document.getElementById("participantActivityDay"),
+        night: document.getElementById("participantActivityNight"),
+        nightDayRatio: document.getElementById("participantActivityNightDayRatio"),
+        jnetRatio: document.getElementById("participantActivityJnetRatio")
+    };
+    const clearMetrics = () => Object.values(metricElements)
+        .forEach(element => { if (element) element.textContent = "—"; });
+
+    if (
+        participantHistoryState.status === "invalid" ||
+        !participantActivityHistory && participantHistoryState.status !== "empty"
+    ) {
+        statusElement.textContent = "履歴データを利用できません";
+        comparisonElement.textContent = "前回比較なし";
+        warningElement.hidden = true;
+        clearMetrics();
+        clearParticipantActivityChart();
+        return;
+    }
+
+    if (!window.OptionMapParticipantActivity || !participantActivityHistory) {
+        statusElement.textContent = "正式履歴がまだありません";
+        comparisonElement.textContent = "前回比較なし";
+        warningElement.hidden = true;
+        clearMetrics();
+        clearParticipantActivityChart();
+        return;
+    }
+
+    const viewModel = window.OptionMapParticipantActivity
+        .createActivityViewModel(
+            participantActivityHistory,
+            productSelect.value || "mini"
+        );
+
+    if (viewModel.status === "invalid") {
+        statusElement.textContent = "履歴データを利用できません";
+        comparisonElement.textContent = "前回比較なし";
+        warningElement.hidden = true;
+        clearMetrics();
+        clearParticipantActivityChart();
+        return;
+    }
+    if (viewModel.status === "empty") {
+        statusElement.textContent = "正式履歴がまだありません";
+        comparisonElement.textContent = "前回比較なし";
+        warningElement.hidden = true;
+        clearMetrics();
+        clearParticipantActivityChart();
+        return;
+    }
+
+    const current = viewModel.current;
+    const comparison = viewModel.comparison;
+    statusElement.textContent = viewModel.status === "one_entry"
+        ? `1日分蓄積済み（対象日：${formatParticipantSourceDate(current.sourceDate)}）`
+        : `${viewModel.entryCount}日分蓄積済み`;
+    comparisonElement.textContent = comparison.available
+        ? `比較：${formatParticipantSourceDate(comparison.currentSourceDate)} vs ` +
+            `${formatParticipantSourceDate(comparison.previousSourceDate)}（前回保存日比・暦日差${comparison.dayGap}日）`
+        : "前回比較なし";
+
+    if (metricElements.total) {
+        metricElements.total.textContent = formatParticipantActivityNumber(
+            current.disclosedVolumeTotal
+        );
+    }
+    if (metricElements.change) {
+        metricElements.change.textContent = comparison.available
+            ? `${formatParticipantActivityNumber(comparison.absoluteChange)} ` +
+                `(${formatParticipantActivityPercent(comparison.percentChange)})`
+            : "—";
+    }
+    if (metricElements.day) {
+        metricElements.day.textContent = formatParticipantActivityNumber(current.dayVolume);
+    }
+    if (metricElements.night) {
+        metricElements.night.textContent = formatParticipantActivityNumber(current.nightVolume);
+    }
+    if (metricElements.nightDayRatio) {
+        metricElements.nightDayRatio.textContent = formatParticipantActivityRatio(
+            current.nightDayRatio
+        );
+    }
+    if (metricElements.jnetRatio) {
+        metricElements.jnetRatio.textContent = Number.isFinite(current.disclosedJnetRatio)
+            ? `${(current.disclosedJnetRatio * 100).toFixed(1)}%`
+            : "—";
+    }
+
+    warningElement.hidden = !comparison.contractCompositionChanged;
+    warningElement.textContent = comparison.contractCompositionChanged
+        ? "限月構成が変化しているため単純比較に注意"
+        : "";
+    renderParticipantActivityChart(viewModel.series);
+}
+
+function setParticipantActivityHistory(history) {
+    participantActivityHistory = history || null;
+    renderParticipantActivityHistory();
+}
+
+window.setParticipantActivityHistory = setParticipantActivityHistory;
+
+const participantActivityProduct =
+    document.getElementById("participantActivityProduct");
+if (participantActivityProduct) {
+    participantActivityProduct.addEventListener(
+        "change",
+        renderParticipantActivityHistory
+    );
 }
 
 function setParticipantFetchDisplayState(metadata) {

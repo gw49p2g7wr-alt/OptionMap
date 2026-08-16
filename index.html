@@ -594,6 +594,57 @@
     <div id="priceRanking"></div>
 </div>
 
+<div class="card chart-card participant-activity-card">
+    <h2>参加者活動履歴</h2>
+
+    <div class="current-price-controls">
+        <label for="participantActivityProduct">対象商品</label>
+        <select id="participantActivityProduct">
+            <option value="mini" selected>日経225mini</option>
+            <option value="large">日経225先物</option>
+            <option value="topix">TOPIX</option>
+        </select>
+    </div>
+
+    <p id="participantActivityStatus" role="status">
+        正式履歴を確認中です
+    </p>
+    <p id="participantActivityComparison">前回比較なし</p>
+
+    <div class="participant-activity-metrics">
+        <div>
+            <span>公表上位volume</span>
+            <strong id="participantActivityTotal">—</strong>
+        </div>
+        <div>
+            <span>前回保存日比</span>
+            <strong id="participantActivityChange">—</strong>
+        </div>
+        <div>
+            <span>日中公表volume</span>
+            <strong id="participantActivityDay">—</strong>
+        </div>
+        <div>
+            <span>夜間公表volume</span>
+            <strong id="participantActivityNight">—</strong>
+        </div>
+        <div>
+            <span>夜間 / 日中</span>
+            <strong id="participantActivityNightDayRatio">—</strong>
+        </div>
+        <div>
+            <span>J-NET比率（公表上位行ベース）</span>
+            <strong id="participantActivityJnetRatio">—</strong>
+        </div>
+    </div>
+
+    <p id="participantActivityContractWarning" role="status" hidden></p>
+    <canvas id="participantActivityChart" height="220"></canvas>
+    <p class="participant-activity-disclaimer">
+        ※公表上位参加者行の取引高を集計した活動量であり、売買方向を示す指標ではありません。
+    </p>
+</div>
+
 <div class="card chart-card">
     <h2>証券会社別取引高</h2>
 
@@ -652,6 +703,7 @@
 <script src="js/overallJudgmentV2.js"></script>
 <script src="js/participantData.js"></script>
 <script src="js/participantHistory.js"></script>
+<script src="js/participantActivity.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">
@@ -760,6 +812,7 @@ async function initializeParticipantHistory() {
             status: "invalid",
             error: "参加者別履歴の検証に失敗しました"
         });
+        window.setParticipantActivityHistory(null);
         return;
     }
 
@@ -771,6 +824,7 @@ async function initializeParticipantHistory() {
         ...summary,
         error: null
     });
+    window.setParticipantActivityHistory(participantHistory);
 }
 
 async function saveParticipantHistoryVersion(
@@ -816,6 +870,7 @@ async function saveParticipantHistoryVersion(
             lastSavedAt: confirmedAt,
             error: null
         });
+        window.setParticipantActivityHistory(participantHistory);
     } catch (error) {
         window.updateParticipantHistoryState({
             status: "save_failed",
