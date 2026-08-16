@@ -180,6 +180,139 @@
         };
     }
 
+    function hasCurrentOfficialEvidence(candidate) {
+        if (!isPlainObject(candidate) || !isPlainObject(candidate.officialMetadata)) {
+            return false;
+        }
+        const metadata = candidate.officialMetadata;
+        const evidence = metadata.dateEvidence;
+        return metadata.origin === "jpx_participant_month_listing" &&
+            metadata.currentOfficialRefetch === true &&
+            isIsoDate(metadata.listingTradeDate) &&
+            metadata.listingTradeDate === candidate.completeSet?.sourceDate &&
+            isPlainObject(evidence) &&
+            evidence.consistent === true &&
+            Array.isArray(evidence.excelSourceDates) &&
+            evidence.excelSourceDates.length === 4 &&
+            evidence.excelSourceDates.every(date => date === metadata.listingTradeDate) &&
+            Array.isArray(evidence.excelDateKinds) &&
+            evidence.excelDateKinds.length === 4 &&
+            evidence.excelDateKinds.every(kind => kind === "excel") &&
+            Array.isArray(evidence.urlDates) &&
+            evidence.urlDates.length === 4 &&
+            evidence.urlDates.every(date => date === metadata.listingTradeDate);
+    }
+
+    async function mergeOfficialCandidates(
+        history,
+        candidates,
+        confirmedAt,
+        validateCompleteSet
+    ) {
+        const normalized = normalizeHistory(history);
+        if (
+            !(await validateParticipantHistory(normalized, validateCompleteSet)) ||
+            !isIsoDateTime(confirmedAt) ||
+            !Array.isArray(candidates)
+        ) {
+            return { history: normalized, changed: false, outcome: "invalid_input" };
+        }
+
+        const next = clone(normalized);
+        const results = [];
+        const ordered = [...candidates].sort((left, right) =>
+            String(left?.completeSet?.sourceDate || "").localeCompare(
+                String(right?.completeSet?.sourceDate || "")
+            )
+        );
+
+        for (const candidate of ordered) {
+            const completeSet = candidate?.completeSet;
+            if (
+                !hasCurrentOfficialEvidence(candidate) ||
+                !(await validateCompleteSet(completeSet))
+            ) {
+                return {
+                    history: normalized,
+                    changed: false,
+                    outcome: "candidate_validation_failed",
+                    results
+                };
+            }
+
+            let entry = next.entries.find(item =>
+                item.sourceDate === completeSet.sourceDate
+            );
+            if (!entry) {
+                next.entries.push({
+                    sourceDate: completeSet.sourceDate,
+                    activeVersionKey: completeSet.versionKey,
+                    firstSeenAt: confirmedAt,
+                    lastSeenAt: confirmedAt,
+                    revisions: [createRevision(completeSet, confirmedAt)]
+                });
+                results.push({ sourceDate: completeSet.sourceDate, outcome: "entry_added" });
+                continue;
+            }
+
+            const existing = entry.revisions.find(revision =>
+                revision.versionKey === completeSet.versionKey
+            );
+            if (existing) {
+                if (entry.activeVersionKey !== existing.versionKey) {
+                    return {
+                        history: normalized,
+                        changed: false,
+                        outcome: "inactive_version_conflict",
+                        results
+                    };
+                }
+                entry.lastSeenAt = confirmedAt;
+                results.push({ sourceDate: completeSet.sourceDate, outcome: "same_version" });
+                continue;
+            }
+
+            const active = entry.revisions.find(revision =>
+                revision.versionKey === entry.activeVersionKey
+            );
+            if (!active) {
+                return {
+                    history: normalized,
+                    changed: false,
+                    outcome: "active_revision_missing",
+                    results
+                };
+            }
+            active.replacedAt = confirmedAt;
+            entry.revisions.push(createRevision(completeSet, confirmedAt));
+            entry.activeVersionKey = completeSet.versionKey;
+            entry.lastSeenAt = confirmedAt;
+            results.push({ sourceDate: completeSet.sourceDate, outcome: "revision_added" });
+        }
+
+        next.entries.sort((left, right) =>
+            left.sourceDate.localeCompare(right.sourceDate)
+        );
+        const pruneCount = Math.max(0, next.entries.length - next.maxEntries);
+        if (pruneCount > 0) next.entries.splice(0, pruneCount);
+
+        if (!(await validateParticipantHistory(next, validateCompleteSet))) {
+            return {
+                history: normalized,
+                changed: false,
+                outcome: "history_validation_failed",
+                results
+            };
+        }
+        return {
+            history: next,
+            changed: results.length > 0,
+            outcome: "merged",
+            results,
+            pruneCount
+        };
+    }
+
     async function upsertCompleteVersion(
         history,
         completeSet,
@@ -311,6 +444,7 @@
         validateParticipantHistory,
         parseParticipantHistory,
         upsertCompleteVersion,
+        mergeOfficialCandidates,
         summarizeHistory
     });
 });

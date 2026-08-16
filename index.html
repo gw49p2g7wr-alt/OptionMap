@@ -640,6 +640,22 @@
 
     <p id="participantActivityContractWarning" role="status" hidden></p>
     <canvas id="participantActivityChart" height="220"></canvas>
+    <details class="participant-backfill-controls">
+      <summary>参加者別 過去データ取得</summary>
+      <div class="current-price-controls">
+        <label for="participantBackfillStartDate">開始日</label>
+        <input type="date" id="participantBackfillStartDate">
+        <label for="participantBackfillEndDate">終了日</label>
+        <input type="date" id="participantBackfillEndDate">
+        <button type="button" id="participantBackfillPreviewButton">候補確認</button>
+        <button type="button" id="participantBackfillStartButton" disabled>取得開始</button>
+        <button type="button" id="participantBackfillCancelButton" disabled>中止</button>
+      </div>
+      <p id="participantBackfillStatus" role="status">
+        期間を指定して公式掲載候補を確認してください。
+      </p>
+      <p id="participantBackfillWarning" role="status" hidden></p>
+    </details>
     <p class="participant-activity-disclaimer">
         ※公表上位参加者行の取引高を集計した活動量であり、売買方向を示す指標ではありません。
     </p>
@@ -727,6 +743,7 @@
 <script src="js/participantData.js"></script>
 <script src="js/participantHistory.js"></script>
 <script src="js/participantActivity.js"></script>
+<script src="js/backfill/adapters/participantBackfillAdapter.js"></script>
 <script src="js/weeklyFutures.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
@@ -755,10 +772,34 @@ let lastValidParticipantCache = null;
 let activeParticipantCache = null;
 let participantHistory = null;
 let participantHistoryStorageInvalid = false;
+let participantBackfillCandidates = [];
+let participantBackfillCancelled = false;
 let weeklyFuturesHistory = null;
 let weeklyFuturesHistoryStorageInvalid = false;
 let weeklyFuturesBackfillCandidates = [];
 let weeklyFuturesBackfillCancelled = false;
+
+const participantBackfillStartDate = document.getElementById(
+    "participantBackfillStartDate"
+);
+const participantBackfillEndDate = document.getElementById(
+    "participantBackfillEndDate"
+);
+const participantBackfillPreviewButton = document.getElementById(
+    "participantBackfillPreviewButton"
+);
+const participantBackfillStartButton = document.getElementById(
+    "participantBackfillStartButton"
+);
+const participantBackfillCancelButton = document.getElementById(
+    "participantBackfillCancelButton"
+);
+const participantBackfillStatus = document.getElementById(
+    "participantBackfillStatus"
+);
+const participantBackfillWarning = document.getElementById(
+    "participantBackfillWarning"
+);
 
 const weeklyFuturesBackfillStartDate = document.getElementById(
     "weeklyFuturesBackfillStartDate"
@@ -969,6 +1010,185 @@ weeklyFuturesBackfillStartButton?.addEventListener(
 weeklyFuturesBackfillCancelButton?.addEventListener("click", () => {
     weeklyFuturesBackfillCancelled = true;
     weeklyFuturesBackfillStatus.textContent = "中止処理中…";
+});
+
+function validateParticipantBackfillRange() {
+    const startDate = participantBackfillStartDate?.value || "";
+    const endDate = participantBackfillEndDate?.value || "";
+    if (!startDate || !endDate || startDate > endDate) {
+        throw new Error("開始日と終了日を正しい順序で指定してください");
+    }
+    return { startDate, endDate };
+}
+
+async function fetchParticipantBackfillJson(sourceUrl) {
+    const result = await ipcRenderer.invoke(
+        "fetch-jpx-participant-json", sourceUrl
+    );
+    if (!result?.success) {
+        throw new Error(result?.error || "JPX参加者別公式一覧を取得できませんでした");
+    }
+    return result.data;
+}
+
+async function fetchParticipantBackfillExcel(sourceUrl) {
+    const result = await ipcRenderer.invoke(
+        "download-daytrading-excel", sourceUrl
+    );
+    if (!result?.success) {
+        throw new Error(result?.error || "JPX参加者別Excelを取得できませんでした");
+    }
+    return result.data;
+}
+
+function parseParticipantBackfillExcel(bytes, candidate) {
+    const workbook = XLSX.read(bytes, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    return window.OptionMapParticipantData.parseParticipantExcel(
+        rows, candidate.sourceDate
+    );
+}
+
+async function previewParticipantBackfill() {
+    try {
+        const range = validateParticipantBackfillRange();
+        participantBackfillPreviewButton.disabled = true;
+        participantBackfillStartButton.disabled = true;
+        participantBackfillWarning.hidden = true;
+        participantBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
+        const manifest = await window.OptionMapParticipantBackfill
+            .enumerateCandidates({
+                ...range,
+                fetchJson: fetchParticipantBackfillJson
+            });
+        participantBackfillCandidates = manifest.candidates;
+        const impact = window.OptionMapParticipantBackfill.previewImpact(
+            participantHistory,
+            participantBackfillCandidates
+        );
+        const failureText = manifest.failures.length
+            ? `　一覧取得失敗：${manifest.failures.length}か月` : "";
+        const unavailableText = manifest.unavailableMonths.length
+            ? `　公式一覧非掲載：${manifest.unavailableMonths.length}か月` : "";
+        participantBackfillStatus.textContent =
+            `公式掲載候補：${impact.officialCandidateCount}日　` +
+            `推定ファイル数：${impact.estimatedFileCount}　` +
+            `正式保存候補：最大${impact.officialCandidateCount}日　` +
+            `保存後：${impact.projectedSavedCount}日` +
+            failureText + unavailableText;
+        if (impact.projectedPruneCount > 0) {
+            participantBackfillWarning.hidden = false;
+            participantBackfillWarning.textContent =
+                "正式historyは最大30日分です。保存時に古い日付から整理されます" +
+                `（整理見込み：${impact.projectedPruneCount}日）`;
+        }
+        participantBackfillStartButton.disabled =
+            participantBackfillCandidates.length === 0 ||
+            participantHistoryStorageInvalid || !participantHistory;
+    } catch (error) {
+        participantBackfillCandidates = [];
+        participantBackfillStatus.textContent = error?.message || String(error);
+    } finally {
+        participantBackfillPreviewButton.disabled = false;
+    }
+}
+
+async function startParticipantBackfill() {
+    if (
+        participantHistoryStorageInvalid || !participantHistory ||
+        participantBackfillCandidates.length === 0
+    ) return;
+    participantBackfillCancelled = false;
+    participantBackfillPreviewButton.disabled = true;
+    participantBackfillStartButton.disabled = true;
+    participantBackfillCancelButton.disabled = false;
+    const originalHistory = participantHistory;
+    try {
+        const result = await window.OptionMapParticipantBackfill.runBackfill({
+            history: originalHistory,
+            candidates: participantBackfillCandidates,
+            fetchExcel: fetchParticipantBackfillExcel,
+            parseExcel: parseParticipantBackfillExcel,
+            isCancelled: () => participantBackfillCancelled,
+            onProgress: progress => {
+                const phaseLabels = {
+                    fetch: "取得", parse: "解析", validated: "検証",
+                    staging: "全体検証"
+                };
+                participantBackfillStatus.textContent =
+                    `${progress.current} / ${progress.total}日　` +
+                    `${phaseLabels[progress.phase] || progress.phase}` +
+                    (progress.sourceDate ? `：${progress.sourceDate}` : "");
+            }
+        });
+        if (result.status === "cancelled") {
+            participantBackfillStatus.textContent =
+                "中止しました。正式historyは変更していません。";
+            return;
+        }
+        if (result.status === "staging_failed") {
+            throw new Error("stagingまたはhistory全体の検証に失敗しました");
+        }
+        participantBackfillStatus.textContent = "正式historyを保存中…";
+        const saved = await window.OptionMapParticipantBackfill.commitHistory(
+            localStorage,
+            PARTICIPANT_HISTORY_STORAGE_KEY,
+            result.history
+        );
+        if (!saved.saved) {
+            throw new Error(saved.reason === "storage_failed"
+                ? "正式historyを保存できませんでした"
+                : "正式historyの最終検証に失敗しました");
+        }
+        participantHistory = result.history;
+        const summary = window.OptionMapParticipantHistory
+            .summarizeHistory(participantHistory);
+        window.updateParticipantHistoryState({
+            status: summary.entryCount > 0 ? "ready" : "empty",
+            ...summary,
+            error: null
+        });
+        window.setParticipantActivityHistory(participantHistory);
+        const succeeded = result.results.filter(item =>
+            item.status === "success"
+        ).length;
+        const partial = result.results.filter(item =>
+            item.status === "partial"
+        ).length;
+        const communicationFailed = result.results.filter(item =>
+            item.status === "failed"
+        ).length;
+        const validationFailed = result.results.filter(item =>
+            item.status === "validation_failed"
+        ).length;
+        participantBackfillStatus.textContent =
+            `保存完了：成功 ${succeeded}日、partial ${partial}日、` +
+            `通信失敗 ${communicationFailed}日、検証失敗 ${validationFailed}日　` +
+            `正式history ${summary.entryCount}日（` +
+            `${summary.earliestSourceDate || "—"}～${summary.latestSourceDate || "—"}）`;
+    } catch (error) {
+        participantHistory = originalHistory;
+        participantBackfillStatus.textContent =
+            `${error?.message || String(error)}。既存historyは変更していません。`;
+    } finally {
+        participantBackfillPreviewButton.disabled = false;
+        participantBackfillStartButton.disabled =
+            participantBackfillCandidates.length === 0 ||
+            participantHistoryStorageInvalid;
+        participantBackfillCancelButton.disabled = true;
+    }
+}
+
+participantBackfillPreviewButton?.addEventListener(
+    "click", previewParticipantBackfill
+);
+participantBackfillStartButton?.addEventListener(
+    "click", startParticipantBackfill
+);
+participantBackfillCancelButton?.addEventListener("click", () => {
+    participantBackfillCancelled = true;
+    participantBackfillStatus.textContent = "中止処理中…";
 });
 
 function createParticipantActiveMetadata(cache, dataStatus = null) {

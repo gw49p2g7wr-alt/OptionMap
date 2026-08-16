@@ -41,6 +41,33 @@ ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
   }
 });
 
+ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
+  try {
+    const parsedUrl = new URL(jsonUrl);
+    const allowedPath =
+      parsedUrl.pathname === "/automation/markets/derivatives/participant-volume/json/participant-volume_monthlylist.json" ||
+      /^\/automation\/markets\/derivatives\/participant-volume\/json\/participant_volume_20\d{4}\.json$/.test(
+        parsedUrl.pathname
+      );
+    if (
+      parsedUrl.protocol !== "https:" ||
+      parsedUrl.hostname !== "www.jpx.co.jp" ||
+      !allowedPath
+    ) {
+      throw new Error("許可されていないJPX参加者別JSON取得先です");
+    }
+    const response = await net.fetch(parsedUrl.href, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(
+        `JPX参加者別JSONの取得に失敗しました（HTTP ${response.status}）`
+      );
+    }
+    return { success: true, data: await response.json() };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
 
 ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
     let fetchWindow = null;
