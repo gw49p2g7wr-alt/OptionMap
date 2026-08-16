@@ -1102,6 +1102,63 @@ let currentPriceState = {
     fetchedAt: null,
     mode: "automatic"
 };
+let weeklyOptionsShadowCanonical = null;
+let weeklyOptionsShadowSourceMetadata = null;
+let weeklyOptionsShadowSignalState = Object.freeze({
+    status: "empty",
+    calculatedAt: null,
+    signal: null,
+    sourceMetadata: null
+});
+
+function calculateWeeklyOptionsShadowSignal() {
+    if (
+        !weeklyOptionsShadowCanonical ||
+        !window.OptionMapWeeklyOptionsSignals?.deriveWeeklyOptionsSignals
+    ) {
+        return weeklyOptionsShadowSignalState;
+    }
+    const signal = window.OptionMapWeeklyOptionsSignals
+        .deriveWeeklyOptionsSignals(weeklyOptionsShadowCanonical, {
+            currentPrice: currentPriceState.value,
+            sourceMetadata: weeklyOptionsShadowSourceMetadata
+        });
+    weeklyOptionsShadowSignalState = Object.freeze({
+        status: signal.available ? "available" : "insufficient",
+        calculatedAt: new Date().toISOString(),
+        signal,
+        sourceMetadata: weeklyOptionsShadowSourceMetadata
+            ? { ...weeklyOptionsShadowSourceMetadata }
+            : null
+    });
+    window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
+    return weeklyOptionsShadowSignalState;
+}
+
+window.setWeeklyOptionsShadowCanonical = function (canonical, sourceMetadata = {}) {
+    if (!window.OptionMapWeeklyOptions?.validateWeeklyOptionsData?.(canonical)) {
+        weeklyOptionsShadowCanonical = null;
+        weeklyOptionsShadowSourceMetadata = null;
+        weeklyOptionsShadowSignalState = Object.freeze({
+            status: "invalid",
+            calculatedAt: new Date().toISOString(),
+            signal: null,
+            sourceMetadata: null
+        });
+        window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
+        return weeklyOptionsShadowSignalState;
+    }
+    weeklyOptionsShadowCanonical = canonical;
+    weeklyOptionsShadowSourceMetadata = { ...sourceMetadata };
+    return calculateWeeklyOptionsShadowSignal();
+};
+
+window.getWeeklyOptionsShadowSignal = function () {
+    return typeof structuredClone === "function"
+        ? structuredClone(weeklyOptionsShadowSignalState)
+        : JSON.parse(JSON.stringify(weeklyOptionsShadowSignalState));
+};
+window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
 let priceTotals = {};
 let comparisonSnapshot = null;
 let comparisonSelectionMode = "none";
@@ -2849,6 +2906,7 @@ function applyCurrentPrice({
         fetchedAt,
         mode
     };
+    calculateWeeklyOptionsShadowSignal();
 
     if (currentPriceInput) {
         currentPriceInput.value = String(currentPrice);

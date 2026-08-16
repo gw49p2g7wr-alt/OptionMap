@@ -746,6 +746,7 @@
 <script src="js/backfill/adapters/participantBackfillAdapter.js"></script>
 <script src="js/weeklyFutures.js"></script>
 <script src="js/weeklyOptions.js"></script>
+<script src="js/weeklyOptionsSignals.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -2357,6 +2358,22 @@ function applyWeeklyData(source, cache, origin, statePatch = {}) {
         observedLatestTradeDate:
             statePatch.observedLatestTradeDate || null
     });
+
+    if (
+        source === "weeklyOptions" &&
+        typeof window.setWeeklyOptionsShadowCanonical === "function"
+    ) {
+        window.setWeeklyOptionsShadowCanonical(cache.data, {
+            origin,
+            status: statePatch.status ?? null,
+            remoteCheckStatus: statePatch.remoteCheckStatus || "pending",
+            observedLatestTradeDate:
+                statePatch.observedLatestTradeDate || null,
+            sourceDate: cache.sourceDate,
+            signature: cache.signature,
+            versionKey: cache.versionKey
+        });
+    }
 }
 
 async function loadWeeklyCache(source) {
