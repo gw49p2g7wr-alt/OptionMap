@@ -1104,11 +1104,20 @@ let currentPriceState = {
 };
 let weeklyOptionsShadowCanonical = null;
 let weeklyOptionsShadowSourceMetadata = null;
+let previousWeeklyOptionsShadowCanonical = null;
+let previousWeeklyOptionsShadowSourceMetadata = null;
 let weeklyOptionsShadowSignalState = Object.freeze({
     status: "empty",
     calculatedAt: null,
     signal: null,
     sourceMetadata: null
+});
+let weeklyOptionsShadowChangesState = Object.freeze({
+    status: "waiting_previous",
+    calculatedAt: null,
+    changes: null,
+    previousSourceMetadata: null,
+    currentSourceMetadata: null
 });
 
 function calculateWeeklyOptionsShadowSignal() {
@@ -1135,10 +1144,47 @@ function calculateWeeklyOptionsShadowSignal() {
     return weeklyOptionsShadowSignalState;
 }
 
+function calculateWeeklyOptionsShadowChanges() {
+    if (
+        !previousWeeklyOptionsShadowCanonical ||
+        !weeklyOptionsShadowCanonical ||
+        !window.OptionMapWeeklyOptionsChanges?.compareWeeklyOptions
+    ) {
+        weeklyOptionsShadowChangesState = Object.freeze({
+            status: "waiting_previous",
+            calculatedAt: null,
+            changes: null,
+            previousSourceMetadata: null,
+            currentSourceMetadata: weeklyOptionsShadowSourceMetadata
+                ? { ...weeklyOptionsShadowSourceMetadata } : null
+        });
+        window.weeklyOptionsShadowChangesState =
+            weeklyOptionsShadowChangesState;
+        return weeklyOptionsShadowChangesState;
+    }
+    const changes = window.OptionMapWeeklyOptionsChanges.compareWeeklyOptions(
+        previousWeeklyOptionsShadowCanonical,
+        weeklyOptionsShadowCanonical
+    );
+    weeklyOptionsShadowChangesState = Object.freeze({
+        status: changes.status,
+        calculatedAt: new Date().toISOString(),
+        changes,
+        previousSourceMetadata: previousWeeklyOptionsShadowSourceMetadata
+            ? { ...previousWeeklyOptionsShadowSourceMetadata } : null,
+        currentSourceMetadata: weeklyOptionsShadowSourceMetadata
+            ? { ...weeklyOptionsShadowSourceMetadata } : null
+    });
+    window.weeklyOptionsShadowChangesState = weeklyOptionsShadowChangesState;
+    return weeklyOptionsShadowChangesState;
+}
+
 window.setWeeklyOptionsShadowCanonical = function (canonical, sourceMetadata = {}) {
     if (!window.OptionMapWeeklyOptions?.validateWeeklyOptionsData?.(canonical)) {
         weeklyOptionsShadowCanonical = null;
         weeklyOptionsShadowSourceMetadata = null;
+        previousWeeklyOptionsShadowCanonical = null;
+        previousWeeklyOptionsShadowSourceMetadata = null;
         weeklyOptionsShadowSignalState = Object.freeze({
             status: "invalid",
             calculatedAt: new Date().toISOString(),
@@ -1146,11 +1192,35 @@ window.setWeeklyOptionsShadowCanonical = function (canonical, sourceMetadata = {
             sourceMetadata: null
         });
         window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
+        weeklyOptionsShadowChangesState = Object.freeze({
+            status: "invalid",
+            calculatedAt: new Date().toISOString(),
+            changes: null,
+            previousSourceMetadata: null,
+            currentSourceMetadata: null
+        });
+        window.weeklyOptionsShadowChangesState =
+            weeklyOptionsShadowChangesState;
+        return weeklyOptionsShadowSignalState;
+    }
+    if (
+        weeklyOptionsShadowCanonical &&
+        canonical.sourceDate > weeklyOptionsShadowCanonical.sourceDate
+    ) {
+        previousWeeklyOptionsShadowCanonical = weeklyOptionsShadowCanonical;
+        previousWeeklyOptionsShadowSourceMetadata =
+            weeklyOptionsShadowSourceMetadata;
+    } else if (
+        weeklyOptionsShadowCanonical &&
+        canonical.sourceDate < weeklyOptionsShadowCanonical.sourceDate
+    ) {
         return weeklyOptionsShadowSignalState;
     }
     weeklyOptionsShadowCanonical = canonical;
     weeklyOptionsShadowSourceMetadata = { ...sourceMetadata };
-    return calculateWeeklyOptionsShadowSignal();
+    const signalState = calculateWeeklyOptionsShadowSignal();
+    calculateWeeklyOptionsShadowChanges();
+    return signalState;
 };
 
 window.getWeeklyOptionsShadowSignal = function () {
@@ -1158,7 +1228,13 @@ window.getWeeklyOptionsShadowSignal = function () {
         ? structuredClone(weeklyOptionsShadowSignalState)
         : JSON.parse(JSON.stringify(weeklyOptionsShadowSignalState));
 };
+window.getWeeklyOptionsShadowChanges = function () {
+    return typeof structuredClone === "function"
+        ? structuredClone(weeklyOptionsShadowChangesState)
+        : JSON.parse(JSON.stringify(weeklyOptionsShadowChangesState));
+};
 window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
+window.weeklyOptionsShadowChangesState = weeklyOptionsShadowChangesState;
 let priceTotals = {};
 let comparisonSnapshot = null;
 let comparisonSelectionMode = "none";
