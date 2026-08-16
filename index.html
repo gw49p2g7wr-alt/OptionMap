@@ -745,6 +745,7 @@
 <script src="js/participantActivity.js"></script>
 <script src="js/backfill/adapters/participantBackfillAdapter.js"></script>
 <script src="js/weeklyFutures.js"></script>
+<script src="js/weeklyOptions.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -1876,29 +1877,6 @@ function normalizeWeeklyFuturesForSignature(data) {
     return window.OptionMapWeeklyFutures?.normalizeForSignature(data) || null;
 }
 
-function normalizeWeeklyOptionsForSignature(data) {
-    const records = [];
-
-    Object.entries(data?.optionMap || {}).forEach(
-        ([strike, brokers]) => {
-            Object.entries(brokers || {}).forEach(
-                ([broker, position]) => {
-                    records.push([
-                        Number(strike),
-                        broker,
-                        Number(position) || 0
-                    ]);
-                }
-            );
-        }
-    );
-
-    return records.sort((left, right) =>
-        left[0] - right[0] ||
-        String(left[1]).localeCompare(String(right[1]), "ja")
-    );
-}
-
 async function createSha256Signature(normalizedData) {
     const bytes = new TextEncoder().encode(
         JSON.stringify(normalizedData)
@@ -1940,13 +1918,12 @@ async function createWeeklyVersionMetadata({
             excelAsOf === urlDate
         )
     };
-    const normalizedData = source === "weeklyFutures"
-        ? normalizeWeeklyFuturesForSignature(data)
-        : normalizeWeeklyOptionsForSignature(data);
-    const signature = await createSha256Signature(normalizedData);
+    const signature = source === "weeklyFutures"
+        ? await createSha256Signature(normalizeWeeklyFuturesForSignature(data))
+        : await window.OptionMapWeeklyOptions.createSignature(data);
     const versionPrefix = source === "weeklyFutures"
         ? "weekly-futures-v2"
-        : "weekly-options";
+        : "weekly-options-v2";
 
     return {
         ...(source === "weeklyFutures" ? {
@@ -1954,7 +1931,10 @@ async function createWeeklyVersionMetadata({
             schemaVersion: window.OptionMapWeeklyFutures.SCHEMA_VERSION,
             brokerSetVersion: window.OptionMapWeeklyFutures.BROKER_SET_VERSION,
             scoringVersion: window.OptionMapWeeklyFutures.SCORING_VERSION
-        } : {}),
+        } : {
+            parserVersion: window.OptionMapWeeklyOptions.PARSER_VERSION,
+            schemaVersion: window.OptionMapWeeklyOptions.SCHEMA_VERSION
+        }),
         sourceDate: excelAsOf,
         sourceDateKind: "jpx_open_interest_as_of",
         publishedDate,
@@ -1976,7 +1956,7 @@ async function createWeeklyVersionMetadata({
 }
 
 const WEEKLY_FUTURES_CACHE_VERSION = 2;
-const WEEKLY_OPTIONS_CACHE_VERSION = 1;
+const WEEKLY_OPTIONS_CACHE_VERSION = 2;
 const WEEKLY_FUTURES_STORAGE_KEY =
     "optionMapLastValidWeeklyFutures";
 const WEEKLY_OPTIONS_STORAGE_KEY =
@@ -1985,12 +1965,6 @@ const WEEKLY_FUTURES_SOURCE =
     "jpx-weekly-index-futures-open-interest";
 const WEEKLY_OPTIONS_SOURCE =
     "jpx-weekly-nikkei225-options-open-interest";
-const DANGEROUS_RECORD_KEYS = new Set([
-    "__proto__",
-    "prototype",
-    "constructor"
-]);
-
 let lastValidWeeklyFuturesCache = null;
 let lastValidWeeklyOptionsCache = null;
 let activeWeeklyFuturesCache = null;
@@ -2000,14 +1974,6 @@ function isPlainWeeklyObject(value) {
     if (value === null || typeof value !== "object") return false;
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
-}
-
-function isSafeWeeklyRecordKey(value) {
-    return (
-        typeof value === "string" &&
-        value.trim() !== "" &&
-        !DANGEROUS_RECORD_KEYS.has(value)
-    );
 }
 
 function isValidIsoDateTime(value) {
@@ -2053,7 +2019,7 @@ function getWeeklyCacheConfiguration(source) {
             storageKey: WEEKLY_OPTIONS_STORAGE_KEY,
             cacheSource: WEEKLY_OPTIONS_SOURCE,
             cacheVersion: WEEKLY_OPTIONS_CACHE_VERSION,
-            versionPrefix: "weekly-options",
+            versionPrefix: "weekly-options-v2",
             fileName: "nk225op_oi_by_tp.xlsx"
         };
     }
@@ -2068,87 +2034,9 @@ function validateWeeklyFuturesData(data) {
 }
 
 function validateWeeklyOptionsData(data) {
-    if (
-        !isPlainWeeklyObject(data) ||
-        !isPlainWeeklyObject(data.optionMap) ||
-        !isPlainWeeklyObject(data.priceTotals) ||
-        !isPlainWeeklyObject(data.brokerTotals) ||
-        Object.keys(data.optionMap).length === 0
-    ) {
-        return false;
-    }
-
-    const calculatedPriceTotals = new Map();
-    const calculatedBrokerTotals = new Map();
-    let detailCount = 0;
-
-    for (const [strikeKey, brokers] of Object.entries(data.optionMap)) {
-        const strike = Number(strikeKey);
-
-        if (
-            !Number.isFinite(strike) ||
-            strike <= 0 ||
-            !isPlainWeeklyObject(brokers) ||
-            Object.keys(brokers).length === 0
-        ) {
-            return false;
-        }
-
-        let priceTotal = 0;
-
-        for (const [brokerName, position] of Object.entries(brokers)) {
-            if (
-                !isSafeWeeklyRecordKey(brokerName) ||
-                !Number.isSafeInteger(position) ||
-                position <= 0
-            ) {
-                return false;
-            }
-
-            priceTotal += position;
-            calculatedBrokerTotals.set(
-                brokerName,
-                (calculatedBrokerTotals.get(brokerName) || 0) + position
-            );
-            detailCount += 1;
-        }
-
-        if (!Number.isSafeInteger(priceTotal)) return false;
-        calculatedPriceTotals.set(String(strike), priceTotal);
-    }
-
-    if (
-        detailCount === 0 ||
-        Object.keys(data.priceTotals).length !==
-            calculatedPriceTotals.size ||
-        Object.keys(data.brokerTotals).length !==
-            calculatedBrokerTotals.size
-    ) {
-        return false;
-    }
-
-    for (const [strikeKey, total] of Object.entries(data.priceTotals)) {
-        if (
-            !Number.isSafeInteger(total) ||
-            total <= 0 ||
-            calculatedPriceTotals.get(String(Number(strikeKey))) !== total
-        ) {
-            return false;
-        }
-    }
-
-    for (const [brokerName, total] of Object.entries(data.brokerTotals)) {
-        if (
-            !isSafeWeeklyRecordKey(brokerName) ||
-            !Number.isSafeInteger(total) ||
-            total <= 0 ||
-            calculatedBrokerTotals.get(brokerName) !== total
-        ) {
-            return false;
-        }
-    }
-
-    return true;
+    return Boolean(
+        window.OptionMapWeeklyOptions?.validateWeeklyOptionsData(data)
+    );
 }
 
 async function validateWeeklyCache(cache, source) {
@@ -2164,6 +2052,14 @@ async function validateWeeklyCache(cache, source) {
             cache.schemaVersion !== window.OptionMapWeeklyFutures.SCHEMA_VERSION ||
             cache.brokerSetVersion !== window.OptionMapWeeklyFutures.BROKER_SET_VERSION ||
             cache.scoringVersion !== window.OptionMapWeeklyFutures.SCORING_VERSION
+        )) ||
+        (source === "weeklyOptions" && (
+            cache.parserVersion !== window.OptionMapWeeklyOptions.PARSER_VERSION ||
+            cache.schemaVersion !== window.OptionMapWeeklyOptions.SCHEMA_VERSION ||
+            typeof cache.listingUrl !== "string" ||
+            !/^https:\/\/www\.jpx\.co\.jp\/automation\/markets\/derivatives\/open-interest\/json\/open_interest_20\d{2}\.json$/.test(
+                cache.listingUrl
+            )
         )) ||
         parseIsoCalendarDate(...String(cache.sourceDate || "").split("-")) !==
             cache.sourceDate ||
@@ -2210,12 +2106,16 @@ async function validateWeeklyCache(cache, source) {
         return false;
     }
 
-    const normalizedData = source === "weeklyFutures"
-        ? normalizeWeeklyFuturesForSignature(cache.data)
-        : normalizeWeeklyOptionsForSignature(cache.data);
-    const recalculatedSignature = await createSha256Signature(
-        normalizedData
-    );
+    if (
+        source === "weeklyOptions" &&
+        !(await window.OptionMapWeeklyOptions.validateVersionedCacheData(cache))
+    ) {
+        return false;
+    }
+
+    const recalculatedSignature = source === "weeklyFutures"
+        ? await createSha256Signature(normalizeWeeklyFuturesForSignature(cache.data))
+        : await window.OptionMapWeeklyOptions.createSignature(cache.data);
 
     return recalculatedSignature === cache.signature;
 }
@@ -2328,7 +2228,11 @@ function createWeeklyCache({ source, metadata, fetchedAt, data }) {
             schemaVersion: metadata.schemaVersion,
             brokerSetVersion: metadata.brokerSetVersion,
             scoringVersion: metadata.scoringVersion
-        } : {}),
+        } : {
+            parserVersion: metadata.parserVersion,
+            schemaVersion: metadata.schemaVersion,
+            listingUrl: metadata.listingUrl
+        }),
         source: configuration.cacheSource,
         sourceDate: metadata.sourceDate,
         sourceDateKind: metadata.sourceDateKind,
@@ -2436,7 +2340,9 @@ function applyWeeklyData(source, cache, origin, statePatch = {}) {
     if (source === "weeklyFutures") {
         window.setLatestFutureOpenInterestResult(cache.data);
     } else if (typeof window.setWeeklyOptionMap === "function") {
-        window.setWeeklyOptionMap(cache.data);
+        window.setWeeklyOptionMap(
+            window.createLegacyWeeklyOptionsDisplayData(cache.data)
+        );
     }
 
     setActiveWeeklyCache(source, cache);
@@ -2565,7 +2471,9 @@ async function processWeeklyLiveResult({
             if (source === "weeklyFutures") {
                 window.setLatestFutureOpenInterestResult(data);
             } else {
-                window.setWeeklyOptionMap(data);
+                window.setWeeklyOptionMap(
+                    window.createLegacyWeeklyOptionsDisplayData(data)
+                );
             }
         }
 
@@ -2724,11 +2632,7 @@ function isValidWeeklyFuturesResult(result) {
 
 function isValidWeeklyOptionsResult(result) {
     return Boolean(
-        result &&
-        (
-            Object.keys(result.optionMap || {}).length > 0 ||
-            Object.keys(result.priceTotals || {}).length > 0
-        )
+        window.OptionMapWeeklyOptions?.validateWeeklyOptionsData(result)
     );
 }
 
@@ -2943,7 +2847,8 @@ async function fetchWeeklyOptionsData({
         const workbook = XLSX.read(excelResult.data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const data = analyzeOptionOpenInterestJson(rows);
+        const data = window.OptionMapWeeklyOptions
+            .parseWeeklyOptionsRows(rows);
 
         if (!isValidWeeklyOptionsResult(data)) {
             throw new Error("週次オプションExcelの解析結果が空です");
@@ -2956,6 +2861,7 @@ async function fetchWeeklyOptionsData({
         const metadata = await createWeeklyVersionMetadata({
             source,
             sourceUrl,
+            listingUrl: weeklyLinks.listingJsonUrl,
             sheet,
             listingTradeDate: weeklyLinks.tradeDate,
             listingUpdatedAt: weeklyLinks.listingUpdatedAt,

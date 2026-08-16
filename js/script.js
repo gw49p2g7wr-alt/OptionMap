@@ -1052,6 +1052,38 @@ window.setWeeklyOptionMap = function (result) {
     showMaxPosition(result?.priceTotals || {});
     showPriceRanking();
 };
+
+function createLegacyWeeklyOptionsDisplayData(canonical) {
+    const optionMapResult = {};
+    const priceTotals = {};
+    const brokerTotals = {};
+
+    for (const record of canonical?.records || []) {
+        // Preserve the existing rank-1/mixed display without contaminating raw.
+        if (record?.published !== true || record.rank !== 1) continue;
+        const price = Number(record.strike);
+        const volume = Number(record.value);
+        const broker = companyNames[record.broker] || record.broker;
+        if (!Number.isFinite(price) || !Number.isSafeInteger(volume) || !broker) {
+            continue;
+        }
+        optionMapResult[price] ||= {};
+        optionMapResult[price][broker] =
+            (optionMapResult[price][broker] || 0) + volume;
+        priceTotals[price] = (priceTotals[price] || 0) + volume;
+        brokerTotals[broker] = (brokerTotals[broker] || 0) + volume;
+    }
+
+    return {
+        derivation: "legacy-rank1-mixed-option-type-and-side",
+        optionMap: optionMapResult,
+        priceTotals,
+        brokerTotals
+    };
+}
+
+window.createLegacyWeeklyOptionsDisplayData =
+    createLegacyWeeklyOptionsDisplayData;
 let allJpxLabels = [];
 let allJpxCallValues = [];
 let allJpxPutValues = [];
@@ -1829,69 +1861,6 @@ console.log(
         .parseWeeklyFuturesRows(rows);
     console.log("週次先物・正式schema解析結果:", result);
     return result;
-}
-
-function analyzeOptionOpenInterestJson(rows) {
-    console.log("週次オプションJSON解析開始");
-
-    const optionMapResult = {};
-    const priceTotals = {};
-    const brokerTotals = {};
-
-    const addPosition = (price, broker, volume) => {
-        price = Number(price);
-        volume = Number(volume);
-
-        if (!Number.isFinite(price) || price <= 0) return;
-        if (!broker || !Number.isFinite(volume) || volume <= 0) return;
-
-        // 既存の companyNames を使って略称へ統一
-        const brokerKey = companyNames[broker] || broker;
-
-        if (!optionMapResult[price]) {
-            optionMapResult[price] = {};
-        }
-
-        if (!optionMapResult[price][brokerKey]) {
-            optionMapResult[price][brokerKey] = 0;
-        }
-
-        optionMapResult[price][brokerKey] += volume;
-
-        if (!priceTotals[price]) {
-            priceTotals[price] = 0;
-        }
-
-        priceTotals[price] += volume;
-
-        if (!brokerTotals[brokerKey]) {
-            brokerTotals[brokerKey] = 0;
-        }
-
-        brokerTotals[brokerKey] += volume;
-    };
-
-    for (const row of rows) {
-        if (!Array.isArray(row)) continue;
-
-        // PUT
-        addPosition(row[1], row[3], row[4]);
-        addPosition(row[1], row[6], row[7]);
-
-        // CALL
-        addPosition(row[11], row[13], row[14]);
-        addPosition(row[11], row[16], row[17]);
-    }
-
-    console.log("週次オプション optionMap:", optionMapResult);
-    console.log("週次オプション priceTotals:", priceTotals);
-    console.log("週次オプション brokerTotals:", brokerTotals);
-
-    return {
-        optionMap: optionMapResult,
-        priceTotals,
-        brokerTotals,
-    };
 }
 
 function drawChart(labels, values) {
