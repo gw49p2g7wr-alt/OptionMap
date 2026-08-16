@@ -1767,183 +1767,13 @@ console.log(
   }
 
   function analyzeFutureOpenInterestJson(rows) {
-    console.log("週次先物JSON解析開始");
-
-    const products = {};
-    const brokerTotals = {};
-
-    const normalizeText = value =>
-        String(value ?? "")
-            .replace(/\r?\n/g, "")
-            .replace(/\u3000/g, "")
-            .replace(/\s+/g, "")
-            .trim();
-
-    const toNumber = value => {
-        const cleaned = String(value ?? "")
-            .replace(/,/g, "")
-            .replace(/[^\d.-]/g, "");
-
-        const number = Number(cleaned);
-        return Number.isFinite(number) ? number : 0;
-    };
-
-    const ensureProduct = productName => {
-        if (!products[productName]) {
-            products[productName] = {
-                brokers: {},
-                sellTotal: 0,
-                buyTotal: 0,
-            };
-        }
-
-        return products[productName];
-    };
-
-    const addBrokerPosition = (
-        productName,
-        brokerName,
-        side,
-        volume,
-        expiry
-    ) => {
-        const broker = normalizeText(brokerName);
-        const amount = toNumber(volume);
-
-        if (!productName || !broker || amount <= 0) {
-            return;
-        }
-
-        const product = ensureProduct(productName);
-
-        if (!product.brokers[broker]) {
-            product.brokers[broker] = {
-                sell: 0,
-                buy: 0,
-                net: 0,
-                expiries: {},
-            };
-        }
-
-        const brokerData = product.brokers[broker];
-
-        brokerData[side] += amount;
-
-        if (side === "sell") {
-            product.sellTotal += amount;
-        } else {
-            product.buyTotal += amount;
-        }
-
-        if (expiry) {
-            if (!brokerData.expiries[expiry]) {
-                brokerData.expiries[expiry] = {
-                    sell: 0,
-                    buy: 0,
-                    net: 0,
-                };
-            }
-
-            brokerData.expiries[expiry][side] += amount;
-
-            brokerData.expiries[expiry].net =
-                brokerData.expiries[expiry].buy -
-                brokerData.expiries[expiry].sell;
-        }
-
-        brokerData.net = brokerData.buy - brokerData.sell;
-    };
-
-    let currentProduct = "";
-
-    const expiryPattern = /^20\d{2}年\d{1,2}月限月$/;
-
-    for (const row of rows) {
-        if (!Array.isArray(row)) continue;
-
-        const firstCell = normalizeText(row[0]);
-
-        if (firstCell.includes("日経225mini")) {
-            currentProduct = "日経225mini";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (firstCell.includes("日経225先物")) {
-            currentProduct = "日経225先物";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (firstCell.includes("TOPIX")) {
-            currentProduct = "TOPIX先物";
-            ensureProduct(currentProduct);
-            console.log("商品を検出:", currentProduct);
-            continue;
-        }
-
-        if (!currentProduct) continue;
-
-        row.forEach((cell, expiryIndex) => {
-            const expiry = normalizeText(cell);
-
-            if (!expiryPattern.test(expiry)) {
-                return;
-            }
-
-            const sellVolume = toNumber(row[expiryIndex + 1]);
-            const sellBroker = row[expiryIndex + 2] ?? "";
-
-            const buyVolume = toNumber(row[expiryIndex + 3]);
-            const buyBroker = row[expiryIndex + 5] ?? "";
-
-            addBrokerPosition(
-                currentProduct,
-                sellBroker,
-                "sell",
-                sellVolume,
-                expiry
-            );
-
-            addBrokerPosition(
-                currentProduct,
-                buyBroker,
-                "buy",
-                buyVolume,
-                expiry
-            );
-        });
+    if (!window.OptionMapWeeklyFutures) {
+        throw new Error("週次先物parserを初期化できません");
     }
-
-    for (const productData of Object.values(products)) {
-        for (const [broker, position] of Object.entries(
-            productData.brokers
-        )) {
-            if (!brokerTotals[broker]) {
-                brokerTotals[broker] = {
-                    sell: 0,
-                    buy: 0,
-                    net: 0,
-                };
-            }
-
-            brokerTotals[broker].sell += position.sell;
-            brokerTotals[broker].buy += position.buy;
-            brokerTotals[broker].net =
-                brokerTotals[broker].buy -
-                brokerTotals[broker].sell;
-        }
-    }
-
-    console.log("週次先物・商品別:", products);
-    console.log("週次先物・証券会社別合計:", brokerTotals);
-
-    return {
-        products,
-        brokerTotals,
-    };
+    const result = window.OptionMapWeeklyFutures
+        .parseWeeklyFuturesRows(rows);
+    console.log("週次先物・正式schema解析結果:", result);
+    return result;
 }
 
 function analyzeOptionOpenInterestJson(rows) {
@@ -4397,9 +4227,19 @@ function updateWeeklyCandidateV2(selection) {
         return;
     }
 
+    const judgment = calculateWeeklyBrokerJudgment(previous, current);
+    if (!judgment.available) {
+        optionMapJudgmentStateV2.weeklyCandidate = {
+            available: false,
+            reason: "主要5社の公表比較データが不足しています"
+        };
+        safeRenderOptionMapOverallJudgmentV2();
+        return;
+    }
+
     optionMapJudgmentStateV2.weeklyCandidate = {
         available: true,
-        judgment: calculateWeeklyBrokerJudgment(previous, current),
+        judgment,
         metadata: {
             previous: {
                 sourceDate: previous.sourceDate,
@@ -4806,112 +4646,22 @@ function calculateWeeklyBrokerJudgment(
     previousWeekly,
     currentWeekly
 ) {
-    const brokerDiffs = {};
-
-    for (const [key, brokerName] of Object.entries(weeklyBrokerMap)) {
-        const getBrokerPosition = item =>
-            item.futureOpenInterest
-                ?.products?.["日経225先物"]
-                ?.brokers?.[brokerName] || {
-                    sell: 0,
-                    buy: 0,
-                    net: 0
-                };
-
-        const previous =
-            getBrokerPosition(previousWeekly);
-
-        const current =
-            getBrokerPosition(currentWeekly);
-
-        const delta = {
-            sell: current.sell - previous.sell,
-            buy: current.buy - previous.buy,
-            net: current.net - previous.net
-        };
-
-        let status = "unconfirmed";
-
-        if (delta.buy > 0 && delta.sell <= 0) {
-            status = "estimatedBuy";
-        } else if (delta.sell > 0 && delta.buy <= 0) {
-            status = "estimatedSell";
-        } else if (delta.buy < 0 && delta.sell === 0) {
-            status = "reducedBuy";
-        } else if (delta.sell < 0 && delta.buy === 0) {
-            status = "reducedSell";
-        }
-
-        brokerDiffs[key] = {
-            brokerName,
-            from: previousWeekly.date,
-            to: currentWeekly.date,
-
-            previous: {
-                sell: previous.sell,
-                buy: previous.buy,
-                net: previous.net
-            },
-
-            current: {
-                sell: current.sell,
-                buy: current.buy,
-                net: current.net
-            },
-
-            delta,
-            status
+    if (!window.OptionMapWeeklyFutures) {
+        return {
+            available: false,
+            reason: "weekly_parser_unavailable",
+            brokerDiffs: {},
+            buyScore: null,
+            sellScore: null,
+            scoreDiff: null,
+            direction: null
         };
     }
-
-    let buyScore = 0;
-    let sellScore = 0;
-
-    for (const item of Object.values(brokerDiffs)) {
-        if (!item) continue;
-
-        const previousTotal =
-            Math.abs(item.previous?.buy || 0) +
-            Math.abs(item.previous?.sell || 0);
-
-        if (previousTotal <= 0) continue;
-
-        if (item.status === "estimatedBuy") {
-            const changeRate =
-                Math.abs(item.delta?.buy || 0) / previousTotal;
-
-            buyScore += changeRate;
-        }
-
-        if (item.status === "estimatedSell") {
-            const changeRate =
-                Math.abs(item.delta?.sell || 0) / previousTotal;
-
-            sellScore += changeRate;
-        }
-    }
-
-    const scoreDiff = buyScore - sellScore;
-
-    let direction = "方向感薄い";
-
-    if (scoreDiff >= 0.10) {
-        direction = "強い買い優勢";
-    } else if (scoreDiff >= 0.02) {
-        direction = "買い優勢";
-    } else if (scoreDiff <= -0.10) {
-        direction = "強い売り優勢";
-    } else if (scoreDiff <= -0.02) {
-        direction = "売り優勢";
-    }
-
-    return {
-        brokerDiffs,
-        buyScore,
-        sellScore,
-        scoreDiff,
-        direction
-    };
+    return window.OptionMapWeeklyFutures.calculateWeeklyBrokerJudgment(
+        previousWeekly,
+        currentWeekly,
+        weeklyBrokerMap
+    );
 }
 
 async function getConfirmedWeeklyFuturesSnapshotCandidates(snapshots) {
@@ -5178,7 +4928,9 @@ function renderWeeklyBrokerVersionStatus(selection, availability) {
         invalid_metadata:
             "週次版metadataを検証できないため正式比較不可",
         legacy_snapshot_only:
-            "旧形式データのみのため正式比較不可"
+            "旧形式データのみのため正式比較不可",
+        insufficient_broker_observations:
+            "主要5社の公表比較データが不足しています"
     };
 
     if (
@@ -5249,8 +5001,23 @@ async function renderSavedSnapshots() {
         );
     const uniqueWeeklySnapshots = weeklySelection.versions;
     const allConfirmedWeeklySnapshots = weeklySelection.allVersions;
-    const weeklyAvailability =
+    let weeklyAvailability =
         getWeeklyJudgmentAvailability(weeklySelection);
+
+    if (weeklyAvailability.available && uniqueWeeklySnapshots.length >= 2) {
+        const observationJudgment = calculateWeeklyBrokerJudgment(
+            uniqueWeeklySnapshots.at(-2),
+            uniqueWeeklySnapshots.at(-1)
+        );
+        if (!observationJudgment.available) {
+            weeklyAvailability = {
+                available: false,
+                reason: "insufficient_broker_observations",
+                eligibleBrokerCount: observationJudgment.eligibleBrokerCount,
+                requiredBrokerCount: observationJudgment.requiredBrokerCount
+            };
+        }
+    }
 
     updateWeeklyCandidateV2(weeklySelection);
 
@@ -5589,44 +5356,19 @@ async function renderSavedSnapshots() {
             const currentWeekly =
                 allConfirmedWeeklySnapshots[i];
     
-                const intervalBrokers = {};
-
-                for (const [key, brokerName] of Object.entries(brokerMap)) {
-                    const getBrokerPosition = item =>
-                        item.futureOpenInterest
-                            ?.products?.["日経225先物"]
-                            ?.brokers?.[brokerName] || {
-                                sell: 0,
-                                buy: 0,
-                                net: 0
-                            };
-                
-                    const previous =
-                        getBrokerPosition(previousWeekly);
-                
-                    const current =
-                        getBrokerPosition(currentWeekly);
-                
-                    const delta = {
-                        sell: current.sell - previous.sell,
-                        buy: current.buy - previous.buy,
-                        net: current.net - previous.net
-                    };
-                
-                    let status = "unconfirmed";
-                
-                    if (delta.buy > 0 && delta.sell <= 0) {
-                        status = "estimatedBuy";
-                    } else if (delta.sell > 0 && delta.buy <= 0) {
-                        status = "estimatedSell";
-                    }
-                
-                    intervalBrokers[key] = {
-                        brokerName,
-                        delta,
-                        status
-                    };
-                }
+                const intervalJudgment = calculateWeeklyBrokerJudgment(
+                    previousWeekly,
+                    currentWeekly
+                );
+                const intervalBrokers = Object.fromEntries(
+                    Object.entries(intervalJudgment.brokerDiffs).map(
+                        ([key, item]) => [key, {
+                            brokerName: item.brokerName,
+                            delta: item.delta,
+                            status: item.status
+                        }]
+                    )
+                );
                 
                 weeklyBrokerHistory.push({
                     from: previousWeekly.date,

@@ -704,6 +704,7 @@
 <script src="js/participantData.js"></script>
 <script src="js/participantHistory.js"></script>
 <script src="js/participantActivity.js"></script>
+<script src="js/weeklyFutures.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">
@@ -1409,34 +1410,7 @@ function createWeeklyLinksFromListing(listing) {
 }
 
 function normalizeWeeklyFuturesForSignature(data) {
-    const records = [];
-
-    Object.entries(data?.products || {}).forEach(
-        ([product, productData]) => {
-            Object.entries(productData?.brokers || {}).forEach(
-                ([broker, position]) => {
-                    Object.entries(position?.expiries || {}).forEach(
-                        ([expiry, values]) => {
-                            records.push([
-                                product,
-                                expiry,
-                                broker,
-                                Number(values?.sell) || 0,
-                                Number(values?.buy) || 0,
-                                Number(values?.net) || 0
-                            ]);
-                        }
-                    );
-                }
-            );
-        }
-    );
-
-    return records.sort((left, right) =>
-        String(left[0]).localeCompare(String(right[0]), "ja") ||
-        String(left[1]).localeCompare(String(right[1]), "ja") ||
-        String(left[2]).localeCompare(String(right[2]), "ja")
-    );
+    return window.OptionMapWeeklyFutures?.normalizeForSignature(data) || null;
 }
 
 function normalizeWeeklyOptionsForSignature(data) {
@@ -1507,10 +1481,16 @@ async function createWeeklyVersionMetadata({
         : normalizeWeeklyOptionsForSignature(data);
     const signature = await createSha256Signature(normalizedData);
     const versionPrefix = source === "weeklyFutures"
-        ? "weekly-futures"
+        ? "weekly-futures-v2"
         : "weekly-options";
 
     return {
+        ...(source === "weeklyFutures" ? {
+            parserVersion: window.OptionMapWeeklyFutures.PARSER_VERSION,
+            schemaVersion: window.OptionMapWeeklyFutures.SCHEMA_VERSION,
+            brokerSetVersion: window.OptionMapWeeklyFutures.BROKER_SET_VERSION,
+            scoringVersion: window.OptionMapWeeklyFutures.SCORING_VERSION
+        } : {}),
         sourceDate: excelAsOf,
         sourceDateKind: "jpx_open_interest_as_of",
         publishedDate,
@@ -1530,7 +1510,8 @@ async function createWeeklyVersionMetadata({
     };
 }
 
-const WEEKLY_CACHE_VERSION = 1;
+const WEEKLY_FUTURES_CACHE_VERSION = 2;
+const WEEKLY_OPTIONS_CACHE_VERSION = 1;
 const WEEKLY_FUTURES_STORAGE_KEY =
     "optionMapLastValidWeeklyFutures";
 const WEEKLY_OPTIONS_STORAGE_KEY =
@@ -1596,7 +1577,8 @@ function getWeeklyCacheConfiguration(source) {
         return {
             storageKey: WEEKLY_FUTURES_STORAGE_KEY,
             cacheSource: WEEKLY_FUTURES_SOURCE,
-            versionPrefix: "weekly-futures",
+            cacheVersion: WEEKLY_FUTURES_CACHE_VERSION,
+            versionPrefix: "weekly-futures-v2",
             fileName: "indexfut_oi_by_tp.xlsx"
         };
     }
@@ -1605,6 +1587,7 @@ function getWeeklyCacheConfiguration(source) {
         return {
             storageKey: WEEKLY_OPTIONS_STORAGE_KEY,
             cacheSource: WEEKLY_OPTIONS_SOURCE,
+            cacheVersion: WEEKLY_OPTIONS_CACHE_VERSION,
             versionPrefix: "weekly-options",
             fileName: "nk225op_oi_by_tp.xlsx"
         };
@@ -1614,136 +1597,9 @@ function getWeeklyCacheConfiguration(source) {
 }
 
 function validateWeeklyFuturesData(data) {
-    if (
-        !isPlainWeeklyObject(data) ||
-        !isPlainWeeklyObject(data.products) ||
-        !isPlainWeeklyObject(data.brokerTotals) ||
-        Object.keys(data.products).length === 0
-    ) {
-        return false;
-    }
-
-    const calculatedBrokerTotals = new Map();
-    let detailCount = 0;
-
-    for (const [productName, product] of Object.entries(data.products)) {
-        if (
-            !isSafeWeeklyRecordKey(productName) ||
-            !isPlainWeeklyObject(product) ||
-            !isPlainWeeklyObject(product.brokers) ||
-            Object.keys(product.brokers).length === 0 ||
-            !Number.isSafeInteger(product.sellTotal) ||
-            product.sellTotal < 0 ||
-            !Number.isSafeInteger(product.buyTotal) ||
-            product.buyTotal < 0
-        ) {
-            return false;
-        }
-
-        let productSellTotal = 0;
-        let productBuyTotal = 0;
-
-        for (const [brokerName, broker] of Object.entries(product.brokers)) {
-            if (
-                !isSafeWeeklyRecordKey(brokerName) ||
-                !isPlainWeeklyObject(broker) ||
-                !Number.isSafeInteger(broker.sell) ||
-                broker.sell < 0 ||
-                !Number.isSafeInteger(broker.buy) ||
-                broker.buy < 0 ||
-                !Number.isSafeInteger(broker.net) ||
-                broker.net !== broker.buy - broker.sell ||
-                !isPlainWeeklyObject(broker.expiries) ||
-                Object.keys(broker.expiries).length === 0
-            ) {
-                return false;
-            }
-
-            let brokerSellTotal = 0;
-            let brokerBuyTotal = 0;
-
-            for (const [expiry, position] of Object.entries(
-                broker.expiries
-            )) {
-                if (
-                    !/^20\d{2}年\d{1,2}月限月$/.test(expiry) ||
-                    !isPlainWeeklyObject(position) ||
-                    !Number.isSafeInteger(position.sell) ||
-                    position.sell < 0 ||
-                    !Number.isSafeInteger(position.buy) ||
-                    position.buy < 0 ||
-                    !Number.isSafeInteger(position.net) ||
-                    position.net !== position.buy - position.sell
-                ) {
-                    return false;
-                }
-
-                brokerSellTotal += position.sell;
-                brokerBuyTotal += position.buy;
-                detailCount += 1;
-
-                if (
-                    !Number.isSafeInteger(brokerSellTotal) ||
-                    !Number.isSafeInteger(brokerBuyTotal)
-                ) {
-                    return false;
-                }
-            }
-
-            if (
-                broker.sell !== brokerSellTotal ||
-                broker.buy !== brokerBuyTotal
-            ) {
-                return false;
-            }
-
-            productSellTotal += broker.sell;
-            productBuyTotal += broker.buy;
-
-            const total = calculatedBrokerTotals.get(brokerName) || {
-                sell: 0,
-                buy: 0
-            };
-            total.sell += broker.sell;
-            total.buy += broker.buy;
-            calculatedBrokerTotals.set(brokerName, total);
-        }
-
-        if (
-            product.sellTotal !== productSellTotal ||
-            product.buyTotal !== productBuyTotal
-        ) {
-            return false;
-        }
-    }
-
-    if (
-        detailCount === 0 ||
-        Object.keys(data.brokerTotals).length !==
-            calculatedBrokerTotals.size
-    ) {
-        return false;
-    }
-
-    for (const [brokerName, total] of Object.entries(data.brokerTotals)) {
-        const calculated = calculatedBrokerTotals.get(brokerName);
-
-        if (
-            !isSafeWeeklyRecordKey(brokerName) ||
-            !isPlainWeeklyObject(total) ||
-            !calculated ||
-            !Number.isSafeInteger(total.sell) ||
-            !Number.isSafeInteger(total.buy) ||
-            !Number.isSafeInteger(total.net) ||
-            total.sell !== calculated.sell ||
-            total.buy !== calculated.buy ||
-            total.net !== total.buy - total.sell
-        ) {
-            return false;
-        }
-    }
-
-    return true;
+    return Boolean(
+        window.OptionMapWeeklyFutures?.validateWeeklyFuturesData(data)
+    );
 }
 
 function validateWeeklyOptionsData(data) {
@@ -1836,8 +1692,14 @@ async function validateWeeklyCache(cache, source) {
     if (
         !configuration ||
         !isPlainWeeklyObject(cache) ||
-        cache.version !== WEEKLY_CACHE_VERSION ||
+        cache.version !== configuration.cacheVersion ||
         cache.source !== configuration.cacheSource ||
+        (source === "weeklyFutures" && (
+            cache.parserVersion !== window.OptionMapWeeklyFutures.PARSER_VERSION ||
+            cache.schemaVersion !== window.OptionMapWeeklyFutures.SCHEMA_VERSION ||
+            cache.brokerSetVersion !== window.OptionMapWeeklyFutures.BROKER_SET_VERSION ||
+            cache.scoringVersion !== window.OptionMapWeeklyFutures.SCORING_VERSION
+        )) ||
         parseIsoCalendarDate(...String(cache.sourceDate || "").split("-")) !==
             cache.sourceDate ||
         cache.sourceDateKind !== "jpx_open_interest_as_of" ||
@@ -1876,6 +1738,13 @@ async function validateWeeklyCache(cache, source) {
 
     if (!validData) return false;
 
+    if (
+        source === "weeklyFutures" &&
+        !(await window.OptionMapWeeklyFutures.validateVersionedCacheData(cache))
+    ) {
+        return false;
+    }
+
     const normalizedData = source === "weeklyFutures"
         ? normalizeWeeklyFuturesForSignature(cache.data)
         : normalizeWeeklyOptionsForSignature(cache.data);
@@ -1897,7 +1766,11 @@ async function getActiveWeeklyFuturesSnapshotMetadata() {
     }
 
     return {
-        metadataVersion: 1,
+        metadataVersion: WEEKLY_FUTURES_CACHE_VERSION,
+        weeklyParserVersion: cache.parserVersion,
+        weeklySchemaVersion: cache.schemaVersion,
+        brokerSetVersion: cache.brokerSetVersion,
+        scoringVersion: cache.scoringVersion,
         source: cache.source,
         sourceDate: cache.sourceDate,
         sourceDateKind: cache.sourceDateKind,
@@ -1949,6 +1822,10 @@ async function validateWeeklyFuturesSnapshotMetadata(
 
     const cache = {
         version: metadata.metadataVersion,
+        parserVersion: metadata.weeklyParserVersion,
+        schemaVersion: metadata.weeklySchemaVersion,
+        brokerSetVersion: metadata.brokerSetVersion,
+        scoringVersion: metadata.scoringVersion,
         source: metadata.source,
         sourceDate: metadata.sourceDate,
         sourceDateKind: metadata.sourceDateKind,
@@ -1980,7 +1857,13 @@ function createWeeklyCache({ source, metadata, fetchedAt, data }) {
     if (!configuration || !metadata) return null;
 
     return {
-        version: WEEKLY_CACHE_VERSION,
+        version: configuration.cacheVersion,
+        ...(source === "weeklyFutures" ? {
+            parserVersion: metadata.parserVersion,
+            schemaVersion: metadata.schemaVersion,
+            brokerSetVersion: metadata.brokerSetVersion,
+            scoringVersion: metadata.scoringVersion
+        } : {}),
         source: configuration.cacheSource,
         sourceDate: metadata.sourceDate,
         sourceDateKind: metadata.sourceDateKind,
