@@ -693,6 +693,29 @@
       </select>
     
     </div>
+
+    <details class="weekly-futures-backfill-controls">
+      <summary>週次先物 過去データ取得</summary>
+      <div class="current-price-controls">
+        <label for="weeklyFuturesBackfillStartDate">開始日</label>
+        <input type="date" id="weeklyFuturesBackfillStartDate">
+        <label for="weeklyFuturesBackfillEndDate">終了日</label>
+        <input type="date" id="weeklyFuturesBackfillEndDate">
+        <button type="button" id="weeklyFuturesBackfillPreviewButton">
+          候補確認
+        </button>
+        <button type="button" id="weeklyFuturesBackfillStartButton" disabled>
+          取得開始
+        </button>
+        <button type="button" id="weeklyFuturesBackfillCancelButton" disabled>
+          中止
+        </button>
+      </div>
+      <p id="weeklyFuturesBackfillStatus" role="status">
+        期間を指定して公式掲載候補を確認してください。
+      </p>
+      <p id="weeklyFuturesHistoryStatus" role="status"></p>
+    </details>
   
     <canvas id="futureOpenInterestChart"></canvas>
   </div>
@@ -705,6 +728,8 @@
 <script src="js/participantHistory.js"></script>
 <script src="js/participantActivity.js"></script>
 <script src="js/weeklyFutures.js"></script>
+<script src="js/weeklyFuturesHistory.js"></script>
+<script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
 
 <script type="module">
@@ -723,11 +748,224 @@ const WEEKLY_PAGE_URL =
     "https://www.jpx.co.jp/markets/derivatives/open-interest/index.html";
 const PARTICIPANT_STORAGE_KEY = "optionMapLastValidParticipantData";
 const PARTICIPANT_HISTORY_STORAGE_KEY = "optionMapParticipantHistory";
+const WEEKLY_FUTURES_HISTORY_STORAGE_KEY =
+    "optionMapWeeklyFuturesHistory";
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
 let participantHistory = null;
 let participantHistoryStorageInvalid = false;
+let weeklyFuturesHistory = null;
+let weeklyFuturesHistoryStorageInvalid = false;
+let weeklyFuturesBackfillCandidates = [];
+let weeklyFuturesBackfillCancelled = false;
+
+const weeklyFuturesBackfillStartDate = document.getElementById(
+    "weeklyFuturesBackfillStartDate"
+);
+const weeklyFuturesBackfillEndDate = document.getElementById(
+    "weeklyFuturesBackfillEndDate"
+);
+const weeklyFuturesBackfillPreviewButton = document.getElementById(
+    "weeklyFuturesBackfillPreviewButton"
+);
+const weeklyFuturesBackfillStartButton = document.getElementById(
+    "weeklyFuturesBackfillStartButton"
+);
+const weeklyFuturesBackfillCancelButton = document.getElementById(
+    "weeklyFuturesBackfillCancelButton"
+);
+const weeklyFuturesBackfillStatus = document.getElementById(
+    "weeklyFuturesBackfillStatus"
+);
+const weeklyFuturesHistoryStatus = document.getElementById(
+    "weeklyFuturesHistoryStatus"
+);
+
+function renderWeeklyFuturesHistoryStatus() {
+    if (!weeklyFuturesHistoryStatus) return;
+    if (weeklyFuturesHistoryStorageInvalid || !weeklyFuturesHistory) {
+        weeklyFuturesHistoryStatus.textContent =
+            "正式history：保存領域の検証に失敗（上書きしません）";
+        return;
+    }
+    const summary = window.OptionMapWeeklyFuturesHistory
+        .summarizeHistory(weeklyFuturesHistory);
+    weeklyFuturesHistoryStatus.textContent = summary.entryCount > 0
+        ? `正式history：${summary.entryCount}週　` +
+            `${summary.earliestSourceDate}～${summary.latestSourceDate}`
+        : "正式history：0週";
+}
+
+async function initializeWeeklyFuturesHistory() {
+    let serialized = null;
+    try {
+        serialized = localStorage.getItem(WEEKLY_FUTURES_HISTORY_STORAGE_KEY);
+    } catch (error) {
+        weeklyFuturesHistoryStorageInvalid = true;
+        renderWeeklyFuturesHistoryStatus();
+        return;
+    }
+    const parsed = await window.OptionMapWeeklyFuturesHistory
+        .parseHistory(serialized);
+    if (parsed.status === "invalid") {
+        weeklyFuturesHistoryStorageInvalid = true;
+        renderWeeklyFuturesHistoryStatus();
+        return;
+    }
+    weeklyFuturesHistory = parsed.history;
+    renderWeeklyFuturesHistoryStatus();
+}
+
+function validateWeeklyFuturesBackfillRange() {
+    const startDate = weeklyFuturesBackfillStartDate?.value || "";
+    const endDate = weeklyFuturesBackfillEndDate?.value || "";
+    if (!startDate || !endDate || startDate > endDate) {
+        throw new Error("開始日と終了日を正しい順序で指定してください");
+    }
+    return { startDate, endDate };
+}
+
+async function fetchWeeklyFuturesBackfillListing(listingUrl) {
+    const result = await ipcRenderer.invoke(
+        "fetch-jpx-open-interest-json", listingUrl
+    );
+    if (!result?.success) {
+        throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
+    }
+    return result.data;
+}
+
+async function fetchWeeklyFuturesBackfillExcel(sourceUrl) {
+    const result = await ipcRenderer.invoke(
+        "download-daytrading-excel", sourceUrl
+    );
+    if (!result?.success) {
+        throw new Error(result?.error || "JPX週次先物Excelを取得できませんでした");
+    }
+    return result.data;
+}
+
+function parseWeeklyFuturesBackfillExcel(bytes) {
+    const workbook = XLSX.read(bytes, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    return {
+        excelSourceDate: extractJapaneseCalendarDate(
+            sheet?.A2?.v, { asOf: true }
+        ),
+        publishedDate: extractJapaneseCalendarDate(sheet?.A3?.v),
+        data: window.OptionMapWeeklyFutures.parseWeeklyFuturesRows(rows)
+    };
+}
+
+async function previewWeeklyFuturesBackfill() {
+    try {
+        const range = validateWeeklyFuturesBackfillRange();
+        weeklyFuturesBackfillPreviewButton.disabled = true;
+        weeklyFuturesBackfillStartButton.disabled = true;
+        weeklyFuturesBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
+        const manifest = await window.OptionMapWeeklyFuturesBackfill
+            .enumerateCandidates({
+                ...range,
+                fetchListing: fetchWeeklyFuturesBackfillListing
+            });
+        weeklyFuturesBackfillCandidates = manifest.candidates;
+        const failureText = manifest.failures.length
+            ? `（一覧取得失敗 ${manifest.failures.length}年）` : "";
+        weeklyFuturesBackfillStatus.textContent =
+            `公式掲載候補：${manifest.candidates.length}週${failureText}`;
+        weeklyFuturesBackfillStartButton.disabled =
+            manifest.candidates.length === 0 ||
+            weeklyFuturesHistoryStorageInvalid;
+    } catch (error) {
+        weeklyFuturesBackfillCandidates = [];
+        weeklyFuturesBackfillStatus.textContent =
+            error?.message || String(error);
+    } finally {
+        weeklyFuturesBackfillPreviewButton.disabled = false;
+    }
+}
+
+async function startWeeklyFuturesBackfill() {
+    if (
+        weeklyFuturesHistoryStorageInvalid || !weeklyFuturesHistory ||
+        weeklyFuturesBackfillCandidates.length === 0
+    ) return;
+    weeklyFuturesBackfillCancelled = false;
+    weeklyFuturesBackfillPreviewButton.disabled = true;
+    weeklyFuturesBackfillStartButton.disabled = true;
+    weeklyFuturesBackfillCancelButton.disabled = false;
+    const originalHistory = weeklyFuturesHistory;
+    try {
+        const result = await window.OptionMapWeeklyFuturesBackfill.runBackfill({
+            history: originalHistory,
+            candidates: weeklyFuturesBackfillCandidates,
+            fetchExcel: fetchWeeklyFuturesBackfillExcel,
+            parseExcel: parseWeeklyFuturesBackfillExcel,
+            isCancelled: () => weeklyFuturesBackfillCancelled,
+            onProgress: progress => {
+                const phaseLabels = {
+                    fetch: "取得", parse: "解析", validated: "検証"
+                };
+                weeklyFuturesBackfillStatus.textContent =
+                    `${progress.current} / ${progress.total}週　` +
+                    `${phaseLabels[progress.phase] || progress.phase}：` +
+                    progress.sourceDate;
+            }
+        });
+        if (result.status === "cancelled") {
+            weeklyFuturesBackfillStatus.textContent =
+                "中止しました。正式historyは変更していません。";
+            return;
+        }
+        if (result.status === "staging_failed") {
+            throw new Error("staging全体の検証に失敗しました");
+        }
+        const saved = await window.OptionMapWeeklyFuturesBackfill
+            .commitHistory(
+                localStorage,
+                WEEKLY_FUTURES_HISTORY_STORAGE_KEY,
+                result.history
+            );
+        if (!saved.saved) {
+            throw new Error(
+                saved.reason === "storage_failed"
+                    ? "正式historyを保存できませんでした"
+                    : "正式historyの最終検証に失敗しました"
+            );
+        }
+        weeklyFuturesHistory = result.history;
+        renderWeeklyFuturesHistoryStatus();
+        const succeeded = result.results.filter(item =>
+            item.status === "success"
+        ).length;
+        const failed = result.results.length - succeeded;
+        weeklyFuturesBackfillStatus.textContent =
+            `保存完了：成功 ${succeeded}週、失敗 ${failed}週`;
+    } catch (error) {
+        weeklyFuturesHistory = originalHistory;
+        weeklyFuturesBackfillStatus.textContent =
+            `${error?.message || String(error)}。既存historyは変更していません。`;
+    } finally {
+        weeklyFuturesBackfillPreviewButton.disabled = false;
+        weeklyFuturesBackfillStartButton.disabled =
+            weeklyFuturesBackfillCandidates.length === 0 ||
+            weeklyFuturesHistoryStorageInvalid;
+        weeklyFuturesBackfillCancelButton.disabled = true;
+    }
+}
+
+weeklyFuturesBackfillPreviewButton?.addEventListener(
+    "click", previewWeeklyFuturesBackfill
+);
+weeklyFuturesBackfillStartButton?.addEventListener(
+    "click", startWeeklyFuturesBackfill
+);
+weeklyFuturesBackfillCancelButton?.addEventListener("click", () => {
+    weeklyFuturesBackfillCancelled = true;
+    weeklyFuturesBackfillStatus.textContent = "中止処理中…";
+});
 
 function createParticipantActiveMetadata(cache, dataStatus = null) {
     return {
@@ -3433,7 +3671,8 @@ window.refreshAllMarketData = refreshAllMarketData;
 Promise.all([
     initializeWeeklyCaches(),
     initializeParticipantCache(),
-    initializeParticipantHistory()
+    initializeParticipantHistory(),
+    initializeWeeklyFuturesHistory()
 ])
     .catch(error => {
         console.warn("市場データcacheの初期化に失敗しました:", error);

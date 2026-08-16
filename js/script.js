@@ -1,5 +1,41 @@
 console.log("script.js 読み込み成功！");
 
+const CHART_TEXT_SIZE = Object.freeze({
+    axis: 14,
+    axisTitle: 14,
+    legend: 14,
+    tooltip: 14
+});
+
+function readableLegendOptions(display = true) {
+    return {
+        display,
+        labels: {
+            font: { size: CHART_TEXT_SIZE.legend },
+            padding: 16
+        }
+    };
+}
+
+function readableTooltipOptions(callbacks = undefined) {
+    return {
+        enabled: true,
+        titleFont: { size: CHART_TEXT_SIZE.tooltip },
+        bodyFont: { size: CHART_TEXT_SIZE.tooltip },
+        padding: 10,
+        ...(callbacks ? { callbacks } : {})
+    };
+}
+
+function readableAxisTitle(text) {
+    return {
+        display: true,
+        text,
+        font: { size: CHART_TEXT_SIZE.axisTitle, weight: "600" },
+        padding: 8
+    };
+}
+
 const FETCH_STATUS = Object.freeze({
     IDLE: "idle",
     LOADING: "loading",
@@ -1897,13 +1933,30 @@ function drawChart(labels, values) {
             },
           
             plugins: {
-              tooltip: {
-                enabled: true,
-                callbacks: {
+              legend: readableLegendOptions(),
+              tooltip: readableTooltipOptions({
                   label: (context) => {
                     const value = Number(context.raw || 0);
                     return `取引枚数: ${value.toLocaleString("ja-JP")}枚`;
                   }
+                })
+            },
+            scales: {
+              x: {
+                ticks: {
+                  autoSkip: false,
+                  minRotation: labels.length > 8 ? 35 : 0,
+                  maxRotation: 55,
+                  padding: 6,
+                  font: { size: CHART_TEXT_SIZE.axis }
+                }
+              },
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  padding: 6,
+                  font: { size: CHART_TEXT_SIZE.axis },
+                  callback: value => Number(value).toLocaleString("ja-JP")
                 }
               }
             }
@@ -2071,31 +2124,32 @@ const rows = Array.from(rowMap.values());
             offset: true,
             ticks: {
               maxRotation: 45,
-              minRotation: 0,
+              minRotation: labels.length > 6 ? 30 : 0,
+              autoSkip: false,
+              padding: 6,
+              font: { size: CHART_TEXT_SIZE.axis },
             },
           },
   
           y: {
             beginAtZero: true,
             ticks: {
+              padding: 6,
+              font: { size: CHART_TEXT_SIZE.axis },
               callback: (value) => Number(value).toLocaleString("ja-JP"),
             },
-            title: {
-              display: true,
-              text: "建玉枚数",
-            },
+            title: readableAxisTitle("建玉枚数"),
           },
         },
   
         plugins: {
-          tooltip: {
-            callbacks: {
+          legend: readableLegendOptions(),
+          tooltip: readableTooltipOptions({
               label: (context) => {
                 const value = Number(context.raw || 0).toLocaleString("ja-JP");
                 return `${context.dataset.label}: ${value}枚`;
               },
-            },
-          },
+            }),
         },
       },
     });
@@ -2470,15 +2524,29 @@ function renderParticipantActivityChart(series) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: true }
+                legend: readableLegendOptions(),
+                tooltip: readableTooltipOptions()
             },
             scales: {
                 x: {
-                    title: { display: true, text: "sourceDate" }
+                    title: readableAxisTitle("sourceDate"),
+                    ticks: {
+                        autoSkip: true,
+                        maxTicksLimit: 12,
+                        minRotation: 30,
+                        maxRotation: 45,
+                        padding: 6,
+                        font: { size: CHART_TEXT_SIZE.axis }
+                    }
                 },
                 y: {
                     beginAtZero: true,
-                    title: { display: true, text: "公表上位行の取引高合計" }
+                    title: readableAxisTitle("公表上位行の取引高合計"),
+                    ticks: {
+                        padding: 6,
+                        font: { size: CHART_TEXT_SIZE.axis },
+                        callback: value => Number(value).toLocaleString("ja-JP")
+                    }
                 }
             }
         }
@@ -5649,18 +5717,29 @@ if (cumulativeCanvas) {
       maintainAspectRatio: false,
       scales: {
         x: {
-          title: {
-            display: true,
-            text: "日付"
+          title: readableAxisTitle("日付"),
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 12,
+            minRotation: 30,
+            maxRotation: 45,
+            padding: 6,
+            font: { size: CHART_TEXT_SIZE.axis }
           }
         },
         y: {
           beginAtZero: true,
-          title: {
-            display: true,
-            text: "取引枚数"
+          title: readableAxisTitle("取引枚数"),
+          ticks: {
+            padding: 6,
+            font: { size: CHART_TEXT_SIZE.axis },
+            callback: value => Number(value).toLocaleString("ja-JP")
           }
         }
+      },
+      plugins: {
+        legend: readableLegendOptions(),
+        tooltip: readableTooltipOptions()
       }
     }
   });
@@ -6540,8 +6619,11 @@ console.log(
 
                     ticks: {
                         autoSkip: true,
+                        maxTicksLimit: 16,
                         maxRotation: 45,
-                        minRotation: 45
+                        minRotation: 35,
+                        padding: 6,
+                        font: { size: CHART_TEXT_SIZE.axis }
                     }
                 },
 
@@ -6551,6 +6633,11 @@ console.log(
 
                     ticks: {
                         stepSize: 100,
+                        padding: 6,
+                        font: {
+                            size: CHART_TEXT_SIZE.axis,
+                            weight: "600"
+                        },
                     
                         callback: function (value) {
                     
@@ -6592,10 +6679,11 @@ console.log(
 
             plugins: {
                 legend: {
-                    display: true
+                    ...readableLegendOptions()
                 },
 
                 tooltip: {
+                    ...readableTooltipOptions(),
                     callbacks: {
                         label: function (context) {
 

@@ -291,6 +291,15 @@ button:hover{
     height: 500px !important;
 }
 
+#futureOpenInterestChart {
+    height: 380px !important;
+}
+
+#participantActivityChart,
+#cumulativeChart {
+    height: 360px !important;
+}
+
 .card{
 
     background: white;
@@ -1213,7 +1222,7 @@ canvas {
 
 #cumulativeChart {
     width: 100%;
-    height: 320px;
+    height: 360px;
 }
 
 .cumulative-status-legend {

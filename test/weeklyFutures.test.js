@@ -154,6 +154,16 @@ test("signatureは順序に安定し値変更で変化する", async () => {
         await weekly.createSignature(changed));
 });
 
+test("canonical recordsだけから互換集計を再構築できる", () => {
+    const original = parse([
+        row({ sellCode: "10001", sellBroker: "A証券", sellValue: 100 }),
+        row({ buyCode: "10002", buyBroker: "B証券", buyValue: 200 })
+    ]);
+    const canonical = weekly.toCanonicalData(original);
+    assert.equal(Object.hasOwn(canonical, "products"), false);
+    assert.deepEqual(weekly.hydrateCanonicalData(canonical), original);
+});
+
 test("旧parserVersion cacheを拒否し新cacheを復元できる", async () => {
     const data = observationData();
     const signature = await weekly.createSignature(data);

@@ -288,6 +288,55 @@
             ));
     }
 
+    function toCanonicalData(data) {
+        if (!validateWeeklyFuturesData(data)) return null;
+        return {
+            schemaVersion: SCHEMA_VERSION,
+            parserVersion: PARSER_VERSION,
+            productExpiries: Object.fromEntries(
+                Object.entries(data.products).map(([product, value]) => [
+                    product,
+                    [...value.expiryKeys]
+                ])
+            ),
+            records: data.records.map(record => ({ ...record }))
+        };
+    }
+
+    function hydrateCanonicalData(canonical) {
+        if (
+            !canonical || canonical.schemaVersion !== SCHEMA_VERSION ||
+            canonical.parserVersion !== PARSER_VERSION ||
+            !canonical.productExpiries ||
+            typeof canonical.productExpiries !== "object" ||
+            !Array.isArray(canonical.records) || canonical.records.length === 0
+        ) return null;
+        try {
+            const expiryMap = {};
+            for (const [product, expiries] of Object.entries(
+                canonical.productExpiries
+            )) {
+                if (
+                    !PRODUCT_NAMES.includes(product) ||
+                    !Array.isArray(expiries) || expiries.length === 0 ||
+                    expiries.some(expiry => !/^20\d{2}-\d{2}$/.test(expiry))
+                ) return null;
+                expiryMap[product] = new Set(expiries);
+            }
+            const records = canonical.records.map(record => ({ ...record }));
+            const compatibility = buildCompatibility(records, expiryMap);
+            const hydrated = {
+                schemaVersion: SCHEMA_VERSION,
+                parserVersion: PARSER_VERSION,
+                records,
+                ...compatibility
+            };
+            return validateWeeklyFuturesData(hydrated) ? hydrated : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
     async function sha256(value) {
         const serialized = typeof value === "string"
             ? value : JSON.stringify(value);
@@ -488,6 +537,8 @@
         parseWeeklyFuturesRows,
         validateWeeklyFuturesData,
         normalizeForSignature,
+        toCanonicalData,
+        hydrateCanonicalData,
         createSignature,
         validateVersionedCacheData,
         getBrokerObservation,
