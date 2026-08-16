@@ -762,6 +762,9 @@
 <script src="js/backfill/adapters/participantBackfillAdapter.js"></script>
 <script src="js/weeklyFutures.js"></script>
 <script src="js/weeklyOptions.js"></script>
+<script src="js/weeklyOptionsHistory.js"></script>
+<script src="js/storage/weeklyOptionsHistoryStore.js"></script>
+<script src="js/weeklyOptionsHistoryPersistence.js"></script>
 <script src="js/weeklyOptionsSignals.js"></script>
 <script src="js/weeklyOptionsChanges.js"></script>
 <script src="js/weeklyOptionsChangesView.js"></script>
@@ -1988,6 +1991,51 @@ let lastValidWeeklyFuturesCache = null;
 let lastValidWeeklyOptionsCache = null;
 let activeWeeklyFuturesCache = null;
 let activeWeeklyOptionsCache = null;
+const weeklyOptionsHistoryPersistence =
+    window.OptionMapWeeklyOptionsHistoryPersistence
+        ?.createWeeklyOptionsHistoryPersistence();
+
+window.getWeeklyOptionsHistoryPersistenceState = function () {
+    return weeklyOptionsHistoryPersistence
+        ?.getWeeklyOptionsHistoryPersistenceState() || {
+            status: "not_attempted",
+            storeStatus: "unavailable",
+            sourceDate: null,
+            versionKey: null,
+            reason: "persistence_module_unavailable",
+            errorCode: null,
+            attemptedAt: null
+        };
+};
+
+async function initializeWeeklyOptionsHistoryPersistence() {
+    if (!weeklyOptionsHistoryPersistence) return;
+    const state = await weeklyOptionsHistoryPersistence
+        .openWeeklyOptionsHistoryPersistence();
+    if (state.storeStatus === "failed") {
+        console.warn(
+            "週次オプション正式historyのIndexedDBを開けませんでした:",
+            state.errorCode
+        );
+    }
+}
+
+async function persistConfirmedWeeklyOptionsHistory(cache, comparison) {
+    if (!weeklyOptionsHistoryPersistence) return null;
+    const state = await weeklyOptionsHistoryPersistence
+        .persistConfirmedWeeklyOptionsCache(cache, {
+            currentOfficialRefetch:
+                comparison?.assessment === "revised_same_date"
+        });
+    if (state.status === "failed") {
+        console.warn(
+            "週次オプション正式historyを保存できませんでした:",
+            state.reason,
+            state.errorCode
+        );
+    }
+    return state;
+}
 
 function isPlainWeeklyObject(value) {
     if (value === null || typeof value !== "object") return false;
@@ -2562,6 +2610,8 @@ async function processWeeklyLiveResult({
         await saveConfirmedWeeklyFuturesToHistory(
             cache, metadata, requestId
         );
+    } else if (source === "weeklyOptions") {
+        await persistConfirmedWeeklyOptionsHistory(cache, comparison);
     }
 
     return {
@@ -3928,7 +3978,8 @@ Promise.all([
     initializeWeeklyCaches(),
     initializeParticipantCache(),
     initializeParticipantHistory(),
-    initializeWeeklyFuturesHistory()
+    initializeWeeklyFuturesHistory(),
+    initializeWeeklyOptionsHistoryPersistence()
 ])
     .catch(error => {
         console.warn("市場データcacheの初期化に失敗しました:", error);
