@@ -20,7 +20,8 @@
   },
   "devDependencies": {
     "electron": "^42.5.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "fake-indexeddb": "^6.2.5"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
