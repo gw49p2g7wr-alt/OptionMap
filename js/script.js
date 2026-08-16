@@ -1120,6 +1120,111 @@ let weeklyOptionsShadowChangesState = Object.freeze({
     currentSourceMetadata: null
 });
 
+function weeklyOptionsViewElement(tag, className, text) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text !== undefined && text !== null) element.textContent = text;
+    return element;
+}
+
+function appendWeeklyOptionsCards(parent, items, className) {
+    if (!items?.length) return;
+    const grid = weeklyOptionsViewElement("div", className);
+    for (const item of items) {
+        const card = weeklyOptionsViewElement("div", className.replace("-grid", "-item"));
+        card.append(
+            weeklyOptionsViewElement("span", null, item.label),
+            weeklyOptionsViewElement("strong", null, item.value)
+        );
+        if (item.detail) {
+            card.append(weeklyOptionsViewElement("small", null, item.detail));
+        }
+        grid.append(card);
+    }
+    parent.append(grid);
+}
+
+function appendWeeklyOptionsTable(parent, title, rows) {
+    if (!rows?.length) return;
+    parent.append(weeklyOptionsViewElement("h3", null, title));
+    const table = weeklyOptionsViewElement("table", "weekly-options-change-table");
+    const header = weeklyOptionsViewElement("tr");
+    for (const label of ["区分", "前週", "今週", "変化"]) {
+        header.append(weeklyOptionsViewElement("th", null, label));
+    }
+    const head = weeklyOptionsViewElement("thead");
+    head.append(header);
+    const body = weeklyOptionsViewElement("tbody");
+    for (const row of rows) {
+        const tr = weeklyOptionsViewElement("tr");
+        for (const value of [row.label, row.previous, row.current, row.change]) {
+            tr.append(weeklyOptionsViewElement("td", null, value));
+        }
+        body.append(tr);
+    }
+    table.append(head, body);
+    parent.append(table);
+}
+
+function appendWeeklyOptionsList(parent, title, items, className) {
+    if (!items?.length) return;
+    parent.append(weeklyOptionsViewElement("h3", null, title));
+    const list = weeklyOptionsViewElement("ul", className);
+    items.forEach(item => list.append(
+        weeklyOptionsViewElement("li", null, item)
+    ));
+    parent.append(list);
+}
+
+function renderWeeklyOptionsChangesPanel() {
+    const container = document.getElementById("weeklyOptionsChangesPanelContent");
+    const formatter = window.OptionMapWeeklyOptionsChangesView;
+    if (!container || !formatter?.createWeeklyOptionsChangesView) return;
+    const model = formatter.createWeeklyOptionsChangesView(
+        weeklyOptionsShadowChangesState,
+        weeklyOptionsShadowSignalState
+    );
+    const fragment = document.createDocumentFragment();
+    fragment.append(weeklyOptionsViewElement(
+        "p", "weekly-options-shadow-notice", "方向予測には未使用"
+    ));
+    appendWeeklyOptionsCards(fragment, model.metadata, "weekly-options-meta-grid");
+    if (model.message) {
+        fragment.append(weeklyOptionsViewElement(
+            "p", "weekly-options-empty", model.message
+        ));
+    }
+    if (model.partialReason) {
+        fragment.append(weeklyOptionsViewElement(
+            "p", "weekly-options-partial-reason", model.partialReason
+        ));
+    }
+    appendWeeklyOptionsCards(
+        fragment, model.summaries, "weekly-options-summary-grid"
+    );
+    appendWeeklyOptionsCards(
+        fragment, model.candidates, "weekly-options-candidate-grid"
+    );
+    appendWeeklyOptionsTable(
+        fragment, "公表参加者breadth", model.breadthRows
+    );
+    appendWeeklyOptionsTable(
+        fragment, "participant concentration（HHI）",
+        model.participantConcentrationRows
+    );
+    appendWeeklyOptionsTable(
+        fragment, "strike concentration（HHI）",
+        model.strikeConcentrationRows
+    );
+    appendWeeklyOptionsList(
+        fragment, "観測ラベル", model.labels, "weekly-options-label-list"
+    );
+    appendWeeklyOptionsList(
+        fragment, "注意事項", model.warnings, "weekly-options-warning-list"
+    );
+    container.replaceChildren(fragment);
+}
+
 function calculateWeeklyOptionsShadowSignal() {
     if (
         !weeklyOptionsShadowCanonical ||
@@ -1160,6 +1265,7 @@ function calculateWeeklyOptionsShadowChanges() {
         });
         window.weeklyOptionsShadowChangesState =
             weeklyOptionsShadowChangesState;
+        renderWeeklyOptionsChangesPanel();
         return weeklyOptionsShadowChangesState;
     }
     const changes = window.OptionMapWeeklyOptionsChanges.compareWeeklyOptions(
@@ -1176,6 +1282,7 @@ function calculateWeeklyOptionsShadowChanges() {
             ? { ...weeklyOptionsShadowSourceMetadata } : null
     });
     window.weeklyOptionsShadowChangesState = weeklyOptionsShadowChangesState;
+    renderWeeklyOptionsChangesPanel();
     return weeklyOptionsShadowChangesState;
 }
 
@@ -1201,6 +1308,7 @@ window.setWeeklyOptionsShadowCanonical = function (canonical, sourceMetadata = {
         });
         window.weeklyOptionsShadowChangesState =
             weeklyOptionsShadowChangesState;
+        renderWeeklyOptionsChangesPanel();
         return weeklyOptionsShadowSignalState;
     }
     if (
@@ -1235,6 +1343,7 @@ window.getWeeklyOptionsShadowChanges = function () {
 };
 window.weeklyOptionsShadowSignalState = weeklyOptionsShadowSignalState;
 window.weeklyOptionsShadowChangesState = weeklyOptionsShadowChangesState;
+renderWeeklyOptionsChangesPanel();
 let priceTotals = {};
 let comparisonSnapshot = null;
 let comparisonSelectionMode = "none";

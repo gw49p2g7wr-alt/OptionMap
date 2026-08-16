@@ -176,6 +176,162 @@ h1{
     }
 }
 
+.weekly-options-changes-panel {
+    margin: 0 0 25px;
+    border: 1px solid #d9e1ec;
+    border-left: 5px solid #667085;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .05);
+}
+
+.weekly-options-changes-panel > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    color: #26364d;
+    cursor: pointer;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.weekly-options-changes-panel > summary strong {
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #fff1d6;
+    color: #8a5b08;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.weekly-options-changes-content {
+    padding: 0 18px 18px;
+    border-top: 1px solid #e6eaf0;
+}
+
+.weekly-options-shadow-notice,
+.weekly-options-partial-reason,
+.weekly-options-empty {
+    margin: 14px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    line-height: 1.5;
+}
+
+.weekly-options-shadow-notice {
+    background: #fff8e8;
+    color: #7a5109;
+    font-weight: 700;
+}
+
+.weekly-options-partial-reason {
+    background: #fff3df;
+    color: #8a5b08;
+}
+
+.weekly-options-empty {
+    background: #f5f7fa;
+    color: #667085;
+}
+
+.weekly-options-meta-grid,
+.weekly-options-summary-grid,
+.weekly-options-candidate-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.weekly-options-meta-item,
+.weekly-options-summary-item,
+.weekly-options-candidate-item {
+    min-width: 0;
+    padding: 11px 12px;
+    border: 1px solid #e2e7ef;
+    border-radius: 9px;
+    background: #f8fafc;
+}
+
+.weekly-options-meta-item span,
+.weekly-options-summary-item span,
+.weekly-options-candidate-item span {
+    display: block;
+    margin-bottom: 5px;
+    color: #667085;
+    font-size: 12px;
+}
+
+.weekly-options-meta-item strong,
+.weekly-options-summary-item strong,
+.weekly-options-candidate-item strong {
+    color: #26364d;
+    font-size: 15px;
+}
+
+.weekly-options-candidate-item small {
+    display: block;
+    margin-top: 6px;
+    color: #667085;
+    line-height: 1.4;
+}
+
+.weekly-options-changes-content h3 {
+    margin: 20px 0 8px;
+    color: #344054;
+    font-size: 15px;
+}
+
+.weekly-options-change-table {
+    width: 100%;
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.weekly-options-change-table th,
+.weekly-options-change-table td {
+    padding: 8px 9px;
+    border-bottom: 1px solid #e6eaf0;
+    text-align: left;
+}
+
+.weekly-options-change-table th {
+    background: #f4f6f9;
+    color: #475467;
+}
+
+.weekly-options-label-list,
+.weekly-options-warning-list {
+    margin: 8px 0 0;
+    padding-left: 22px;
+    color: #475467;
+    line-height: 1.55;
+}
+
+.weekly-options-warning-list {
+    color: #7a5109;
+}
+
+@media (max-width: 750px) {
+    .weekly-options-meta-grid,
+    .weekly-options-summary-grid,
+    .weekly-options-candidate-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .weekly-options-changes-panel > summary {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .weekly-options-change-table {
+        font-size: 12px;
+    }
+}
+
 
 /* カード */
 

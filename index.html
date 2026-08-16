@@ -40,6 +40,22 @@
         ></div>
     </section>
 
+    <details id="weeklyOptionsChangesPanel" class="weekly-options-changes-panel">
+        <summary>
+            <span>週次オプション変化（検証中）</span>
+            <strong>方向予測には未使用</strong>
+        </summary>
+        <div
+            id="weeklyOptionsChangesPanelContent"
+            class="weekly-options-changes-content"
+            aria-live="polite"
+        >
+            <p class="weekly-options-empty">
+                週次オプション変化データはまだありません。前週データ待ちです。
+            </p>
+        </div>
+    </details>
+
     <details class="manual-recovery-inputs">
         <summary>⚠️ 復旧用手動入力</summary>
 
@@ -748,6 +764,7 @@
 <script src="js/weeklyOptions.js"></script>
 <script src="js/weeklyOptionsSignals.js"></script>
 <script src="js/weeklyOptionsChanges.js"></script>
+<script src="js/weeklyOptionsChangesView.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
