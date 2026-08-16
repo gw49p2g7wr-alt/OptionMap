@@ -93,6 +93,10 @@ test("same-date公式再取得の異signatureをrevisionにする", async () => 
     assert.equal(entry.revisions[0].replacedAt, revisedAt);
     assert.equal(entry.revisions[1].replacedAt, null);
     assert.equal(entry.activeVersionKey, entry.revisions[1].versionKey);
+    const activeVersions = await historyApi.getActiveVersions(second.history);
+    assert.equal(activeVersions.length, 1);
+    assert.equal(activeVersions[0].versionKey, entry.revisions[1].versionKey);
+    assert.equal(activeVersions[0].futureOpenInterest.records[0].value, 101);
 });
 
 test("公式再取得証拠のないsame-date revisionを拒否", async () => {

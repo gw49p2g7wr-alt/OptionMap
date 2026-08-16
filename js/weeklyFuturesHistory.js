@@ -280,6 +280,32 @@
         };
     }
 
+    async function getActiveVersions(history) {
+        if (!(await validateHistory(history))) return [];
+        const versions = [];
+        for (const entry of history.entries) {
+            const revision = entry.revisions.find(item =>
+                item.versionKey === entry.activeVersionKey
+            );
+            const futureOpenInterest = revision
+                ? weekly.hydrateCanonicalData(revision.data)
+                : null;
+            if (!revision || !futureOpenInterest) return [];
+            versions.push({
+                date: entry.sourceDate,
+                sourceDate: entry.sourceDate,
+                signature: revision.signature,
+                versionKey: revision.versionKey,
+                listingUpdatedAt:
+                    revision.officialMetadata.listingUpdatedAt,
+                savedAt: revision.confirmedAt,
+                futureOpenInterest,
+                origin: "weekly_futures_history"
+            });
+        }
+        return versions;
+    }
+
     return Object.freeze({
         HISTORY_VERSION,
         HISTORY_SOURCE,
@@ -291,6 +317,7 @@
         validateHistory,
         parseHistory,
         mergeCandidates,
-        summarizeHistory
+        summarizeHistory,
+        getActiveVersions
     });
 });

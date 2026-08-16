@@ -815,6 +815,7 @@ async function initializeWeeklyFuturesHistory() {
     }
     weeklyFuturesHistory = parsed.history;
     renderWeeklyFuturesHistoryStatus();
+    await window.setWeeklyFuturesJudgmentHistory?.(weeklyFuturesHistory);
 }
 
 function validateWeeklyFuturesBackfillRange() {
@@ -937,6 +938,9 @@ async function startWeeklyFuturesBackfill() {
         }
         weeklyFuturesHistory = result.history;
         renderWeeklyFuturesHistoryStatus();
+        await window.setWeeklyFuturesJudgmentHistory?.(
+            weeklyFuturesHistory
+        );
         const succeeded = result.results.filter(item =>
             item.status === "success"
         ).length;
@@ -1629,7 +1633,7 @@ function selectLatestWeeklyListingRow(listing) {
         )[0] || null;
 }
 
-function createWeeklyLinksFromListing(listing) {
+function createWeeklyLinksFromListing(listing, listingJsonUrl = null) {
     const row = selectLatestWeeklyListingRow(listing);
 
     if (!row) return null;
@@ -1643,7 +1647,8 @@ function createWeeklyLinksFromListing(listing) {
         weeklyFuturesUrl: resolveUrl(row.IndexFutures),
         weeklyOptionsUrl: resolveUrl(row.IndexOptions),
         tradeDate: parseListingTradeDate(row.TradeDate),
-        listingUpdatedAt: parseListingUpdatedAt(listing.UpdateDate)
+        listingUpdatedAt: parseListingUpdatedAt(listing.UpdateDate),
+        listingJsonUrl
     };
 }
 
@@ -1688,6 +1693,7 @@ async function createSha256Signature(normalizedData) {
 async function createWeeklyVersionMetadata({
     source,
     sourceUrl,
+    listingUrl,
     sheet,
     listingTradeDate,
     listingUpdatedAt,
@@ -1735,6 +1741,7 @@ async function createWeeklyVersionMetadata({
         publishedAt: null,
         listingUpdatedAt: listingUpdatedAt || null,
         listingUpdatedAtKind: "jpx_listing_updated_at",
+        listingUrl: listingUrl || null,
         sourceUrl,
         signatureAlgorithm: "sha256",
         signature,
@@ -2388,11 +2395,95 @@ async function processWeeklyLiveResult({
         }
     }
 
+    if (source === "weeklyFutures") {
+        await saveConfirmedWeeklyFuturesToHistory(
+            cache, metadata, requestId
+        );
+    }
+
     return {
         applied: true,
         comparison,
         cache
     };
+}
+
+async function saveConfirmedWeeklyFuturesToHistory(
+    cache,
+    metadata,
+    requestId
+) {
+    if (
+        weeklyFuturesHistoryStorageInvalid ||
+        !weeklyFuturesHistory ||
+        !cache ||
+        !metadata?.listingUrl ||
+        metadata.versionAssessment !== "confirmed"
+    ) return { saved: false, reason: "history_unavailable" };
+    if (!isCurrentFetchRequest("weeklyFutures", requestId)) {
+        return { saved: false, reason: "stale_request" };
+    }
+
+    const confirmedAt = new Date().toISOString();
+    const candidate = {
+        sourceDate: cache.sourceDate,
+        sourceUrl: cache.sourceUrl,
+        fetchedAt: cache.fetchedAt,
+        signature: cache.signature,
+        versionKey: cache.versionKey,
+        data: cache.data,
+        officialMetadata: {
+            origin: "jpx_open_interest_year_listing",
+            listingUrl: metadata.listingUrl,
+            listingUpdatedAt: metadata.listingUpdatedAt,
+            tradeDate: cache.sourceDate,
+            indexFuturesUrl: cache.sourceUrl,
+            publishedDate: cache.publishedDate,
+            currentOfficialRefetch: true,
+            dateEvidence: {
+                listingTradeDate:
+                    metadata.dateEvidence.listingTradeDate,
+                excelSourceDate: metadata.dateEvidence.excelAsOf,
+                urlDate: metadata.dateEvidence.urlDate,
+                consistent: metadata.dateEvidence.consistent
+            }
+        }
+    };
+
+    try {
+        const merged = await window.OptionMapWeeklyFuturesHistory
+            .mergeCandidates(
+                weeklyFuturesHistory,
+                [candidate],
+                confirmedAt
+            );
+        if (merged.outcome !== "merged") {
+            return { saved: false, reason: merged.outcome };
+        }
+        if (!isCurrentFetchRequest("weeklyFutures", requestId)) {
+            return { saved: false, reason: "stale_request" };
+        }
+        const saved = await window.OptionMapWeeklyFuturesBackfill
+            .commitHistory(
+                localStorage,
+                WEEKLY_FUTURES_HISTORY_STORAGE_KEY,
+                merged.history
+            );
+        if (!saved.saved) return saved;
+        weeklyFuturesHistory = merged.history;
+        renderWeeklyFuturesHistoryStatus();
+        await window.setWeeklyFuturesJudgmentHistory?.(
+            weeklyFuturesHistory
+        );
+        return { saved: true, outcome: merged.outcome };
+    } catch (error) {
+        console.warn("通常取得週を正式historyへ保存できませんでした:", error);
+        return {
+            saved: false,
+            reason: "history_save_failed",
+            error: error?.message || String(error)
+        };
+    }
 }
 
 function isCurrentFetchRequest(source, requestId) {
@@ -2458,7 +2549,10 @@ async function fetchWeeklyPage({ requestId } = {}) {
         );
     }
 
-    const listingWeeklyLinks = createWeeklyLinksFromListing(listing);
+    const listingWeeklyLinks = createWeeklyLinksFromListing(
+        listing,
+        listing ? listingJsonUrl : null
+    );
     const weeklyLinks = listingWeeklyLinks || {
         ...fallbackWeeklyLinks,
         tradeDate: null,
@@ -2530,6 +2624,7 @@ async function fetchWeeklyFuturesData({
         const metadata = await createWeeklyVersionMetadata({
             source,
             sourceUrl,
+            listingUrl: weeklyLinks.listingJsonUrl,
             sheet,
             listingTradeDate: weeklyLinks.tradeDate,
             listingUpdatedAt: weeklyLinks.listingUpdatedAt,

@@ -123,6 +123,25 @@ const participantHistoryState = {
     error: null
 };
 let participantActivityHistory = null;
+let formalWeeklyFuturesHistory = null;
+
+window.setWeeklyFuturesJudgmentHistory = async history => {
+    if (
+        !window.OptionMapWeeklyFuturesHistory ||
+        !(await window.OptionMapWeeklyFuturesHistory.validateHistory(history))
+    ) {
+        return false;
+    }
+    formalWeeklyFuturesHistory = history;
+    if (typeof renderSavedSnapshots === "function") {
+        try {
+            await renderSavedSnapshots();
+        } catch (error) {
+            console.warn("正式週次historyの判定表示に失敗しました:", error);
+        }
+    }
+    return true;
+};
 
 function updateParticipantDataState(patch) {
     if (!patch || typeof patch !== "object") return participantDataState;
@@ -4053,6 +4072,13 @@ function getWeeklyQualityV2(metadata) {
     const origin = metadata?.origin;
 
     if (
+        origin === "weekly_futures_history" &&
+        dataStatus === "formal_history"
+    ) {
+        return OPTION_MAP_V2_WEEKLY_QUALITY.liveCurrent;
+    }
+
+    if (
         dataStatus === "waiting_update" ||
         remoteCheckStatus === "newer_available"
     ) {
@@ -4107,6 +4133,10 @@ function createWeeklyComponentInputV2() {
         notes.push("週次データの最新版を確認中です");
     } else if (candidate.metadata.origin === "cache") {
         notes.push("週次データは確認済みキャッシュを使用中");
+    } else if (
+        candidate.metadata.origin === "weekly_futures_history"
+    ) {
+        notes.push("週次データは検証済み正式historyを使用中");
     }
 
     if (qualityFactor <= 0) {
@@ -4276,16 +4306,9 @@ function updateWeeklyCandidateV2(selection) {
     const versions = selection?.versions;
     const previous = Array.isArray(versions) ? versions.at(-2) : null;
     const current = Array.isArray(versions) ? versions.at(-1) : null;
-    const activeVersionMatched = Boolean(
-        weeklyFuturesDataState.versionKey &&
-        current?.versionKey &&
-        weeklyFuturesDataState.versionKey === current.versionKey
-    );
-
     if (
         !previous?.sourceDate || !previous?.versionKey ||
-        !current?.sourceDate || !current?.versionKey ||
-        !activeVersionMatched
+        !current?.sourceDate || !current?.versionKey
     ) {
         optionMapJudgmentStateV2.weeklyCandidate = {
             available: false,
@@ -4317,11 +4340,11 @@ function updateWeeklyCandidateV2(selection) {
                 sourceDate: current.sourceDate,
                 versionKey: current.versionKey
             },
-            activeVersionKey: weeklyFuturesDataState.versionKey,
-            activeVersionMatched,
-            origin: weeklyFuturesDataState.origin,
-            dataStatus: weeklyFuturesDataState.status,
-            remoteCheckStatus: weeklyFuturesDataState.remoteCheckStatus
+            activeVersionKey: current.versionKey,
+            activeVersionMatched: true,
+            origin: "weekly_futures_history",
+            dataStatus: "formal_history",
+            remoteCheckStatus: null
         }
     };
     safeRenderOptionMapOverallJudgmentV2();
@@ -4805,6 +4828,16 @@ async function getConfirmedWeeklyFuturesSnapshotCandidates(snapshots) {
     return candidates;
 }
 
+async function getFormalWeeklyFuturesHistoryCandidates() {
+    if (
+        !formalWeeklyFuturesHistory ||
+        !window.OptionMapWeeklyFuturesHistory
+    ) return [];
+    return window.OptionMapWeeklyFuturesHistory.getActiveVersions(
+        formalWeeklyFuturesHistory
+    );
+}
+
 function selectLatestTwoConfirmedWeeklyFuturesVersions(candidates) {
     if (!Array.isArray(candidates)) {
         return {
@@ -4905,64 +4938,18 @@ function selectLatestTwoConfirmedWeeklyFuturesVersions(candidates) {
 }
 
 function getWeeklyJudgmentAvailability(selection) {
-    const state = weeklyFuturesDataState;
-    const current = selection.versions.at(-1) || null;
-
-    if (state.remoteCheckStatus === "pending") {
-        return { available: false, reason: "remote_check_pending" };
-    }
-
-    if (state.remoteCheckStatus === "failed") {
-        return { available: false, reason: "remote_check_failed" };
-    }
-
-    if (
-        state.status === "waiting_update" ||
-        state.remoteCheckStatus === "newer_available"
-    ) {
-        return { available: false, reason: "waiting_for_newer_version" };
-    }
-
     if (selection.versions.length < 2) {
-        let reason = "distinct_confirmed_versions_required";
-
-        if (selection.ambiguousSourceDates.length > 0) {
-            reason = "ambiguous_revision";
-        } else if (
-            selection.invalidMetadataCount > 0 &&
-            selection.confirmedVersionCount === 0
-        ) {
-            reason = "invalid_metadata";
-        } else if (
-            selection.metadataSnapshotCount === 0 &&
-            selection.legacySnapshotCount > 0
-        ) {
-            reason = "legacy_snapshot_only";
-        }
-
         return {
             available: false,
-            reason
+            reason: "distinct_confirmed_versions_required"
         };
     }
-
-    if (
-        state.status !== "latest" ||
-        state.remoteCheckStatus !== "current" ||
-        !state.versionKey ||
-        state.versionKey !== current.versionKey
-    ) {
-        return { available: false, reason: "active_version_mismatch" };
-    }
-
     return { available: true, reason: null };
 }
 
 function formatWeeklyVersionDate(value) {
-    const match = String(value || "").match(
-        /^\d{4}-(\d{2})-(\d{2})$/
-    );
-    return match ? `${match[1]}/${match[2]}` : "--/--";
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? `${match[1]}/${match[2]}/${match[3]}` : "----/--/--";
 }
 
 function renderWeeklyBrokerVersionStatus(selection, availability) {
@@ -4975,8 +4962,8 @@ function renderWeeklyBrokerVersionStatus(selection, availability) {
     if (availability.available) {
         const [previous, current] = selection.versions;
         element.textContent =
-            `比較：${formatWeeklyVersionDate(current.sourceDate)}現在 vs ` +
-            `${formatWeeklyVersionDate(previous.sourceDate)}現在`;
+            `比較：${formatWeeklyVersionDate(previous.sourceDate)} → ` +
+            formatWeeklyVersionDate(current.sourceDate);
         return;
     }
 
@@ -5034,9 +5021,7 @@ async function renderSavedSnapshots() {
         );
 
         const weeklySnapshots =
-            await getConfirmedWeeklyFuturesSnapshotCandidates(
-                savedSnapshots
-            );
+            await getFormalWeeklyFuturesHistoryCandidates();
 
         if (renderRequestId !== weeklySnapshotRenderRequestId) {
             return;
@@ -5189,12 +5174,11 @@ async function renderSavedSnapshots() {
                     versionKey: currentWeekly.versionKey,
                     signature: currentWeekly.signature
                 },
-                activeVersionKey: weeklyFuturesDataState.versionKey,
+                activeVersionKey: currentWeekly.versionKey,
                 activeVersionMatched: true,
-                origin: weeklyFuturesDataState.origin,
-                dataStatus: weeklyFuturesDataState.status,
-                remoteCheckStatus:
-                    weeklyFuturesDataState.remoteCheckStatus
+                origin: "weekly_futures_history",
+                dataStatus: "formal_history",
+                remoteCheckStatus: null
             }
         };
 
@@ -5407,10 +5391,9 @@ async function renderSavedSnapshots() {
                 reason: weeklyAvailability.reason,
                 confirmedVersionCount:
                     weeklySelection.confirmedVersionCount,
-                origin: weeklyFuturesDataState.origin,
-                dataStatus: weeklyFuturesDataState.status,
-                remoteCheckStatus:
-                    weeklyFuturesDataState.remoteCheckStatus
+                origin: "weekly_futures_history",
+                dataStatus: "formal_history",
+                remoteCheckStatus: null
             }
         };
         renderOptionMapOverallJudgment();
