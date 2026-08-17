@@ -582,6 +582,11 @@
                 </span>
             </div>
 
+            <p id="qriOptionsHistoryStatus" class="open-interest-data-status"
+                role="status" aria-live="polite">
+                QRI正式history：確認中…
+            </p>
+
                    
             <div class="chart-mode-switch">
                 <button
@@ -800,6 +805,9 @@
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
 <script src="js/qriOptions.js"></script>
 <script src="js/qriOptionsSelection.js"></script>
+<script src="js/qriOptionsHistory.js"></script>
+<script src="js/storage/qriOptionsHistoryStore.js"></script>
+<script src="js/qriOptionsHistoryPersistence.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -835,6 +843,66 @@ let weeklyFuturesBackfillCandidates = [];
 let weeklyFuturesBackfillCancelled = false;
 let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
+const qriOptionsHistoryPersistence =
+    window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
+
+async function renderQriOptionsHistoryStatus() {
+    const element = document.getElementById("qriOptionsHistoryStatus");
+    if (!element) return;
+    try {
+        const result = await window.OptionMapQriOptionsHistoryStore.loadHistory();
+        if (result.status === "corrupted") {
+            element.textContent = "QRI正式history：破損を検出（正式データとして使用しません）";
+            return;
+        }
+        const entries = result.history.entries;
+        if (entries.length === 0) {
+            element.textContent = "QRI正式history：保存データはまだありません";
+            return;
+        }
+        const dates = [...new Set(entries.map(entry => entry.sourceDateKey))].sort();
+        const contracts = window.OptionMapQriOptionsHistory.listContracts(result.history);
+        element.textContent = `QRI正式history：${dates.length}日保存 / 対象限月 ${contracts.join("、")} / ` +
+            `期間 ${dates[0]} ～ ${dates.at(-1)} / 最新 ${dates.at(-1)}`;
+    } catch (error) {
+        element.textContent = "QRI正式history：保存状態を確認できません";
+        console.warn("QRI正式historyの状態確認に失敗しました:", error);
+    }
+}
+
+async function initializeQriOptionsHistoryPersistence() {
+    const state = await qriOptionsHistoryPersistence.openPersistence();
+    await renderQriOptionsHistoryStatus();
+    return state;
+}
+
+async function persistQriOptionsHistory(canonical, fetchedAt, isCurrentRequest) {
+    try {
+        const cache = await window.OptionMapQriOptions.createCacheV2(canonical, fetchedAt);
+        if (!cache) return { status: "not_attempted", reason: "cache_creation_failed" };
+        const result = await qriOptionsHistoryPersistence.persistActiveContractCache(cache, {
+            mode: "auto", isCurrentRequest
+        });
+        await renderQriOptionsHistoryStatus();
+        return result;
+    } catch (error) {
+        console.warn("QRI正式historyへの保存に失敗しました:", error);
+        await renderQriOptionsHistoryStatus();
+        return { status: "failed", reason: "persistence_exception",
+            errorCode: error?.message || String(error) };
+    }
+}
+
+window.getQriOptionsHistoryPersistenceState = () =>
+    qriOptionsHistoryPersistence.getState();
+window.getQriOptionsHistory = async () => {
+    const result = await window.OptionMapQriOptionsHistoryStore.loadHistory();
+    return JSON.parse(JSON.stringify(result));
+};
+window.listQriOptionsHistoryContracts = () =>
+    window.OptionMapQriOptionsHistoryStore.listContracts();
+window.listQriOptionsHistorySourceDates = contract =>
+    window.OptionMapQriOptionsHistoryStore.listSourceDates(contract);
 
 const participantBackfillStartDate = document.getElementById(
     "participantBackfillStartDate"
@@ -3642,6 +3710,14 @@ async function fetchQriData({ requestId } = {}) {
         const fetchedAt = new Date().toISOString();
         const sourceDate = payload.sourceDate.toISOString();
 
+        if (payload.canonicalV2) {
+            await persistQriOptionsHistory(
+                payload.canonicalV2,
+                fetchedAt,
+                () => isCurrentFetchRequest(source, activeRequestId)
+            );
+        }
+
         if (
             payload.openInterestAvailable === true &&
             typeof window.saveLastValidQriOpenInterest ===
@@ -4331,7 +4407,8 @@ Promise.all([
     initializeParticipantCache(),
     initializeParticipantHistory(),
     initializeWeeklyFuturesHistory(),
-    initializeWeeklyOptionsHistoryPersistence()
+    initializeWeeklyOptionsHistoryPersistence(),
+    initializeQriOptionsHistoryPersistence()
 ])
     .catch(error => {
         console.warn("市場データcacheの初期化に失敗しました:", error);
