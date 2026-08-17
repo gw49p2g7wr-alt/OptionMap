@@ -190,8 +190,8 @@ function (weeklyOptions, weeklyOptionsSignals) {
                         status: before.published && after.published
                             ? "continued"
                             : before.published
-                                ? "no_longer_in_published_window"
-                                : "newly_in_published_window"
+                                ? "previous_only"
+                                : after.published ? "current_only" : "unobserved"
                     });
                 }
             }

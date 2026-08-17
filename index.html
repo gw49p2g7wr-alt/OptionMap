@@ -786,6 +786,8 @@
 <script src="js/weeklyOptionsSignals.js"></script>
 <script src="js/weeklyOptionsChanges.js"></script>
 <script src="js/weeklyOptionsChangesView.js"></script>
+<script src="js/weeklyOptionsHistoryComparison.js"></script>
+<script src="js/weeklyOptionsHistoryComparisonView.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -892,6 +894,25 @@ async function renderWeeklyOptionsHistoryStatus() {
     }
 }
 
+async function refreshWeeklyOptionsFormalHistoryComparison(history = null) {
+    try {
+        const formalHistory = history ||
+            (await window.OptionMapWeeklyOptionsHistoryStore
+                .readWeeklyOptionsHistory()).history;
+        const comparison = await window.OptionMapWeeklyOptionsHistoryComparison
+            .compareLatestWeeklyOptionsHistory(formalHistory);
+        window.setWeeklyOptionsFormalHistoryComparison?.(comparison);
+        return comparison;
+    } catch (error) {
+        window.setWeeklyOptionsFormalHistoryComparison?.({
+            source: "formal_weekly_options_history",
+            status: "invalid",
+            reason: error?.message || String(error)
+        });
+        return null;
+    }
+}
+
 function validateWeeklyOptionsBackfillRange() {
     const startDate = weeklyOptionsBackfillStartDate?.value || "";
     const endDate = weeklyOptionsBackfillEndDate?.value || "";
@@ -974,6 +995,7 @@ async function startWeeklyOptionsBackfill() {
             `完了：解析・検証 ${success}週、失敗 ${result.results.length - success}週、` +
             `保存 ${saved.changedCount || 0}週`;
         await renderWeeklyOptionsHistoryStatus();
+        await refreshWeeklyOptionsFormalHistoryComparison();
     } catch (error) {
         weeklyOptionsBackfillStatus.textContent =
             `${error?.message || String(error)}。既存historyは変更していません。`;
@@ -2163,6 +2185,7 @@ async function initializeWeeklyOptionsHistoryPersistence() {
         );
     }
     await renderWeeklyOptionsHistoryStatus();
+    await refreshWeeklyOptionsFormalHistoryComparison();
 }
 
 async function persistConfirmedWeeklyOptionsHistory(cache, comparison) {
@@ -2178,6 +2201,9 @@ async function persistConfirmedWeeklyOptionsHistory(cache, comparison) {
             state.reason,
             state.errorCode
         );
+    }
+    if (["saved", "unchanged"].includes(state.status)) {
+        await refreshWeeklyOptionsFormalHistoryComparison();
     }
     return state;
 }

@@ -1119,6 +1119,7 @@ let weeklyOptionsShadowChangesState = Object.freeze({
     previousSourceMetadata: null,
     currentSourceMetadata: null
 });
+let weeklyOptionsFormalHistoryComparisonState = null;
 
 function weeklyOptionsViewElement(tag, className, text) {
     const element = document.createElement(tag);
@@ -1178,6 +1179,39 @@ function appendWeeklyOptionsList(parent, title, items, className) {
 
 function renderWeeklyOptionsChangesPanel() {
     const container = document.getElementById("weeklyOptionsChangesPanelContent");
+    const formalFormatter = window.OptionMapWeeklyOptionsHistoryComparisonView;
+    if (container && weeklyOptionsFormalHistoryComparisonState &&
+        formalFormatter?.createHistoryComparisonView) {
+        const model = formalFormatter.createHistoryComparisonView(
+            weeklyOptionsFormalHistoryComparisonState
+        );
+        const fragment = document.createDocumentFragment();
+        fragment.append(
+            weeklyOptionsViewElement("p", "weekly-options-shadow-notice", model.sourceNotice),
+            weeklyOptionsViewElement("p", "weekly-options-shadow-notice", model.predictionNotice)
+        );
+        appendWeeklyOptionsCards(fragment, model.metadata, "weekly-options-meta-grid");
+        if (model.message) fragment.append(weeklyOptionsViewElement(
+            "p", model.state === "roll_transition"
+                ? "weekly-options-partial-reason" : "weekly-options-empty", model.message
+        ));
+        if (model.coverageRows?.length) {
+            appendWeeklyOptionsCards(fragment, model.coverageRows,
+                "weekly-options-summary-grid");
+        }
+        appendWeeklyOptionsTable(fragment, "大きなstrike別変化", model.strikeRows);
+        if (model.strikeMessage) fragment.append(weeklyOptionsViewElement(
+            "p", "weekly-options-partial-reason", model.strikeMessage
+        ));
+        appendWeeklyOptionsList(fragment, "新規掲載", model.newlyPublished,
+            "weekly-options-label-list");
+        appendWeeklyOptionsList(fragment, "掲載から消失", model.disappeared,
+            "weekly-options-label-list");
+        appendWeeklyOptionsList(fragment, "注意事項", model.warnings,
+            "weekly-options-warning-list");
+        container.replaceChildren(fragment);
+        return;
+    }
     const formatter = window.OptionMapWeeklyOptionsChangesView;
     if (!container || !formatter?.createWeeklyOptionsChangesView) return;
     const model = formatter.createWeeklyOptionsChangesView(
@@ -1224,6 +1258,14 @@ function renderWeeklyOptionsChangesPanel() {
     );
     container.replaceChildren(fragment);
 }
+
+window.setWeeklyOptionsFormalHistoryComparison = function (comparison) {
+    weeklyOptionsFormalHistoryComparisonState = comparison
+        ? (typeof structuredClone === "function"
+            ? structuredClone(comparison) : JSON.parse(JSON.stringify(comparison)))
+        : null;
+    renderWeeklyOptionsChangesPanel();
+};
 
 function calculateWeeklyOptionsShadowSignal() {
     if (
