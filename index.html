@@ -788,6 +788,7 @@
 <script src="js/weeklyOptionsChangesView.js"></script>
 <script src="js/weeklyOptionsHistoryComparison.js"></script>
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
+<script src="js/qriOptions.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -3283,13 +3284,21 @@ async function fetchWeeklyData({ requestId } = {}) {
     return { weeklyPage, futuresResult, optionsResult };
 }
 
-function createQriPayload(html) {
+function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {
     const referencePrices = parseJpxReferencePrices(html);
     const sourceDate = extractQriSourceDate(html);
     const parsedRows = parseJpxHtml(html);
     const sortedRows = [...parsedRows].sort(
         (left, right) => left.strike - right.strike
     );
+    let canonicalV2 = null;
+    try {
+        canonicalV2 = window.OptionMapQriOptions?.parseQriOptionsPage(
+            html, sourceUrl
+        ) || null;
+    } catch (error) {
+        console.warn("QRI canonical v2を生成できませんでした:", error);
+    }
 
     return {
         referencePrices,
@@ -3305,7 +3314,8 @@ function createQriPayload(html) {
             parsedRows.callOpenInterestAvailable === true,
         putOpenInterestAvailable:
             parsedRows.putOpenInterestAvailable === true,
-        parsedRows
+        parsedRows,
+        canonicalV2
     };
 }
 
@@ -3441,7 +3451,7 @@ async function fetchQriData({ requestId } = {}) {
             );
         }
 
-        const payload = createQriPayload(result.html);
+        const payload = createQriPayload(result.html, sourceUrl);
 
         if (!validateQriPayload(payload)) {
             throw new Error("QRIオプションデータの解析結果が不正です");
