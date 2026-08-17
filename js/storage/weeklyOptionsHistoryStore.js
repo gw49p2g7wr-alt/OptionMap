@@ -1,10 +1,12 @@
 (function (root, factory) {
-    const historyApi = typeof module === "object" && module.exports
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
+    const historyApi = commonJs
         ? require("../weeklyOptionsHistory.js")
         : root?.OptionMapWeeklyOptionsHistory;
     const api = factory(historyApi, root);
 
-    if (typeof module === "object" && module.exports) module.exports = api;
+    if (commonJs) module.exports = api;
     if (root) root.OptionMapWeeklyOptionsHistoryStore = api;
 })(typeof window !== "undefined" ? window : globalThis,
 function (historyApi, root) {
@@ -283,6 +285,92 @@ function (historyApi, root) {
             return { saved: true, outcome: merged.outcome };
         }
 
+        async function persistWeeklyOptionsHistoryCandidates(candidates, options = {}) {
+            const originals = clone(candidates);
+            if (!Array.isArray(candidates) || candidates.length === 0) {
+                return { saved: false, outcome: "no_candidates", changedCount: 0 };
+            }
+            const snapshotRecords = await readRecords();
+            const snapshot = await readWeeklyOptionsHistory();
+            if (!["empty", "ready"].includes(snapshot.status)) {
+                return { saved: false, outcome: "invalid_stored_history", changedCount: 0 };
+            }
+            let nextHistory = snapshot.history;
+            let changedCount = 0;
+            const outcomes = [];
+            try {
+                for (const candidate of candidates) {
+                    const merged = await historyApi.mergeWeeklyOptionsHistory(
+                        nextHistory, candidate, { confirmedAt: options.confirmedAt }
+                    );
+                    nextHistory = merged.history;
+                    outcomes.push({ sourceDate: candidate.sourceDate, outcome: merged.outcome });
+                    if (merged.changed && merged.outcome !== "same_version") {
+                        changedCount += 1;
+                    }
+                }
+                const validation = await historyApi.validateWeeklyOptionsHistory(nextHistory);
+                if (!validation.valid) throw new Error("merged_history_invalid");
+            } catch (error) {
+                return { saved: false, outcome: "staging_failed", changedCount: 0,
+                    error: error?.message || String(error) };
+            }
+            if (JSON.stringify(candidates) !== JSON.stringify(originals)) {
+                throw new Error("candidates_mutated_during_merge");
+            }
+            if (changedCount === 0) {
+                return { saved: false, outcome: "same_versions", changedCount, outcomes };
+            }
+            if (options.failWith === "quota") {
+                return { saved: false, outcome: "transaction_failed", changedCount: 0,
+                    error: "QuotaExceededError" };
+            }
+            const db = await openWeeklyOptionsHistoryStore();
+            const transaction = db.transaction(
+                [META_STORE, ENTRY_STORE, REVISION_STORE], "readwrite"
+            );
+            const done = transactionDone(transaction);
+            try {
+                const metaStore = transaction.objectStore(META_STORE);
+                const entryStore = transaction.objectStore(ENTRY_STORE);
+                const revisionStore = transaction.objectStore(REVISION_STORE);
+                const [storedMeta, storedEntries, storedRevisions] = await Promise.all([
+                    requestResult(metaStore.get(META_KEY)),
+                    requestResult(entryStore.getAll()),
+                    requestResult(revisionStore.getAll())
+                ]);
+                const stable = value => JSON.stringify(value || null);
+                if (stable(storedMeta) !== stable(snapshotRecords.meta) ||
+                    stable(storedEntries) !== stable(snapshotRecords.entries) ||
+                    stable(storedRevisions) !== stable(snapshotRecords.revisions)) {
+                    throw new Error("concurrent_history_change");
+                }
+                for (const entry of nextHistory.entries) {
+                    entryStore.put(entryRecord(entry));
+                    for (const revision of entry.revisions) {
+                        revisionStore.put(revisionRecord(entry.sourceDate, revision));
+                    }
+                }
+                if (options.failAfter === "entries") {
+                    throw new Error("injected_transaction_failure");
+                }
+                metaStore.put(metadataRecord(nextHistory));
+                if (options.failAfter === "metadata") {
+                    throw new Error("injected_transaction_failure");
+                }
+            } catch (error) {
+                try { transaction.abort(); } catch (_abortError) { /* already inactive */ }
+                try { await done; } catch (_transactionError) { /* expected rollback */ }
+                return { saved: false, outcome: "transaction_failed", changedCount: 0,
+                    error: error?.message || String(error) };
+            }
+            try { await done; } catch (error) {
+                return { saved: false, outcome: "transaction_failed", changedCount: 0,
+                    error: error?.message || String(error) };
+            }
+            return { saved: true, outcome: "merged", changedCount, outcomes };
+        }
+
         async function getStoredWeeklyOptionsEntry(sourceDate) {
             const result = await readWeeklyOptionsHistory();
             const entry = result.history.entries.find(item =>
@@ -332,6 +420,7 @@ function (historyApi, root) {
             closeWeeklyOptionsHistoryStore,
             readWeeklyOptionsHistory,
             persistWeeklyOptionsHistoryCandidate,
+            persistWeeklyOptionsHistoryCandidates,
             getStoredWeeklyOptionsEntry,
             getStoredWeeklyOptionsRevision,
             getLatestStoredWeeklyOptionsRevision,
@@ -360,6 +449,8 @@ function (historyApi, root) {
             getDefaultStore().readWeeklyOptionsHistory(...args),
         persistWeeklyOptionsHistoryCandidate: (...args) =>
             getDefaultStore().persistWeeklyOptionsHistoryCandidate(...args),
+        persistWeeklyOptionsHistoryCandidates: (...args) =>
+            getDefaultStore().persistWeeklyOptionsHistoryCandidates(...args),
         getStoredWeeklyOptionsEntry: (...args) =>
             getDefaultStore().getStoredWeeklyOptionsEntry(...args),
         getStoredWeeklyOptionsRevision: (...args) =>

@@ -56,6 +56,23 @@
         </div>
     </details>
 
+    <details class="weekly-options-changes-panel">
+        <summary>週次オプション 正式history・過去データ取得</summary>
+        <div class="current-price-controls">
+            <label for="weeklyOptionsBackfillStartDate">開始日</label>
+            <input type="date" id="weeklyOptionsBackfillStartDate">
+            <label for="weeklyOptionsBackfillEndDate">終了日</label>
+            <input type="date" id="weeklyOptionsBackfillEndDate">
+            <button type="button" id="weeklyOptionsBackfillPreviewButton">候補確認</button>
+            <button type="button" id="weeklyOptionsBackfillStartButton" disabled>取得開始</button>
+            <button type="button" id="weeklyOptionsBackfillCancelButton" disabled>中止</button>
+        </div>
+        <p id="weeklyOptionsBackfillStatus" role="status">
+            期間を指定して公式掲載候補を確認してください。
+        </p>
+        <p id="weeklyOptionsHistoryStatus" role="status">正式historyを確認中…</p>
+    </details>
+
     <details class="manual-recovery-inputs">
         <summary>⚠️ 復旧用手動入力</summary>
 
@@ -765,6 +782,7 @@
 <script src="js/weeklyOptionsHistory.js"></script>
 <script src="js/storage/weeklyOptionsHistoryStore.js"></script>
 <script src="js/weeklyOptionsHistoryPersistence.js"></script>
+<script src="js/backfill/adapters/weeklyOptionsBackfillAdapter.js"></script>
 <script src="js/weeklyOptionsSignals.js"></script>
 <script src="js/weeklyOptionsChanges.js"></script>
 <script src="js/weeklyOptionsChangesView.js"></script>
@@ -801,6 +819,8 @@ let weeklyFuturesHistory = null;
 let weeklyFuturesHistoryStorageInvalid = false;
 let weeklyFuturesBackfillCandidates = [];
 let weeklyFuturesBackfillCancelled = false;
+let weeklyOptionsBackfillCandidates = [];
+let weeklyOptionsBackfillCancelled = false;
 
 const participantBackfillStartDate = document.getElementById(
     "participantBackfillStartDate"
@@ -845,6 +865,130 @@ const weeklyFuturesBackfillStatus = document.getElementById(
 const weeklyFuturesHistoryStatus = document.getElementById(
     "weeklyFuturesHistoryStatus"
 );
+const weeklyOptionsBackfillStartDate = document.getElementById("weeklyOptionsBackfillStartDate");
+const weeklyOptionsBackfillEndDate = document.getElementById("weeklyOptionsBackfillEndDate");
+const weeklyOptionsBackfillPreviewButton = document.getElementById("weeklyOptionsBackfillPreviewButton");
+const weeklyOptionsBackfillStartButton = document.getElementById("weeklyOptionsBackfillStartButton");
+const weeklyOptionsBackfillCancelButton = document.getElementById("weeklyOptionsBackfillCancelButton");
+const weeklyOptionsBackfillStatus = document.getElementById("weeklyOptionsBackfillStatus");
+const weeklyOptionsHistoryStatus = document.getElementById("weeklyOptionsHistoryStatus");
+
+async function renderWeeklyOptionsHistoryStatus() {
+    if (!weeklyOptionsHistoryStatus) return;
+    try {
+        const result = await window.OptionMapWeeklyOptionsHistoryStore.readWeeklyOptionsHistory();
+        if (!["empty", "ready"].includes(result.status)) {
+            weeklyOptionsHistoryStatus.textContent =
+                `正式history：${result.status}（既存履歴を上書きしません）`;
+            return;
+        }
+        const dates = result.history.entries.map(entry => entry.sourceDate);
+        weeklyOptionsHistoryStatus.textContent = dates.length
+            ? `正式history：${dates.length}週　${dates[0]}～${dates.at(-1)}`
+            : "正式history：0週";
+    } catch (error) {
+        weeklyOptionsHistoryStatus.textContent =
+            `正式historyを読み取れません：${error?.message || String(error)}`;
+    }
+}
+
+function validateWeeklyOptionsBackfillRange() {
+    const startDate = weeklyOptionsBackfillStartDate?.value || "";
+    const endDate = weeklyOptionsBackfillEndDate?.value || "";
+    if (!startDate || !endDate || startDate > endDate) {
+        throw new Error("開始日と終了日を正しい順序で指定してください");
+    }
+    return { startDate, endDate };
+}
+async function fetchWeeklyOptionsBackfillListing(listingUrl) {
+    const result = await ipcRenderer.invoke("fetch-jpx-open-interest-json", listingUrl);
+    if (!result?.success) throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
+    return result.data;
+}
+async function fetchWeeklyOptionsBackfillExcel(sourceUrl) {
+    const result = await ipcRenderer.invoke("download-daytrading-excel", sourceUrl);
+    if (!result?.success) throw new Error(result?.error || "JPX週次オプションExcelを取得できませんでした");
+    return result.data;
+}
+function parseWeeklyOptionsBackfillExcel(bytes) {
+    const workbook = XLSX.read(bytes, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    return { data: window.OptionMapWeeklyOptions.parseWeeklyOptionsRows(rows) };
+}
+async function previewWeeklyOptionsBackfill() {
+    try {
+        const range = validateWeeklyOptionsBackfillRange();
+        weeklyOptionsBackfillPreviewButton.disabled = true;
+        weeklyOptionsBackfillStartButton.disabled = true;
+        weeklyOptionsBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
+        const manifest = await window.OptionMapWeeklyOptionsBackfill.enumerateCandidates({
+            ...range, fetchListing: fetchWeeklyOptionsBackfillListing
+        });
+        weeklyOptionsBackfillCandidates = manifest.candidates;
+        weeklyOptionsBackfillStatus.textContent =
+            `公式掲載候補：${manifest.candidates.length}週` +
+            (manifest.failures.length ? `（一覧取得失敗 ${manifest.failures.length}年）` : "");
+        weeklyOptionsBackfillStartButton.disabled = manifest.candidates.length === 0;
+    } catch (error) {
+        weeklyOptionsBackfillCandidates = [];
+        weeklyOptionsBackfillStatus.textContent = error?.message || String(error);
+    } finally { weeklyOptionsBackfillPreviewButton.disabled = false; }
+}
+async function startWeeklyOptionsBackfill() {
+    if (!weeklyOptionsBackfillCandidates.length) return;
+    weeklyOptionsBackfillCancelled = false;
+    weeklyOptionsBackfillPreviewButton.disabled = true;
+    weeklyOptionsBackfillStartButton.disabled = true;
+    weeklyOptionsBackfillCancelButton.disabled = false;
+    try {
+        const stored = await window.OptionMapWeeklyOptionsHistoryStore.readWeeklyOptionsHistory();
+        if (!["empty", "ready"].includes(stored.status)) throw new Error("正式historyが安全に更新できる状態ではありません");
+        const result = await window.OptionMapWeeklyOptionsBackfill.runBackfill({
+            history: stored.history, candidates: weeklyOptionsBackfillCandidates,
+            fetchExcel: fetchWeeklyOptionsBackfillExcel, parseExcel: parseWeeklyOptionsBackfillExcel,
+            isCancelled: () => weeklyOptionsBackfillCancelled,
+            onProgress: progress => {
+                const labels = { fetch: "取得中", fetched: "取得済み", parse: "解析中",
+                    parsed: "解析済み", validated: "検証済み" };
+                weeklyOptionsBackfillStatus.textContent =
+                    `${progress.current} / ${progress.total}週　${labels[progress.phase]}：${progress.sourceDate}` +
+                    `　取得済み ${progress.fetched || 0}、解析済み ${progress.parsed || 0}、` +
+                    `検証済み ${progress.validated || 0}`;
+            }
+        });
+        if (result.status === "cancelled") {
+            weeklyOptionsBackfillStatus.textContent = "中止しました。正式historyは変更していません。";
+            return;
+        }
+        if (result.status === "staging_failed") throw new Error("staging全体の検証に失敗しました");
+        const saved = result.staged.length
+            ? await window.OptionMapWeeklyOptionsHistoryStore.persistWeeklyOptionsHistoryCandidates(
+                result.staged, { confirmedAt: new Date().toISOString() })
+            : { saved: false, outcome: "no_candidates" };
+        if (!["merged", "same_versions", "no_candidates"].includes(saved.outcome)) {
+            throw new Error(saved.error || "正式historyを保存できませんでした");
+        }
+        const success = result.results.filter(item => item.status === "success").length;
+        weeklyOptionsBackfillStatus.textContent =
+            `完了：解析・検証 ${success}週、失敗 ${result.results.length - success}週、` +
+            `保存 ${saved.changedCount || 0}週`;
+        await renderWeeklyOptionsHistoryStatus();
+    } catch (error) {
+        weeklyOptionsBackfillStatus.textContent =
+            `${error?.message || String(error)}。既存historyは変更していません。`;
+    } finally {
+        weeklyOptionsBackfillPreviewButton.disabled = false;
+        weeklyOptionsBackfillStartButton.disabled = weeklyOptionsBackfillCandidates.length === 0;
+        weeklyOptionsBackfillCancelButton.disabled = true;
+    }
+}
+weeklyOptionsBackfillPreviewButton?.addEventListener("click", previewWeeklyOptionsBackfill);
+weeklyOptionsBackfillStartButton?.addEventListener("click", startWeeklyOptionsBackfill);
+weeklyOptionsBackfillCancelButton?.addEventListener("click", () => {
+    weeklyOptionsBackfillCancelled = true;
+    weeklyOptionsBackfillStatus.textContent = "中止処理中…";
+});
 
 function renderWeeklyFuturesHistoryStatus() {
     if (!weeklyFuturesHistoryStatus) return;
@@ -2018,6 +2162,7 @@ async function initializeWeeklyOptionsHistoryPersistence() {
             state.errorCode
         );
     }
+    await renderWeeklyOptionsHistoryStatus();
 }
 
 async function persistConfirmedWeeklyOptionsHistory(cache, comparison) {

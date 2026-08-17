@@ -1,10 +1,12 @@
 (function (root, factory) {
-    const weeklyOptions = typeof module === "object" && module.exports
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
+    const weeklyOptions = commonJs
         ? require("./weeklyOptions.js")
         : root?.OptionMapWeeklyOptions;
     const api = factory(weeklyOptions);
 
-    if (typeof module === "object" && module.exports) {
+    if (commonJs) {
         module.exports = api;
     }
     if (root) root.OptionMapWeeklyOptionsSignals = api;

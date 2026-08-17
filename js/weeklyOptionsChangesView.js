@@ -1,6 +1,8 @@
 (function (root, factory) {
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
     const api = factory();
-    if (typeof module === "object" && module.exports) module.exports = api;
+    if (commonJs) module.exports = api;
     if (root) root.OptionMapWeeklyOptionsChangesView = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";

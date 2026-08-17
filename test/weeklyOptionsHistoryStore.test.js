@@ -197,6 +197,52 @@ test("transaction途中失敗はrollbackし既存historyを不変にする", asy
     store.closeWeeklyOptionsHistoryStore();
 });
 
+test("複数candidateを一括保存し再実行は冪等", async () => {
+    const { store } = makeStore();
+    const candidates = [
+        await candidate("2026-08-07", "2026-08", 110),
+        await candidate("2026-07-31", "2026-08", 100)
+    ];
+    const saved = await store.persistWeeklyOptionsHistoryCandidates(candidates,
+        { confirmedAt: CONFIRMED_AT });
+    assert.equal(saved.saved, true);
+    assert.equal(saved.changedCount, 2);
+    assert.deepEqual((await store.readWeeklyOptionsHistory()).history.entries
+        .map(entry => entry.sourceDate), ["2026-07-31", "2026-08-07"]);
+    const repeated = await store.persistWeeklyOptionsHistoryCandidates(candidates,
+        { confirmedAt: "2026-08-11T07:00:00.000Z" });
+    assert.equal(repeated.outcome, "same_versions");
+    const repeatedHistory = (await store.readWeeklyOptionsHistory()).history;
+    assert.equal(repeatedHistory.entries.length, 2);
+    assert.deepEqual(repeatedHistory.entries.map(entry => entry.revisions.length), [1, 1]);
+    store.closeWeeklyOptionsHistoryStore();
+});
+
+test("一括保存のtransaction失敗は既存historyを不変にする", async () => {
+    const { store } = makeStore();
+    await persist(store, await candidate("2026-07-24", "2026-08", 90));
+    const before = (await store.readWeeklyOptionsHistory()).history;
+    const failed = await store.persistWeeklyOptionsHistoryCandidates([
+        await candidate("2026-07-31", "2026-08", 100),
+        await candidate("2026-08-07", "2026-08", 110)
+    ], { confirmedAt: CONFIRMED_AT, failAfter: "entries" });
+    assert.equal(failed.outcome, "transaction_failed");
+    assert.deepEqual((await store.readWeeklyOptionsHistory()).history, before);
+    store.closeWeeklyOptionsHistoryStore();
+});
+
+test("一括保存のquota失敗は既存historyを不変にする", async () => {
+    const { store } = makeStore();
+    await persist(store, await candidate("2026-07-31", "2026-08", 100));
+    const before = (await store.readWeeklyOptionsHistory()).history;
+    const failed = await store.persistWeeklyOptionsHistoryCandidates([
+        await candidate("2026-08-07", "2026-08", 110)
+    ], { confirmedAt: CONFIRMED_AT, failWith: "quota" });
+    assert.equal(failed.error, "QuotaExceededError");
+    assert.deepEqual((await store.readWeeklyOptionsHistory()).history, before);
+    store.closeWeeklyOptionsHistoryStore();
+});
+
 test("entry/revision/latest/previous calendar/same-expiryを取得", async () => {
     const { store } = makeStore();
     await persist(store, await candidate("2026-07-24", "2026-08", 90));

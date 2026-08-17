@@ -1,10 +1,12 @@
 (function (root, factory) {
-    const weeklyOptions = typeof module === "object" && module.exports
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
+    const weeklyOptions = commonJs
         ? require("./weeklyOptions.js")
         : root?.OptionMapWeeklyOptions;
     const api = factory(weeklyOptions);
 
-    if (typeof module === "object" && module.exports) module.exports = api;
+    if (commonJs) module.exports = api;
     if (root) root.OptionMapWeeklyOptionsHistory = api;
 })(typeof window !== "undefined" ? window : globalThis, function (weeklyOptions) {
     "use strict";

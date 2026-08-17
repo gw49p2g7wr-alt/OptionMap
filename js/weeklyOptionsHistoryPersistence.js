@@ -1,13 +1,15 @@
 (function (root, factory) {
-    const historyApi = typeof module === "object" && module.exports
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
+    const historyApi = commonJs
         ? require("./weeklyOptionsHistory.js")
         : root?.OptionMapWeeklyOptionsHistory;
-    const storeApi = typeof module === "object" && module.exports
+    const storeApi = commonJs
         ? require("./storage/weeklyOptionsHistoryStore.js")
         : root?.OptionMapWeeklyOptionsHistoryStore;
     const api = factory(historyApi, storeApi);
 
-    if (typeof module === "object" && module.exports) module.exports = api;
+    if (commonJs) module.exports = api;
     if (root) root.OptionMapWeeklyOptionsHistoryPersistence = api;
 })(typeof window !== "undefined" ? window : globalThis,
 function (defaultHistoryApi, defaultStoreApi) {
