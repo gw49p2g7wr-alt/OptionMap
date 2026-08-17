@@ -1092,6 +1092,7 @@ let allJpxPutVolumes = [];
 let allJpxOpenInterestLabels = [];
 let jpxOpenInterestAvailable = null;
 let currentChartMode = "openInterest";
+let qriContractDisplayData = null;
 let lastJpxFetchedAt = null;
 let currentPrice = 70000;
 let currentPriceState = {
@@ -3740,7 +3741,9 @@ function switchChartMode(mode) {
         );
     }
 
-    if (allJpxLabels.length > 0) {
+    if (qriContractDisplayData) {
+        renderQriContractDisplayChart();
+    } else if (allJpxLabels.length > 0) {
         window.drawJpxPriceChart(
             allJpxLabels,
             allJpxCallValues,
@@ -6531,6 +6534,93 @@ if (saveJpxSnapshotButton) {
 }
 
 
+
+function renderQriContractDisplayChart() {
+    if (!qriContractDisplayData || qriContractDisplayData.unavailable) return false;
+    const isVolumeMode = currentChartMode === "volume";
+    const source = qriContractDisplayData;
+    const labels = source.labels;
+    const callSource = isVolumeMode ? source.callVolumes : source.callOpenInterest;
+    const putSource = isVolumeMode ? source.putVolumes : source.putOpenInterest;
+    const valuesByStrike = new Map(labels.map((label, index) => [
+        Number(String(label).replace(/,/g, "")),
+        { call: Number(callSource[index]) || 0, put: Number(putSource[index]) || 0 }
+    ]));
+    const startStrike = Math.ceil((currentPrice - 12000) / 125) * 125;
+    const endStrike = Math.floor((currentPrice + 22000) / 125) * 125;
+    const visible = [];
+    for (let strike = startStrike; strike <= endStrike; strike += 125) {
+        const item = valuesByStrike.get(strike) || { call: 0, put: 0 };
+        visible.push({ label: strike.toLocaleString(), ...item });
+    }
+    const numericCallValues = visible.map(item => item.call);
+    const numericPutValues = visible.map(item => item.put);
+    const maxCall = Math.max(...numericCallValues, 1);
+    const maxPut = Math.max(...numericPutValues, 1);
+    const canvas = document.getElementById("combinedPriceChart");
+    if (!canvas) return false;
+    if (combinedPriceChart) combinedPriceChart.destroy();
+    const title = document.getElementById("combinedChartTitle");
+    if (title) title.textContent = isVolumeMode ? "CALL・PUT 本日の取引高" : "CALL・PUT建玉残";
+    combinedPriceChart = new Chart(canvas, {
+        type: "bar",
+        plugins: [currentPriceLinePlugin],
+        data: { labels: visible.map(item => item.label), datasets: [
+            { label: isVolumeMode ? "CALL取引高" : "CALL建玉残",
+                data: numericCallValues.map(value => value / maxCall * 100),
+                backgroundColor: createBarColors(numericCallValues,
+                    "rgba(74, 144, 226, 0.45)", "rgba(0, 82, 204, 0.95)"),
+                borderColor: "rgba(74, 144, 226, 1)", borderWidth: 1 },
+            { label: isVolumeMode ? "PUT取引高" : "PUT建玉残",
+                data: numericPutValues.map(value => -(value / maxPut * 100)),
+                backgroundColor: createBarColors(numericPutValues,
+                    "rgba(255, 99, 132, 0.45)", "rgba(220, 20, 60, 0.95)"),
+                borderColor: "rgba(255, 99, 132, 1)", borderWidth: 1 }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false,
+            scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 16, maxRotation: 45,
+                minRotation: 35, font: { size: CHART_TEXT_SIZE.axis } } },
+            y: { min: -115, max: 115, ticks: { stepSize: 100,
+                font: { size: CHART_TEXT_SIZE.axis, weight: "600" },
+                callback: value => value === 100 ? "CALL" : value === -100 ? "PUT" : value === 0 ? "0" : "" } } },
+            plugins: { legend: { ...readableLegendOptions() }, tooltip: { ...readableTooltipOptions(),
+                callbacks: { label(context) { const values = context.datasetIndex === 0
+                    ? numericCallValues : numericPutValues; const type = context.datasetIndex === 0 ? "CALL" : "PUT";
+                    return `${type}${isVolumeMode ? "取引高" : "建玉残"}：${values[context.dataIndex].toLocaleString()}枚`; } } } }
+        }
+    });
+    return true;
+}
+
+window.setQriContractDisplayData = function (data) {
+    if (!data || !Array.isArray(data.labels) || data.labels.length === 0 ||
+        ![data.callOpenInterest, data.putOpenInterest, data.callVolumes, data.putVolumes]
+            .every(values => Array.isArray(values) && values.length === data.labels.length)) return false;
+    qriContractDisplayData = JSON.parse(JSON.stringify(data));
+    return renderQriContractDisplayChart();
+};
+
+window.clearQriContractDisplayData = function () {
+    qriContractDisplayData = null;
+    if (allJpxLabels.length === 0) return false;
+    window.drawJpxPriceChart(allJpxLabels, allJpxCallValues, allJpxPutValues,
+        allJpxCallVolumes, allJpxPutVolumes, { openInterestAvailable: jpxOpenInterestAvailable === true,
+            openInterestLabels: allJpxOpenInterestLabels });
+    return true;
+};
+
+window.setQriContractDisplayUnavailable = function (contract) {
+    qriContractDisplayData = { unavailable: true, contract };
+    if (combinedPriceChart) {
+        combinedPriceChart.destroy();
+        combinedPriceChart = null;
+    }
+    return true;
+};
+
+window.getQriContractDisplayState = function () {
+    return qriContractDisplayData ? JSON.parse(JSON.stringify(qriContractDisplayData)) : null;
+};
 
 window.drawJpxPriceChart = function (
     labels,

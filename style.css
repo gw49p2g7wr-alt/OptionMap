@@ -1394,3 +1394,21 @@ canvas {
     color: #666;
     font-size: 12px;
 }
+.qri-contract-selector {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.qri-contract-selector select {
+    max-width: 100%;
+    min-width: min(18rem, 100%);
+    padding: 0.45rem;
+}
+
+#qriContractSelectionNote {
+    color: #555;
+    font-size: 0.9rem;
+}

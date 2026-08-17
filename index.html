@@ -572,6 +572,16 @@
         <div class="jpx-chart-block">
             <h3 id="combinedChartTitle">CALL・PUT建玉残</h3>
 
+            <div class="qri-contract-selector">
+                <label for="qriContractSelect">限月：</label>
+                <select id="qriContractSelect" disabled>
+                    <option value="auto">自動（QRI既定を確認中…）</option>
+                </select>
+                <span id="qriContractSelectionNote" role="status" aria-live="polite">
+                    QRI限月一覧を取得中…
+                </span>
+            </div>
+
                    
             <div class="chart-mode-switch">
                 <button
@@ -789,6 +799,7 @@
 <script src="js/weeklyOptionsHistoryComparison.js"></script>
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
 <script src="js/qriOptions.js"></script>
+<script src="js/qriOptionsSelection.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -3407,6 +3418,164 @@ function updateQriDetailStates(payload, fetchedAt) {
     };
 }
 
+const qriContractSelect = document.getElementById("qriContractSelect");
+const qriContractSelectionNote = document.getElementById("qriContractSelectionNote");
+let qriContractManifest = null;
+let qriContractSelectionState = window.OptionMapQriOptionsSelection.createState();
+let qriManifestSequence = 0;
+
+function setQriContractSelectionNote(text, status) {
+    if (qriContractSelectionNote) {
+        qriContractSelectionNote.textContent = text;
+        qriContractSelectionNote.dataset.status = status || "";
+    }
+}
+
+function renderQriContractOptions() {
+    if (!qriContractSelect || !qriContractManifest) return;
+    const selectedValue = qriContractSelectionState.mode === "specific"
+        ? qriContractSelectionState.contract : "auto";
+    const options = window.OptionMapQriOptionsSelection.createSelectOptions(qriContractManifest);
+    qriContractSelect.replaceChildren(...options.map(item => {
+        const option = document.createElement("option");
+        option.value = item.value; option.textContent = item.label; return option;
+    }));
+    if ([...qriContractSelect.options].some(option => option.value === selectedValue)) {
+        qriContractSelect.value = selectedValue;
+    } else if (qriContractSelectionState.mode === "specific") {
+        const option = document.createElement("option");
+        option.value = selectedValue;
+        option.textContent = `${selectedValue}（現在QRIに掲載なし）`;
+        qriContractSelect.appendChild(option);
+        qriContractSelect.value = selectedValue;
+    }
+    qriContractSelect.disabled = false;
+}
+
+function createSpecificDisplayData(payload, canonical) {
+    const legacy = window.OptionMapQriOptions.createLegacyDisplayView(canonical);
+    if (!legacy?.legacyDisplayOnly) return null;
+    const volumeByStrike = new Map(payload.labels.map((label, index) => [
+        Number(String(label).replace(/,/g, "")),
+        { call: payload.callVolume[index], put: payload.putVolume[index] }
+    ]));
+    return { legacyDisplayOnly: true, displayOnly: true, contract: canonical.contract,
+        openInterestAvailable: canonical.openInterestStatus === "available",
+        labels: legacy.labels,
+        callOpenInterest: legacy.callOpenInterest,
+        putOpenInterest: legacy.putOpenInterest,
+        callVolumes: legacy.labels.map(label => volumeByStrike.get(Number(label.replace(/,/g, "")))?.call || 0),
+        putVolumes: legacy.labels.map(label => volumeByStrike.get(Number(label.replace(/,/g, "")))?.put || 0) };
+}
+
+async function showSpecificQriContract(contract) {
+    const listed = qriContractManifest?.availableContracts.find(item => item.contract === contract);
+    if (!listed) {
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
+            qriContractSelectionState, contract, qriContractManifest);
+        window.setQriContractDisplayUnavailable?.(contract);
+        setQriContractSelectionNote(`選択中の${contract}限は現在QRIに掲載されていません。総合判定には未使用`, "unavailable");
+        return { status: "unavailable" };
+    }
+    qriContractSelectionState = window.OptionMapQriOptionsSelection.beginRequest(qriContractSelectionState);
+    const sequence = qriContractSelectionState.requestSequence;
+    qriContractSelect?.setAttribute("aria-busy", "true");
+    window.setQriContractDisplayUnavailable?.(contract);
+    setQriContractSelectionNote(`表示用：${contract}限を取得中…（総合判定には未使用）`, "loading");
+    try {
+        const response = await ipcRenderer.invoke("fetch-option-page", listed.url);
+        if (sequence !== qriContractSelectionState.requestSequence ||
+            qriContractSelectionState.contract !== contract) return { status: "stale_ignored" };
+        if (!response.success) {
+            qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+                qriContractSelectionState, sequence, { status: "fetch_failed", error: response.error });
+            setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
+            return { status: "fetch_failed" };
+        }
+        const payload = createQriPayload(response.html, listed.url);
+        const valid = validateQriPayload(payload) &&
+            window.OptionMapQriOptionsSelection.validateSpecificResult({ requestedContract: contract,
+                requestedUrl: listed.url, manifest: qriContractManifest, canonical: payload.canonicalV2,
+                validateCanonical: window.OptionMapQriOptions.validateCanonical });
+        if (!valid) {
+            qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+                qriContractSelectionState, sequence, { status: "validation_failed" });
+            setQriContractSelectionNote(`表示用：${contract}限の検証に失敗しました。総合判定には未使用`, "validation_failed");
+            return { status: "validation_failed" };
+        }
+        const display = createSpecificDisplayData(payload, payload.canonicalV2);
+        if (!display || !window.setQriContractDisplayData?.(display)) throw new Error("display_data_invalid");
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+            qriContractSelectionState, sequence, { status: "ready" });
+        const unavailable = payload.canonicalV2.openInterestStatus !== "available";
+        setQriContractSelectionNote(unavailable
+            ? `表示用：${contract}限。この限月の建玉残は現在利用できません。本日の取引高のみ表示できます。総合判定には未使用`
+            : `表示用：${contract}限（総合判定には未使用）`, unavailable ? "unavailable" : "ready");
+        return { status: unavailable ? "unavailable" : "ready", canonical: payload.canonicalV2 };
+    } catch (error) {
+        if (sequence !== qriContractSelectionState.requestSequence) return { status: "stale_ignored" };
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+            qriContractSelectionState, sequence, { status: "fetch_failed", error: error?.message });
+        setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
+        return { status: "fetch_failed" };
+    } finally {
+        if (sequence === qriContractSelectionState.requestSequence) qriContractSelect?.removeAttribute("aria-busy");
+    }
+}
+
+async function updateQriContractManifest(defaultHtml, defaultPayload) {
+    const manifestSequence = ++qriManifestSequence;
+    try {
+        const links = defaultPayload.canonicalV2?.availableContracts || [];
+        if (!defaultPayload.canonicalV2 || links.length === 0) throw new Error("manifest_missing");
+        const linkedPages = await Promise.all(links.filter(item => !item.active).map(async item => {
+            const response = await ipcRenderer.invoke("fetch-option-page", item.url);
+            if (!response.success) throw new Error(response.error || "contract_fetch_failed");
+            return { sourceUrl: item.url, html: response.html };
+        }));
+        if (manifestSequence !== qriManifestSequence) return { status: "stale_ignored" };
+        qriContractManifest = window.OptionMapQriOptions.parseQriOptionsBundle([
+            { sourceUrl: defaultPayload.canonicalV2.sourceUrl, html: defaultHtml }, ...linkedPages
+        ], defaultPayload.canonicalV2.sourceUrl);
+        renderQriContractOptions();
+        if (qriContractSelectionState.mode === "specific") {
+            if (!qriContractManifest.availableContracts.some(item =>
+                item.contract === qriContractSelectionState.contract)) {
+                return showSpecificQriContract(qriContractSelectionState.contract);
+            }
+            return showSpecificQriContract(qriContractSelectionState.contract);
+        }
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
+            qriContractSelectionState, "auto", qriContractManifest);
+        window.clearQriContractDisplayData?.();
+        setQriContractSelectionNote(
+            `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
+        return { status: "ready" };
+    } catch (error) {
+        if (manifestSequence !== qriManifestSequence) return { status: "stale_ignored" };
+        qriContractSelect.disabled = true;
+        setQriContractSelectionNote("QRI限月一覧を取得できませんでした", "fetch_failed");
+        return { status: "fetch_failed", error: error?.message };
+    }
+}
+
+qriContractSelect?.addEventListener("change", () => {
+    const value = qriContractSelect.value;
+    qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
+        qriContractSelectionState, value, qriContractManifest);
+    if (value === "auto") {
+        window.clearQriContractDisplayData?.();
+        setQriContractSelectionNote(
+            `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
+        return;
+    }
+    void showSpecificQriContract(value);
+});
+
+window.getQriContractSelectionState = () => JSON.parse(JSON.stringify({
+    selection: qriContractSelectionState, manifest: qriContractManifest
+}));
+
 async function fetchQriData({ requestId } = {}) {
     const source = "qri";
     const sourceUrl = "https://svc.qri.jp/jpx/nkopm/";
@@ -3594,6 +3763,8 @@ async function fetchQriData({ requestId } = {}) {
             sourceDate,
             error: null
         });
+
+        void updateQriContractManifest(result.html, payload);
 
         return {
             source,
