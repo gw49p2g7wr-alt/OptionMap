@@ -587,6 +587,13 @@
                 QRI正式history：確認中…
             </p>
 
+            <details id="qriOptionsHistoryComparisonPanel" class="weekly-options-shadow-panel">
+                <summary>QRI建玉 前回保存日比較</summary>
+                <div id="qriOptionsHistoryComparisonContent" role="status" aria-live="polite">
+                    正式historyを確認中…
+                </div>
+            </details>
+
                    
             <div class="chart-mode-switch">
                 <button
@@ -808,6 +815,8 @@
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
+<script src="js/qriOptionsHistoryComparison.js"></script>
+<script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
@@ -845,6 +854,84 @@ let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
+let qriOptionsHistoryComparisonSequence = 0;
+
+function selectedQriHistoryContract() {
+    return qriContractSelectionState?.mode === "specific"
+        ? qriContractSelectionState.contract
+        : qriContractManifest?.defaultContract || null;
+}
+
+function appendQriComparisonList(parent, title, items) {
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    parent.appendChild(heading);
+    const list = document.createElement("ul");
+    if (items.length === 0) {
+        const item = document.createElement("li"); item.textContent = "該当なし"; list.appendChild(item);
+    } else {
+        items.forEach(text => { const item = document.createElement("li");
+            item.textContent = text; list.appendChild(item); });
+    }
+    parent.appendChild(list);
+}
+
+function appendQriComparisonType(parent, label, data) {
+    const section = document.createElement("section");
+    const heading = document.createElement("h4"); heading.textContent = label; section.appendChild(heading);
+    const summary = document.createElement("p");
+    summary.textContent = `比較可能：${data.comparable} strike / 増加：${data.increase} / ` +
+        `減少：${data.decrease} / 変化なし：${data.unchanged} / ` +
+        `最新のみ掲載：${data.currentOnly} / 前回のみ掲載：${data.previousOnly} / ` +
+        `両日非掲載：${data.unobserved} / absolute delta合計：${data.absoluteDeltaTotal}`;
+    section.appendChild(summary);
+    appendQriComparisonList(section, "大きな増加 TOP3", data.topIncreases);
+    appendQriComparisonList(section, "大きな減少 TOP3", data.topDecreases);
+    appendQriComparisonList(section, "最新のみ掲載（差分なし）", data.newlyPublished);
+    appendQriComparisonList(section, "前回のみ掲載（差分なし）", data.noLongerPublished);
+    parent.appendChild(section);
+}
+
+async function renderQriOptionsHistoryComparison() {
+    const container = document.getElementById("qriOptionsHistoryComparisonContent");
+    if (!container) return { status: "missing_container" };
+    const sequence = ++qriOptionsHistoryComparisonSequence;
+    const contract = selectedQriHistoryContract();
+    container.textContent = contract ? `${contract}の正式historyを確認中…`
+        : "対象限月を確認中…";
+    try {
+        const loaded = await window.OptionMapQriOptionsHistoryStore.loadHistory();
+        const result = await window.OptionMapQriOptionsHistoryComparison
+            .compareLatestSavedDates(loaded.history, contract);
+        if (!window.OptionMapQriOptionsHistoryComparison.isCurrentResult({
+            requestedContract: contract, currentContract: selectedQriHistoryContract(),
+            sequence, currentSequence: qriOptionsHistoryComparisonSequence, result
+        })) return { status: "stale_ignored" };
+        const view = window.OptionMapQriOptionsHistoryComparisonView.createView(result);
+        container.replaceChildren();
+        const meta = document.createElement("p");
+        meta.textContent = `対象限月：${view.contract || "未選択"}` +
+            (view.state === "ready" ? ` / 比較：${view.comparisonLabel} / 比較種別：前回保存日比`
+                : view.comparisonLabel ? ` / ${view.comparisonLabel}` : "");
+        container.appendChild(meta);
+        if (view.message) {
+            const message = document.createElement("p"); message.textContent = view.message;
+            container.appendChild(message);
+        }
+        if (view.state === "ready") {
+            appendQriComparisonType(container, "CALL", view.call);
+            appendQriComparisonType(container, "PUT", view.put);
+        }
+        const notices = document.createElement("p");
+        notices.textContent = view.notices.join(" "); container.appendChild(notices);
+        return { status: view.state, contract };
+    } catch (error) {
+        if (sequence !== qriOptionsHistoryComparisonSequence) return { status: "stale_ignored" };
+        container.textContent = "正式history比較を読み込めませんでした。";
+        console.warn("QRI正式history比較の表示に失敗しました:", error);
+        return { status: "failed", contract };
+    }
+}
 
 async function renderQriOptionsHistoryStatus() {
     const element = document.getElementById("qriOptionsHistoryStatus");
@@ -873,6 +960,7 @@ async function renderQriOptionsHistoryStatus() {
 async function initializeQriOptionsHistoryPersistence() {
     const state = await qriOptionsHistoryPersistence.openPersistence();
     await renderQriOptionsHistoryStatus();
+    await renderQriOptionsHistoryComparison();
     return state;
 }
 
@@ -884,10 +972,12 @@ async function persistQriOptionsHistory(canonical, fetchedAt, isCurrentRequest) 
             mode: "auto", isCurrentRequest
         });
         await renderQriOptionsHistoryStatus();
+        await renderQriOptionsHistoryComparison();
         return result;
     } catch (error) {
         console.warn("QRI正式historyへの保存に失敗しました:", error);
         await renderQriOptionsHistoryStatus();
+        await renderQriOptionsHistoryComparison();
         return { status: "failed", reason: "persistence_exception",
             errorCode: error?.message || String(error) };
     }
@@ -3618,6 +3708,7 @@ async function updateQriContractManifest(defaultHtml, defaultPayload) {
         window.clearQriContractDisplayData?.();
         setQriContractSelectionNote(
             `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
+        void renderQriOptionsHistoryComparison();
         return { status: "ready" };
     } catch (error) {
         if (manifestSequence !== qriManifestSequence) return { status: "stale_ignored" };
@@ -3631,6 +3722,7 @@ qriContractSelect?.addEventListener("change", () => {
     const value = qriContractSelect.value;
     qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
         qriContractSelectionState, value, qriContractManifest);
+    void renderQriOptionsHistoryComparison();
     if (value === "auto") {
         window.clearQriContractDisplayData?.();
         setQriContractSelectionNote(
