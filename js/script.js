@@ -6560,7 +6560,7 @@ function renderQriContractDisplayChart() {
     const canvas = document.getElementById("combinedPriceChart");
     if (!canvas) return false;
     if (combinedPriceChart) combinedPriceChart.destroy();
-    const title = document.getElementById("combinedChartTitle");
+    const title = document.getElementById("combinedChartTitleText");
     if (title) title.textContent = isVolumeMode ? "CALL・PUT 本日の取引高" : "CALL・PUT建玉残";
     combinedPriceChart = new Chart(canvas, {
         type: "bar",
@@ -6709,14 +6709,14 @@ console.log(
 const isVolumeMode =
     currentChartMode === "volume";
 
-    const chartTitle =
-    document.getElementById("combinedChartTitle");
+const chartTitle =
+    document.getElementById("combinedChartTitleText");
 
 const callWallTitle =
-    document.querySelector(".call-wall h3");
+    document.getElementById("callWallTitleText");
 
 const putWallTitle =
-    document.querySelector(".put-wall h3");
+    document.getElementById("putWallTitleText");
 
 if (chartTitle) {
     chartTitle.textContent =

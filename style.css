@@ -32,6 +32,109 @@ h1{
 
 }
 
+/* 情報源カテゴリ: 方向色とは分離した低彩度の識別ルール */
+.category-futures,
+.category-futures-badge {
+    --ui-category-accent: #68745b;
+    --ui-category-bg: #edf0e9;
+    --ui-category-text: #4f5c45;
+}
+
+.category-options,
+.category-options-badge {
+    --ui-category-accent: #75647d;
+    --ui-category-bg: #f0ebf2;
+    --ui-category-text: #604f68;
+}
+
+.category-overall,
+.category-overall-badge {
+    --ui-category-accent: #626879;
+    --ui-category-bg: #eceef2;
+    --ui-category-text: #505667;
+}
+
+.category-system,
+.category-system-badge {
+    --ui-category-accent: #737983;
+    --ui-category-bg: #eef0f2;
+    --ui-category-text: #5d636d;
+}
+
+.category-mixed,
+.category-mixed-badge {
+    --ui-category-accent: #776f61;
+    --ui-category-bg: #f1eee9;
+    --ui-category-text: #625b50;
+}
+
+.ui-category-panel {
+    border-left: 4px solid var(--ui-category-accent, #737983);
+}
+
+.ui-category-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.ui-category-badge,
+.ui-attribute-badge,
+.ui-status-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb,
+        var(--ui-category-accent, #737983) 32%, transparent);
+    border-radius: 999px;
+    background: var(--ui-category-bg, #eef0f2);
+    color: var(--ui-category-text, #5d636d);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: .02em;
+    white-space: nowrap;
+}
+
+/* 補助属性は商品カテゴリより弱く表示し、排他的カテゴリに見せない */
+.ui-attribute-badge.attribute-participant {
+    --ui-category-accent: #829292;
+    --ui-category-bg: #f2f5f4;
+    --ui-category-text: #687777;
+    border-style: dashed;
+    font-weight: 600;
+}
+
+.ui-status-badge.status-validation {
+    border-color: #d8c89f;
+    background: #f6f1e5;
+    color: #746139;
+}
+
+/* 売買方向を示す既存のCALL/PUT壁色は維持し、カテゴリは文字バッジだけにする */
+.ui-category-heading-only {
+    --ui-category-accent: #75647d;
+    --ui-category-bg: #f0ebf2;
+    --ui-category-text: #604f68;
+}
+
+@media (max-width: 550px) {
+    .ui-category-title {
+        gap: 5px;
+    }
+
+    .ui-category-badge,
+    .ui-attribute-badge,
+    .ui-status-badge {
+        padding: 2px 6px;
+        font-size: 10px;
+    }
+}
+
 .data-fetch-status-panel {
     margin-bottom: 25px;
     padding: 18px 20px 20px;

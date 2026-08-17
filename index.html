@@ -16,11 +16,13 @@
 
     <section
         id="dataFetchStatusPanel"
-        class="data-fetch-status-panel"
+        class="data-fetch-status-panel ui-category-panel category-system"
         aria-labelledby="dataFetchStatusTitle"
     >
         <div class="data-fetch-status-header">
-            <h2 id="dataFetchStatusTitle">🔄 データ取得状況</h2>
+            <h2 id="dataFetchStatusTitle" class="ui-category-title">🔄 データ取得状況
+                <span class="ui-category-badge">システム</span>
+            </h2>
             <div class="data-fetch-status-actions">
                 <span id="dataFetchLastUpdated"></span>
                 <button
@@ -40,9 +42,13 @@
         ></div>
     </section>
 
-    <details id="weeklyOptionsChangesPanel" class="weekly-options-changes-panel">
+    <details id="weeklyOptionsChangesPanel"
+        class="weekly-options-changes-panel ui-category-panel category-options">
         <summary>
-            <span>週次オプション変化（検証中）</span>
+            <span class="ui-category-title"><span>週次オプション変化</span>
+                <span class="ui-category-badge">オプション</span>
+                <span class="ui-status-badge status-validation">検証中</span>
+            </span>
             <strong>方向予測には未使用</strong>
         </summary>
         <div
@@ -56,8 +62,10 @@
         </div>
     </details>
 
-    <details class="weekly-options-changes-panel">
-        <summary>週次オプション 正式history・過去データ取得</summary>
+    <details class="weekly-options-changes-panel ui-category-panel category-options">
+        <summary class="ui-category-title">週次オプション 正式history・過去データ取得
+            <span class="ui-category-badge">オプション</span>
+        </summary>
         <div class="current-price-controls">
             <label for="weeklyOptionsBackfillStartDate">開始日</label>
             <input type="date" id="weeklyOptionsBackfillStartDate">
@@ -73,8 +81,10 @@
         <p id="weeklyOptionsHistoryStatus" role="status">正式historyを確認中…</p>
     </details>
 
-    <details class="manual-recovery-inputs">
-        <summary>⚠️ 復旧用手動入力</summary>
+    <details class="manual-recovery-inputs ui-category-panel category-system">
+        <summary class="ui-category-title">⚠️ 復旧用手動入力
+            <span class="ui-category-badge">システム</span>
+        </summary>
 
         <p class="manual-recovery-description">
             通常は自動取得を使用します。自動取得に失敗した場合や、
@@ -86,12 +96,18 @@
 
         <div class="input-column">
             <div class="card">
-                <h2>夜間データ</h2>
+                <h2 class="ui-category-title">夜間データ
+                    <span class="ui-category-badge category-futures-badge">先物</span>
+                    <span class="ui-attribute-badge attribute-participant">参加者別</span>
+                </h2>
                 <textarea id="nightData"></textarea>
             </div>
     
             <div class="card">
-                <h2>日中データ</h2>
+                <h2 class="ui-category-title">日中データ
+                    <span class="ui-category-badge category-futures-badge">先物</span>
+                    <span class="ui-attribute-badge attribute-participant">参加者別</span>
+                </h2>
                 <textarea id="dayData"></textarea>
             </div>
     
@@ -102,12 +118,16 @@
     
         <div class="input-column">
             <div class="card">
-                <h2>オプションデータ（週次）</h2>
+                <h2 class="ui-category-title">オプションデータ（週次）
+                    <span class="ui-category-badge category-options-badge">オプション</span>
+                </h2>
                 <textarea id="optionData"></textarea>
             </div>
     
             <div class="card">
-                <h2>指数先物建玉（週次）</h2>
+                <h2 class="ui-category-title">指数先物建玉（週次）
+                    <span class="ui-category-badge category-futures-badge">先物</span>
+                </h2>
                 <textarea id="futureOpenInterestData"></textarea>
             </div>
     
@@ -125,8 +145,10 @@
         </div>
     </details>
 
-    <div class="card">
-        <h2>📝 AIコメント設定</h2>
+    <div class="card ui-category-panel category-system">
+        <h2 class="ui-category-title">📝 AIコメント設定
+            <span class="ui-category-badge">システム</span>
+        </h2>
       
         <label>勢力図</label>
         <textarea id="brokerTemplate" rows="3"></textarea>
@@ -140,10 +162,12 @@
       </div>
 
     
-    <div class="card chart-card">
+    <div class="card chart-card ui-category-panel category-mixed">
 
 
-        <h2>価格帯グラフ</h2>
+        <h2 class="ui-category-title">価格帯グラフ
+            <span class="ui-category-badge">複合</span>
+        </h2>
     
         <div class="current-price-controls">
 
@@ -229,15 +253,20 @@
 
         </div>
 
-        <details class="snapshot-list-card">
-            <summary>保存済みJPXデータ</summary>
+        <details class="snapshot-list-card ui-category-panel category-mixed">
+            <summary class="ui-category-title">保存済みJPXデータ
+                <span class="ui-category-badge">複合</span>
+            </summary>
         
             <div id="savedSnapshotList">
                 保存済みデータはありません
             </div>
         </details>
-        <div class="card cumulative-chart-card">
-            <h3>📈 建玉累積グラフ</h3>
+        <div class="card cumulative-chart-card ui-category-panel category-futures">
+            <h3 class="ui-category-title">📈 建玉累積グラフ
+                <span class="ui-category-badge">先物</span>
+                <span class="ui-attribute-badge attribute-participant">参加者別</span>
+            </h3>
         
             <div class="historical-data-controls">
                 <strong>📚 過去データ一括取得</strong>
@@ -289,8 +318,10 @@
             
             <canvas id="cumulativeChart" height="220"></canvas>
         </div>
-            <div class="intelligence-card">
-                <h3>🧬 OptionMap Intelligence</h3>
+            <div class="intelligence-card ui-category-panel category-overall">
+                <h3 class="ui-category-title">🧬 OptionMap Intelligence
+                    <span class="ui-category-badge">総合</span>
+                </h3>
             
                 <div class="intelligence-grid">
                     <div class="intelligence-item">
@@ -337,7 +368,9 @@
                     id="optionMapOverallSummary"
                     class="optionmap-overall-summary is-insufficient"
                 >
-                    <h4>🧭 OptionMap総合判断 v1</h4>
+                    <h4 class="ui-category-title">🧭 OptionMap総合判断 v1
+                        <span class="ui-category-badge category-overall-badge">総合</span>
+                    </h4>
 
                     <div class="optionmap-overall-result">
                         <span>OptionMap総合判断：</span>
@@ -375,7 +408,9 @@
                     class="optionmap-overall-summary optionmap-overall-v2 is-insufficient"
                     hidden
                 >
-                    <h4>🧭 OptionMap総合判断 v2</h4>
+                    <h4 class="ui-category-title">🧭 OptionMap総合判断 v2
+                        <span class="ui-category-badge category-overall-badge">総合</span>
+                    </h4>
 
                     <div class="optionmap-v2-headline">
                         <div>
@@ -411,9 +446,11 @@
                     </div>
                 </div>
             
-                <div class="weekly-broker-summary">
+                <div class="weekly-broker-summary ui-category-panel category-futures">
 
-                    <h4>📊 主要5社 週次判定</h4>
+                    <h4 class="ui-category-title">📊 主要5社 週次判定
+                        <span class="ui-category-badge">先物</span>
+                    </h4>
 
                     <p id="weeklyBrokerVersionStatus">
                         正式な異なる2週分のデータ待ち
@@ -456,9 +493,9 @@
             
             </div>
 
-            <div class="comparison-status-card">
+            <div class="comparison-status-card ui-category-panel category-system">
                 <span class="comparison-status-label">
-                    比較対象
+                    比較対象 <span class="ui-category-badge">システム</span>
                 </span>
             
                 <strong id="comparisonSnapshotStatus">
@@ -470,9 +507,11 @@
 
 
 
-        <div class="market-summary-card">
+        <div class="market-summary-card ui-category-panel category-mixed">
 
-            <h3>🧠 今日の市場の特徴</h3>
+            <h3 class="ui-category-title">🧠 今日の市場の特徴
+                <span class="ui-category-badge">複合</span>
+            </h3>
         
             <div id="marketSummary">
         
@@ -482,8 +521,10 @@
         
         </div>
 
-        <div class="difference-summary-card">
-            <h3>現在値付近の注目変化</h3>
+        <div class="difference-summary-card ui-category-panel category-options">
+            <h3 class="ui-category-title">現在値付近の注目変化
+                <span class="ui-category-badge">オプション</span>
+            </h3>
         
             <div class="difference-summary-grid">
                 <div class="difference-summary-item">
@@ -518,13 +559,17 @@
 
         <div class="wall-summary">
 
-            <div class="wall-card call-wall">
-                <h3>上側のCALL壁候補</h3>
+            <div class="wall-card call-wall ui-category-heading-only">
+                <h3 class="ui-category-title"><span id="callWallTitleText">上側のCALL壁候補</span>
+                    <span class="ui-category-badge category-options-badge">オプション</span>
+                </h3>
                 <p id="callWallResult">まだ計算されていません</p>
             </div>
         
-            <div class="wall-card put-wall">
-                <h3>下側のPUT壁候補</h3>
+            <div class="wall-card put-wall ui-category-heading-only">
+                <h3 class="ui-category-title"><span id="putWallTitleText">下側のPUT壁候補</span>
+                    <span class="ui-category-badge category-options-badge">オプション</span>
+                </h3>
                 <p id="putWallResult">まだ計算されていません</p>
             </div>
         
@@ -533,9 +578,11 @@
 
         <div
         id="differenceRankingCard"
-        class="difference-ranking-card"
+        class="difference-ranking-card ui-category-panel category-options"
     >
-        <h3>建玉の前回比較</h3>
+        <h3 class="ui-category-title">建玉の前回比較
+            <span class="ui-category-badge">オプション</span>
+        </h3>
     
         <div class="difference-ranking-grid">
             <div class="difference-panel">
@@ -569,8 +616,10 @@
     </div>
 
     
-        <div class="jpx-chart-block">
-            <h3 id="combinedChartTitle">CALL・PUT建玉残</h3>
+        <div class="jpx-chart-block ui-category-panel category-options">
+            <h3 id="combinedChartTitle" class="ui-category-title"><span id="combinedChartTitleText">CALL・PUT建玉残</span>
+                <span class="ui-category-badge">オプション</span>
+            </h3>
 
             <div class="qri-contract-selector">
                 <label for="qriContractSelect">限月：</label>
@@ -587,8 +636,12 @@
                 QRI正式history：確認中…
             </p>
 
-            <details id="qriOptionsHistoryComparisonPanel" class="weekly-options-shadow-panel">
-                <summary>QRI建玉 前回保存日比較</summary>
+            <details id="qriOptionsHistoryComparisonPanel"
+                class="weekly-options-shadow-panel ui-category-panel category-options">
+                <summary class="ui-category-title">QRI建玉 前回保存日比較
+                    <span class="ui-category-badge">オプション</span>
+                    <span class="ui-status-badge status-validation">検証表示</span>
+                </summary>
                 <div id="qriOptionsHistoryComparisonContent" role="status" aria-live="polite">
                     正式historyを確認中…
                 </div>
@@ -628,7 +681,9 @@
 
     </div>
 
-    <h2>価格帯マップ</h2>
+    <h2 class="ui-category-title">価格帯マップ
+        <span class="ui-category-badge category-options-badge">オプション</span>
+    </h2>
 
    
     <table id="optionMapTable" border="1">
@@ -636,21 +691,28 @@
 
 <br><br>
 
-<div class="card">
-    <h2>最大建玉</h2>
+<div class="card ui-category-panel category-options">
+    <h2 class="ui-category-title">最大建玉
+        <span class="ui-category-badge">オプション</span>
+    </h2>
 
     <div id="maxPosition"></div>
 
 </div>
 
 
-<div class="card">
-    <h2>価格帯ランキング</h2>
+<div class="card ui-category-panel category-options">
+    <h2 class="ui-category-title">価格帯ランキング
+        <span class="ui-category-badge">オプション</span>
+    </h2>
     <div id="priceRanking"></div>
 </div>
 
-<div class="card chart-card participant-activity-card">
-    <h2>参加者活動履歴</h2>
+<div class="card chart-card participant-activity-card ui-category-panel category-futures">
+    <h2 class="ui-category-title">参加者活動履歴
+        <span class="ui-category-badge">先物</span>
+        <span class="ui-attribute-badge attribute-participant">参加者別</span>
+    </h2>
 
     <div class="current-price-controls">
         <label for="participantActivityProduct">対象商品</label>
@@ -695,8 +757,11 @@
 
     <p id="participantActivityContractWarning" role="status" hidden></p>
     <canvas id="participantActivityChart" height="220"></canvas>
-    <details class="participant-backfill-controls">
-      <summary>参加者別 過去データ取得</summary>
+    <details class="participant-backfill-controls ui-category-panel category-futures">
+      <summary class="ui-category-title">参加者別 過去データ取得
+        <span class="ui-category-badge">先物</span>
+        <span class="ui-attribute-badge attribute-participant">参加者別</span>
+      </summary>
       <div class="current-price-controls">
         <label for="participantBackfillStartDate">開始日</label>
         <input type="date" id="participantBackfillStartDate">
@@ -716,8 +781,11 @@
     </p>
 </div>
 
-<div class="card chart-card">
-    <h2>証券会社別取引高</h2>
+<div class="card chart-card ui-category-panel category-futures">
+    <h2 class="ui-category-title">証券会社別取引高
+        <span class="ui-category-badge">先物</span>
+        <span class="ui-attribute-badge attribute-participant">参加者別</span>
+    </h2>
 
     <div class="current-price-controls">
         <label for="brokerProductSelect">商品</label>
@@ -741,8 +809,10 @@
 
 </div>
 
-<div class="card chart-card">
-    <h2>指数先物建玉（週次）</h2>
+<div class="card chart-card ui-category-panel category-futures">
+    <h2 class="ui-category-title">指数先物建玉（週次）
+        <span class="ui-category-badge">先物</span>
+    </h2>
   
     <div class="current-price-controls">
       <label for="futureOpenInterestProduct">
@@ -765,8 +835,10 @@
     
     </div>
 
-    <details class="weekly-futures-backfill-controls">
-      <summary>週次先物 過去データ取得</summary>
+    <details class="weekly-futures-backfill-controls ui-category-panel category-futures">
+      <summary class="ui-category-title">週次先物 過去データ取得
+        <span class="ui-category-badge">先物</span>
+      </summary>
       <div class="current-price-controls">
         <label for="weeklyFuturesBackfillStartDate">開始日</label>
         <input type="date" id="weeklyFuturesBackfillStartDate">
