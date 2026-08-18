@@ -67,7 +67,7 @@ test("baseline, morning changes and option changes are explicitly unavailable", 
     const summary = await build();
     assert.deepEqual(summary.payload.morningBaseline, { available: false, reason: "not_captured",
         baselineId: null, capturedAt: null, dataQuality: null, sourceSummaryId: null,
-        sourceSummarySignature: null });
+        sourceSummarySignature: null, qriAvailability: null });
     assert.deepEqual(summary.payload.changeSinceMorning,
         { available: false, reason: "morning_baseline_missing" });
     assert.deepEqual(summary.payload.optionChanges,

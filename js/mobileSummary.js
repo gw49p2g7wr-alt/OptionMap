@@ -144,7 +144,8 @@
         contract: available && typeof state.contract === "string" ? state.contract : null };
     }
 
-    function buildAlerts({ overallV2, currentPrice, nearestLevels, qri, morningBaseline, observedAt }) {
+    function buildAlerts({ overallV2, currentPrice, nearestLevels, qri, morningBaseline,
+        comparison, observedAt }) {
         const alerts = [];
         const add = (code, severity, category, message, source) => {
             if (!alerts.some(alert => alert.code === code)) alerts.push({ code, severity, category,
@@ -159,6 +160,12 @@
         if (!nearestLevels.upper.available || !nearestLevels.lower.available)
             add("nearest_levels_partial", "info", "options", "上下の重要帯候補が一部ありません", "nearestLevels");
         if (!morningBaseline.available) add("morning_baseline_missing", "info", "baseline", "朝基準は未設定です", "morningBaseline");
+        if (comparison?.changeSinceMorning?.dataQuality?.transition === "degraded")
+            add("morning_data_quality_degraded", "warning", "quality", "朝よりデータ状態が低下しています", "changeSinceMorning");
+        if (morningBaseline.available && comparison?.optionChanges?.available === false &&
+            comparison.optionChanges.reason !== "morning_baseline_missing")
+            add("morning_option_comparison_unavailable", "info", "options",
+                "朝からのオプション変化を比較できません", "optionChanges");
         return alerts;
     }
 
@@ -178,21 +185,24 @@
         if (input?.available !== true || !isObject(baseline)) {
             return { available: false, reason: typeof input?.reason === "string"
                 ? input.reason : "not_captured", baselineId: null, capturedAt: null,
-            dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+            dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null, qriAvailability: null };
         }
         if (baseline.marketDate !== marketDate) {
             return { available: false, reason: "market_date_mismatch", baselineId: null,
-                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null,
+                qriAvailability: null };
         }
         const revision = baseline.revisions?.find(item => item.baselineId === baseline.activeBaselineId);
         if (!revision) {
             return { available: false, reason: "morning_baseline_corrupted", baselineId: null,
-                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null,
+                qriAvailability: null };
         }
         return { available: true, reason: null, baselineId: revision.baselineId,
             capturedAt: revision.capturedAt, dataQuality: clone(revision.dataQuality),
             sourceSummaryId: revision.sourceSummaryId,
-            sourceSummarySignature: revision.sourceSummarySignature };
+            sourceSummarySignature: revision.sourceSummarySignature,
+            qriAvailability: clone(revision.qriAvailability || null) };
     }
 
     function compactSourceVersions(input) {
@@ -224,12 +234,15 @@
             currentPrice.available ? "qri_unavailable" : "current_price_unavailable") };
         }
         const morningBaseline = buildMorningBaseline(source.morningBaseline, source.marketDate);
-        const changeSinceMorning = { available: false, reason: morningBaseline.available
-            ? "comparison_not_implemented" : "morning_baseline_missing" };
-        const optionChanges = { available: false, reason: morningBaseline.available
-            ? "comparison_not_implemented" : "morning_baseline_missing", items: [] };
+        const supplied = source.comparison;
+        const changeSinceMorning = morningBaseline.available && isObject(supplied?.changeSinceMorning)
+            ? clone(supplied.changeSinceMorning) : { available: false, reason: morningBaseline.available
+                ? "comparison_not_implemented" : "morning_baseline_missing" };
+        const optionChanges = morningBaseline.available && isObject(supplied?.optionChanges)
+            ? clone(supplied.optionChanges) : { available: false, reason: morningBaseline.available
+                ? "comparison_not_implemented" : "morning_baseline_missing", items: [] };
         const alerts = buildAlerts({ overallV2, currentPrice, nearestLevels, qri,
-            morningBaseline, observedAt: generatedAt });
+            morningBaseline, comparison: { changeSinceMorning, optionChanges }, observedAt: generatedAt });
         const payload = { overallV2, currentPrice, nearestLevels, morningBaseline,
             changeSinceMorning, optionChanges, alerts };
         const dataQuality = determineDataQuality({ overallV2, currentPrice, nearestLevels });
@@ -302,23 +315,24 @@
         }
         const baseline = summary?.payload?.morningBaseline;
         const baselineKeys = ["available", "reason", "baselineId", "capturedAt", "dataQuality",
-            "sourceSummaryId", "sourceSummarySignature"];
+            "sourceSummaryId", "sourceSummarySignature", "qriAvailability"];
         if (!hasExactKeys(baseline, baselineKeys) || typeof baseline.available !== "boolean" ||
             baseline.available && (baseline.reason !== null || !/^mb1-[a-f0-9]{24}$/.test(baseline.baselineId || "") ||
                 !validTimestamp(baseline.capturedAt) || !["complete", "partial"].includes(baseline.dataQuality?.status) ||
                 !/^ms1-[a-f0-9]{24}$/.test(baseline.sourceSummaryId || "") ||
-                !/^[a-f0-9]{64}$/.test(baseline.sourceSummarySignature || "")) ||
+                !/^[a-f0-9]{64}$/.test(baseline.sourceSummarySignature || "") ||
+                baseline.qriAvailability !== null && !isObject(baseline.qriAvailability)) ||
             !baseline.available && (typeof baseline.reason !== "string" || baseline.baselineId !== null ||
                 baseline.capturedAt !== null || baseline.dataQuality !== null || baseline.sourceSummaryId !== null ||
-                baseline.sourceSummarySignature !== null)) errors.push("morning_baseline_invalid");
+                baseline.sourceSummarySignature !== null || baseline.qriAvailability !== null))
+            errors.push("morning_baseline_invalid");
         const change = summary?.payload?.changeSinceMorning;
-        if (!isObject(change) || change.available !== false || change.reason !==
-            (baseline?.available ? "comparison_not_implemented" : "morning_baseline_missing"))
+        const comparisonApi = typeof module === "object" && module.exports && !globalThis.document
+            ? require("./mobileMorningComparison.js") : globalThis.OptionMapMobileMorningComparison;
+        if (!comparisonApi?.validateChangeSinceMorning?.(change, baseline?.baselineId))
             errors.push("change_since_morning_invalid");
         const optionChanges = summary?.payload?.optionChanges;
-        if (!isObject(optionChanges) || optionChanges.available !== false ||
-            optionChanges.reason !== (baseline?.available ? "comparison_not_implemented" : "morning_baseline_missing") ||
-            !Array.isArray(optionChanges.items) || optionChanges.items.length)
+        if (!comparisonApi?.validateOptionChanges?.(optionChanges))
             errors.push("option_changes_invalid");
         const alerts = summary?.payload?.alerts;
         if (!Array.isArray(alerts) || new Set(alerts?.map(alert => alert?.code)).size !== alerts?.length ||

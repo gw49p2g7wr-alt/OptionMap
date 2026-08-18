@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const mobile = require("../js/mobileSummary.js");
 const baselineApi = require("../js/morningBaseline.js");
+const comparisonApi = require("../js/mobileMorningComparison.js");
 
 const NOW = "2026-08-18T00:24:00.000Z";
 const LATER = "2026-08-18T00:31:00.000Z";
@@ -36,6 +37,15 @@ async function fixture(options = {}) {
     return value;
 }
 const mutate = (value, fn) => { const copy = structuredClone(value); fn(copy); return copy; };
+const formalReference = () => ({ contract: "2026-09", tradingDate: "2026-08-18",
+    versionKey: "qri-version", signature: `sha256:${"a".repeat(64)}`, pageUpdatedAt: NOW });
+const qriAvailable = () => ({ canonicalExists: true, available: true,
+    openInterestStatus: "available", reason: null, publishedCount: 2,
+    formalRevisionAvailable: true, persistenceStatus: "saved", persistenceReason: null });
+const qriUnavailable = () => ({ canonicalExists: true, available: false,
+    openInterestStatus: "unavailable", reason: "open_interest_unavailable", publishedCount: 0,
+    formalRevisionAvailable: false, persistenceStatus: "not_attempted",
+    persistenceReason: "open_interest_unavailable" });
 
 test("valid complete and partial baseline revisions", async () => {
     for (const partial of [false, true]) {
@@ -45,6 +55,74 @@ test("valid complete and partial baseline revisions", async () => {
         assert.equal((await baselineApi.validateBaseline(saved.baseline)).valid, true);
         assert.equal(saved.baseline.revisions[0].dataQuality.status, partial ? "partial" : "complete");
     }
+});
+
+test("baseline v2 separates available/unavailable QRI facts from formal reference", async () => {
+    const source = await fixture();
+    const availableCandidate = await baselineApi.createCandidate(source, NOW,
+        { qriAvailability: qriAvailable(), comparisonReference: formalReference() });
+    const available = (await baselineApi.saveCandidate(null, availableCandidate, source.marketDate)).baseline;
+    assert.equal(available.baselineVersion, 2);
+    assert.equal(available.revisions[0].qriAvailability.publishedCount, 2);
+    assert.equal(available.revisions[0].comparisonReference.versionKey, "qri-version");
+    assert.equal((await baselineApi.validateBaseline(available)).valid, true);
+
+    const unavailableCandidate = await baselineApi.createCandidate(source, LATER,
+        { qriAvailability: qriUnavailable(), comparisonReference: null });
+    const unavailable = (await baselineApi.saveCandidate(null, unavailableCandidate, source.marketDate)).baseline;
+    assert.equal(unavailable.revisions[0].qriAvailability.publishedCount, 0);
+    assert.equal(unavailable.revisions[0].comparisonReference, null);
+    assert.equal((await baselineApi.validateBaseline(unavailable)).valid, true);
+});
+
+test("baseline v2 validator rejects availability, reason, count and reference inconsistencies", async () => {
+    const candidate = await baselineApi.createCandidate(await fixture(), NOW,
+        { qriAvailability: qriAvailable(), comparisonReference: formalReference() });
+    const baseline = (await baselineApi.saveCandidate(null, candidate, "2026-08-18")).baseline;
+    const cases = [
+        x => { x.revisions[0].qriAvailability.openInterestStatus = "invalid"; },
+        x => { x.revisions[0].qriAvailability.publishedCount = -1; },
+        x => { x.revisions[0].qriAvailability.reason = "unexpected"; },
+        x => { x.revisions[0].comparisonReference = null; },
+        x => { x.revisions[0].qriAvailability.formalRevisionAvailable = false; }
+    ];
+    for (const change of cases) {
+        const invalid = mutate(baseline, change);
+        assert.ok((await baselineApi.validateBaseline(invalid)).errors.includes("qri_availability_invalid"));
+    }
+});
+
+test("same-day legacy v1 update creates v2 active revision without rewriting v1", async () => {
+    const source = await fixture();
+    const legacyCandidate = await baselineApi.createCandidate(source, NOW);
+    const legacy = (await baselineApi.saveCandidate(null, legacyCandidate, source.marketDate)).baseline;
+    const originalRevision = structuredClone(legacy.revisions[0]);
+    const v2Candidate = await baselineApi.createCandidate(source, LATER,
+        { qriAvailability: qriAvailable(), comparisonReference: formalReference() });
+    const updated = (await baselineApi.saveCandidate(legacy, v2Candidate, source.marketDate,
+        { allowUpdate: true })).baseline;
+    assert.equal(updated.baselineVersion, 2);
+    assert.equal(updated.activeBaselineId, v2Candidate.baselineId);
+    assert.deepEqual({ ...updated.revisions[0], replacedAt: null }, originalRevision);
+    assert.equal(updated.revisions[0].replacedAt, LATER);
+    assert.equal(Object.hasOwn(updated.revisions[0], "qriAvailability"), false);
+    assert.equal((await baselineApi.validateBaseline(updated)).valid, true);
+});
+
+test("v1 storage remains read-only compatible and v2 baseline persists in the same namespace", async () => {
+    const source = await fixture();
+    const legacyCandidate = await baselineApi.createCandidate(source, NOW);
+    const legacy = (await baselineApi.saveCandidate(null, legacyCandidate, source.marketDate)).baseline;
+    const legacyStorage = await baselineApi.upsertStorage(baselineApi.createEmptyStorage(), legacy);
+    const before = structuredClone(legacyStorage);
+    assert.equal((await baselineApi.getForMarketDate(legacyStorage, source.marketDate)).baseline.baselineVersion, 1);
+    assert.deepEqual(legacyStorage, before);
+    const v2Candidate = await baselineApi.createCandidate(source, LATER,
+        { qriAvailability: qriUnavailable(), comparisonReference: null });
+    const v2 = (await baselineApi.saveCandidate(null, v2Candidate, source.marketDate)).baseline;
+    const stored = await baselineApi.upsertStorage(baselineApi.createEmptyStorage(), v2);
+    assert.equal(stored.storageVersion, 1);
+    assert.equal(stored.baselines[0].baselineVersion, 2);
 });
 
 test("unavailable summary cannot be captured", async () => {
@@ -91,7 +169,7 @@ test("validator rejects schema, date, timestamps, active/revision and duplicate 
     const candidate = await baselineApi.createCandidate(await fixture(), NOW);
     const valid = (await baselineApi.saveCandidate(null, candidate, "2026-08-18")).baseline;
     const cases = [
-        [x => { x.baselineVersion = 2; }, "baseline_version_invalid"],
+        [x => { x.baselineVersion = 3; }, "baseline_version_invalid"],
         [x => { x.marketDate = "2026-02-30"; }, "market_date_invalid"],
         [x => { x.firstCapturedAt = "bad"; }, "baseline_timestamp_invalid"],
         [x => { x.activeBaselineId = ""; }, "active_baseline_id_invalid"],
@@ -147,6 +225,31 @@ test("MobileSummary reflects only matching valid baseline and keeps comparison u
     const otherDate = await summary({ morningBaseline: { available: true,
         baseline: { ...baseline, marketDate: "2026-08-17" } } });
     assert.equal(otherDate.payload.morningBaseline.reason, "market_date_mismatch");
+});
+
+test("MobileSummary accepts Phase 3 comparison, signs it, and permits option partial failure", async () => {
+    const source = await fixture(); const candidate = await baselineApi.createCandidate(source, NOW);
+    const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+    const optionChanges = { available: false, reason: "baseline_revision_missing" };
+    const comparison = { changeSinceMorning: comparisonApi.createComparison({ marketDate: source.marketDate,
+        baselineRevision: candidate, currentSummary: source, optionChanges, comparedAt: LATER }), optionChanges };
+    const first = await summary({ generatedAt: LATER,
+        morningBaseline: { available: true, baseline }, comparison });
+    assert.equal((await mobile.validateMobileSummary(first)).valid, true);
+    assert.equal(first.payload.changeSinceMorning.available, true);
+    assert.equal(first.payload.optionChanges.reason, "baseline_revision_missing");
+    const second = await summary({ generatedAt: "2026-08-18T00:32:00.000Z",
+        morningBaseline: { available: true, baseline }, comparison });
+    assert.equal(first.signature, second.signature);
+    const newerSource = await fixture({ summary: { currentPrice: { ...input().currentPrice, value: 40100 } } });
+    const newerCandidate = await baselineApi.createCandidate(newerSource, LATER);
+    const newerBaseline = (await baselineApi.saveCandidate(baseline, newerCandidate, source.marketDate,
+        { allowUpdate: true })).baseline;
+    const changedComparison = { changeSinceMorning: comparisonApi.createComparison({ marketDate: source.marketDate,
+        baselineRevision: newerCandidate, currentSummary: source, optionChanges, comparedAt: LATER }), optionChanges };
+    const changedSummary = await summary({ generatedAt: LATER,
+        morningBaseline: { available: true, baseline: newerBaseline }, comparison: changedComparison });
+    assert.notEqual(first.signature, changedSummary.signature);
 });
 
 test("builder does not mutate baseline input", async () => {

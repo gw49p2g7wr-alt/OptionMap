@@ -14,6 +14,7 @@
     };
     const price = value => Number.isFinite(value) ? `${value.toLocaleString("ja-JP")}円` : "利用不可";
     const time = value => value ? new Date(value).toLocaleString("ja-JP") : "時刻なし";
+    const signed = value => Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value}` : "--";
 
     function render(summary) {
         const payload = summary.payload;
@@ -30,9 +31,35 @@
             : `候補なし（${level.reason}）`;
         text("mobileSummaryPreviewUpper", levelText(payload.nearestLevels.upper));
         text("mobileSummaryPreviewLower", levelText(payload.nearestLevels.lower));
-        text("mobileSummaryPreviewBaseline", "未設定（朝基準はまだ保存していません）");
-        text("mobileSummaryPreviewChange", "比較なし（朝基準未設定）");
-        text("mobileSummaryPreviewOptionChanges", "未生成（朝基準未設定）");
+        const change = payload.changeSinceMorning;
+        const baselineOverall = change.available && change.overallV2.available
+            ? `${change.overallV2.baselineLabel} ${signed(change.overallV2.baselineDirection)}`
+            : "v2利用不可";
+        const currentOverall = change.available && change.overallV2.available
+            ? `${change.overallV2.currentLabel} ${signed(change.overallV2.currentDirection)}`
+            : "v2利用不可";
+        text("mobileSummaryPreviewBaseline", payload.morningBaseline.available
+            ? `${time(payload.morningBaseline.capturedAt)} / ${change.available ? `${baselineOverall} / ` : ""}` +
+                `品質 ${payload.morningBaseline.dataQuality.status} / 朝QRI：${
+                    payload.morningBaseline.qriAvailability?.available ? "正式建玉あり" :
+                        payload.morningBaseline.qriAvailability?.openInterestStatus === "unavailable" ? "未提供" :
+                            payload.morningBaseline.qriAvailability === null ? "状態不明" : "比較不可"}`
+            : "未設定（朝基準はまだ保存していません）");
+        text("mobileSummaryPreviewChange", change.available
+            ? `${baselineOverall} → ${currentOverall} / ` +
+                `${change.currentPrice.available ? `現在値 ${change.currentPrice.delta > 0 ? "+" : ""}` +
+                    `${change.currentPrice.delta.toLocaleString("ja-JP")}円 / ` : ""}` +
+                `品質 ${change.dataQuality.baselineStatus} → ${change.dataQuality.currentStatus} / ` +
+                `${change.summaryItems.map(item => item.text).join(" / ") || "区分変化なし"}`
+            : window.OptionMapMobileMorningComparison.formatReason(change.reason));
+        const options = payload.optionChanges;
+        const topText = side => {
+            const up = side.topIncreases[0]; const down = side.topDecreases[0];
+            return `${up ? `${up.strike} +${up.delta}` : "増加なし"} / ${down ? `${down.strike} ${down.delta}` : "減少なし"}`;
+        };
+        text("mobileSummaryPreviewOptionChanges", options.available
+            ? `CALL ${topText(options.CALL)}、PUT ${topText(options.PUT)}`
+            : window.OptionMapMobileMorningComparison.formatReason(options.reason));
         text("mobileSummaryPreviewQuality", `${summary.dataQuality.status} / ` +
             (summary.dataQuality.warnings.join(", ") || "不足componentなし"));
         const alerts = document.getElementById("mobileSummaryPreviewAlerts");
@@ -48,7 +75,7 @@
         if (saveButton) saveButton.disabled = summary.dataQuality.status === "unavailable" || saveInProgress;
     }
 
-    async function createInput(qri) {
+    async function createInput(qri, comparison = null) {
         const state = window.getMobileSummaryRendererState?.();
         if (!state) throw new Error("renderer_state_unavailable");
         const canonical = qri?.canonicalV2 || null;
@@ -76,14 +103,103 @@
             versionKey, pageUpdatedAt: canonical?.pageUpdatedAt || null, fetchedAt: qri?.fetchedAt || null,
             usingFallback: state.qriOpenInterest?.usingFallback === true }, sourceVersions,
         morningBaseline,
-        freshness: state.freshness };
+        freshness: state.freshness, comparison };
+    }
+
+    async function createComparison(qri, initialSummary, input) {
+        const baselineResult = input.morningBaseline;
+        if (!baselineResult?.available) return null;
+        const baseline = baselineResult.baseline;
+        const active = window.OptionMapMorningBaseline.activeRevision(baseline);
+        if (!active || baseline.marketDate !== initialSummary.marketDate) return {
+            changeSinceMorning: { available: false, reason: "market_date_mismatch" },
+            optionChanges: { available: false, reason: "market_date_mismatch" } };
+        let resolved;
+        try {
+            const loaded = await window.OptionMapQriOptionsHistoryStore.loadHistory();
+            resolved = loaded?.status === "corrupted"
+                ? { available: false, reason: "history_corrupted" }
+                : await window.OptionMapMobileMorningComparison
+                    .resolveBaselineQriRevision(loaded?.history, baseline);
+        } catch (_error) {
+            resolved = { available: false, reason: "history_corrupted" };
+        }
+        const qriSource = initialSummary.sourceVersions.find(item => item.source === "qri-options");
+        let optionChanges = { available: false, reason: resolved.reason || "baseline_revision_missing" };
+        if (resolved.available) optionChanges = await window.OptionMapMobileMorningComparison.compareQriIntraday({
+            marketDate: initialSummary.marketDate, baselineCanonical: resolved.revision.canonical,
+            baselineVersionKey: active.comparisonReference.versionKey,
+            baselineSignature: active.comparisonReference.signature,
+            currentCanonical: qri?.canonicalV2 || null, currentVersionKey: qriSource?.versionKey || null,
+            currentSignature: qriSource?.signature || null });
+        const changeSinceMorning = window.OptionMapMobileMorningComparison.createComparison({
+            marketDate: initialSummary.marketDate, baselineRevision: active,
+            currentSummary: initialSummary, optionChanges, comparedAt: initialSummary.generatedAt });
+        return { changeSinceMorning, optionChanges,
+            pins: { baselineId: active.baselineId,
+                baselineSignature: active.sourceSummarySignature,
+                baselineQriVersionKey: active.comparisonReference?.versionKey || null,
+                currentSummaryId: initialSummary.summaryId, currentSummarySignature: initialSummary.signature,
+                currentQriVersionKey: qriSource?.versionKey || null } };
+    }
+
+    async function captureQriAvailability(summary) {
+        const canonical = latestQri?.canonicalV2 || null;
+        const persistence = window.getQriOptionsHistoryPersistenceState?.() || {};
+        const source = summary.sourceVersions.find(item => item.source === "qri-options");
+        if (!canonical || !source) return { qriAvailability: { canonicalExists: false,
+            available: false, openInterestStatus: null, reason: "canonical_missing",
+            publishedCount: null, formalRevisionAvailable: false,
+            persistenceStatus: persistence.status || null, persistenceReason: persistence.reason || null },
+        comparisonReference: null };
+        const publishedCount = canonical.records.filter(record => record.published === true).length;
+        let formalRevisionAvailable = false;
+        try {
+            const loaded = await window.OptionMapQriOptionsHistoryStore.loadHistory();
+            formalRevisionAvailable = loaded.status === "ready" && loaded.history.entries.some(entry =>
+                entry.contract === canonical.contract && entry.sourceDateKey === canonical.tradingDate &&
+                entry.revisions.some(revision => revision.versionKey === source.versionKey &&
+                    `sha256:${revision.signature}` === source.signature));
+        } catch (_error) { formalRevisionAvailable = false; }
+        const formallyComparable = canonical.openInterestStatus === "available" &&
+            publishedCount > 0 && formalRevisionAvailable;
+        const reason = formallyComparable ? null : canonical.openInterestStatus === "unavailable"
+            ? "open_interest_unavailable" : canonical.openInterestStatus === "partial"
+                ? "open_interest_partial" : "formal_revision_missing_at_capture";
+        return { qriAvailability: { canonicalExists: true, available: formallyComparable,
+            openInterestStatus: canonical.openInterestStatus, reason, publishedCount,
+            formalRevisionAvailable, persistenceStatus: persistence.status || null,
+            persistenceReason: persistence.reason || null }, comparisonReference: formallyComparable
+            ? { contract: source.contract, tradingDate: source.tradingDate,
+                versionKey: source.versionKey, signature: source.signature,
+                pageUpdatedAt: summary.freshness.qriAt } : null };
     }
 
     async function update(qriPayload) {
         if (qriPayload) latestQri = clone(qriPayload);
         try {
-            const summary = await window.OptionMapMobileSummary.buildMobileSummary(
-                await createInput(latestQri));
+            const input = await createInput(latestQri);
+            const initial = await window.OptionMapMobileSummary.buildMobileSummary(input);
+            const comparison = await createComparison(latestQri, initial, input);
+            if (comparison?.pins) {
+                const currentBaseline = await window.OptionMapMorningBaselineStorage
+                    .getForMarketDate(initial.marketDate);
+                const currentActive = currentBaseline.available
+                    ? window.OptionMapMorningBaseline.activeRevision(currentBaseline.baseline) : null;
+                const liveInput = await createInput(latestQri);
+                const liveQriVersion = liveInput.sourceVersions.find(item => item.source === "qri-options")?.versionKey || null;
+                const liveCandidate = await window.OptionMapMobileSummary.buildMobileSummary(liveInput);
+                if (currentActive?.baselineId !== comparison.pins.baselineId ||
+                    currentActive?.sourceSummarySignature !== comparison.pins.baselineSignature ||
+                    (currentActive?.comparisonReference?.versionKey || null) !==
+                        comparison.pins.baselineQriVersionKey ||
+                    liveQriVersion !== comparison.pins.currentQriVersionKey ||
+                    liveCandidate.summaryId !== comparison.pins.currentSummaryId ||
+                    liveCandidate.signature !== comparison.pins.currentSummarySignature)
+                    throw new Error("stale_comparison_rejected");
+            }
+            const finalInput = clone(input); finalInput.comparison = comparison;
+            const summary = comparison ? await window.OptionMapMobileSummary.buildMobileSummary(finalInput) : initial;
             latestSummary = summary;
             render(summary);
             await renderMorningBaselineState(summary.marketDate);
@@ -130,7 +246,9 @@
                 "一部データが不足しています。この状態を今日の朝基準として保存しますか？")) {
                 return { success: false, reason: "partial_cancelled" };
             }
-            const candidate = await window.OptionMapMorningBaseline.createCandidate(summary);
+            const qriCapture = await captureQriAvailability(summary);
+            const candidate = await window.OptionMapMorningBaseline.createCandidate(
+                summary, new Date().toISOString(), qriCapture);
             const existingResult = await window.OptionMapMorningBaselineStorage
                 .getForMarketDate(summary.marketDate);
             if (existingResult.reason === "morning_baseline_corrupted")
