@@ -1515,3 +1515,25 @@ canvas {
     color: #555;
     font-size: 0.9rem;
 }
+.mobile-summary-preview {
+    margin-top: 16px;
+    padding: 12px;
+}
+.mobile-summary-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+}
+.mobile-summary-preview-grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 6px;
+}
+.mobile-summary-preview pre {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+}

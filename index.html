@@ -445,6 +445,28 @@
                         </p>
                     </div>
                 </div>
+
+                <details id="mobileSummaryPreviewPanel"
+                    class="mobile-summary-preview ui-category-panel category-system">
+                    <summary class="ui-category-title">📱 スマホ版 summary preview
+                        <span class="ui-category-badge">検証表示</span>
+                    </summary>
+                    <p id="mobileSummaryPreviewStatus">正式stateの更新完了待ちです。</p>
+                    <div class="mobile-summary-preview-grid">
+                        <div><span>総合判定 v2</span><strong id="mobileSummaryPreviewOverall">--</strong>
+                            <small id="mobileSummaryPreviewMetrics">--</small></div>
+                        <div><span>現在値</span><strong id="mobileSummaryPreviewPrice">--</strong></div>
+                        <div><span>上側重要帯</span><strong id="mobileSummaryPreviewUpper">--</strong></div>
+                        <div><span>下側重要帯</span><strong id="mobileSummaryPreviewLower">--</strong></div>
+                        <div><span>morning baseline</span><strong id="mobileSummaryPreviewBaseline">未設定</strong></div>
+                        <div><span>朝からの変化</span><strong id="mobileSummaryPreviewChange">比較なし</strong></div>
+                        <div><span>option changes</span><strong id="mobileSummaryPreviewOptionChanges">未生成</strong></div>
+                        <div><span>dataQuality</span><strong id="mobileSummaryPreviewQuality">--</strong></div>
+                    </div>
+                    <h5>alerts</h5><ul id="mobileSummaryPreviewAlerts"><li>--</li></ul>
+                    <h5>source freshness</h5><ul id="mobileSummaryPreviewFreshness"><li>--</li></ul>
+                    <details><summary>検証用JSON</summary><pre id="mobileSummaryPreviewJson"></pre></details>
+                </details>
             
                 <div class="weekly-broker-summary ui-category-panel category-futures">
 
@@ -867,6 +889,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/overallJudgmentV2.js"></script>
+<script src="js/mobileSummary.js"></script>
+<script src="js/mobileSummaryPreview.js"></script>
 <script src="js/participantData.js"></script>
 <script src="js/participantHistory.js"></script>
 <script src="js/participantActivity.js"></script>
@@ -4547,6 +4571,12 @@ function refreshAllMarketData() {
             weeklyFutures: weeklyResult.futuresResult,
             weeklyOptions: weeklyResult.optionsResult
         };
+
+        window.renderOptionMapOverallJudgmentV2?.();
+        await window.OptionMapMobileSummaryPreview?.update({
+            ...(qriResult?.data || {}),
+            fetchedAt: qriResult?.fetchedAt || null
+        });
 
         return {
             status: calculateMarketRefreshStatus(results),

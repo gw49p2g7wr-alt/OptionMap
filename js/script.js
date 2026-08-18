@@ -3467,6 +3467,7 @@ if (updateCurrentPriceButton && currentPriceInput) {
         }
 
         console.log("現在値を変更:", currentPrice);
+        void window.OptionMapMobileSummaryPreview?.update();
     });
 }
 function updateWallCandidates(labels, callValues, putValues) {
@@ -4611,6 +4612,26 @@ window.calculateOptionMapOverallJudgmentV2 =
     calculateOptionMapOverallJudgmentV2;
 window.renderOptionMapOverallJudgmentV2 =
     safeRenderOptionMapOverallJudgmentV2;
+window.getMobileSummaryRendererState = function () {
+    const clone = value => value == null
+        ? value : JSON.parse(JSON.stringify(value));
+    const result = optionMapJudgmentStateV2.result ||
+        calculateOptionMapOverallJudgmentV2();
+    return {
+        overallV2: clone(result),
+        weeklyCandidate: clone(optionMapJudgmentStateV2.weeklyCandidate),
+        currentPrice: clone(currentPriceState),
+        qriOpenInterest: clone(qriOpenInterestDataState),
+        freshness: {
+            weeklyFuturesAt:
+                window.dataFetchState?.weeklyFutures?.fetchedAt || null,
+            weeklyOptionsAt:
+                window.dataFetchState?.weeklyOptions?.fetchedAt || null,
+            participantAt:
+                window.dataFetchState?.participant?.fetchedAt || null
+        }
+    };
+};
 
 function invalidateOptionMarketJudgment() {
     optionMapJudgmentState.option = {
