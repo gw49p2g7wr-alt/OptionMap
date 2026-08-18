@@ -65,7 +65,9 @@ test("current price availability and manual source are retained", async () => {
 
 test("baseline, morning changes and option changes are explicitly unavailable", async () => {
     const summary = await build();
-    assert.deepEqual(summary.payload.morningBaseline, { available: false, reason: "not_captured" });
+    assert.deepEqual(summary.payload.morningBaseline, { available: false, reason: "not_captured",
+        baselineId: null, capturedAt: null, dataQuality: null, sourceSummaryId: null,
+        sourceSummarySignature: null });
     assert.deepEqual(summary.payload.changeSinceMorning,
         { available: false, reason: "morning_baseline_missing" });
     assert.deepEqual(summary.payload.optionChanges,

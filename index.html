@@ -452,6 +452,11 @@
                         <span class="ui-category-badge">検証表示</span>
                     </summary>
                     <p id="mobileSummaryPreviewStatus">正式stateの更新完了待ちです。</p>
+                    <div class="morning-baseline-controls">
+                        <button id="saveMorningBaselineButton" type="button">☀️ 今日の朝基準として保存</button>
+                        <strong id="morningBaselineSaveStatus">朝基準：未設定</strong>
+                        <span id="morningBaselineSaveMessage" role="status"></span>
+                    </div>
                     <div class="mobile-summary-preview-grid">
                         <div><span>総合判定 v2</span><strong id="mobileSummaryPreviewOverall">--</strong>
                             <small id="mobileSummaryPreviewMetrics">--</small></div>
@@ -890,6 +895,8 @@
 <script src="js/ai.js"></script>
 <script src="js/overallJudgmentV2.js"></script>
 <script src="js/mobileSummary.js"></script>
+<script src="js/morningBaseline.js"></script>
+<script src="js/morningBaselineStorage.js"></script>
 <script src="js/mobileSummaryPreview.js"></script>
 <script src="js/participantData.js"></script>
 <script src="js/participantHistory.js"></script>
@@ -4595,6 +4602,7 @@ function refreshAllMarketData() {
 }
 
 window.refreshAllMarketData = refreshAllMarketData;
+window.isMarketRefreshInProgress = () => marketRefreshPromise !== null;
 
 Promise.all([
     initializeWeeklyCaches(),

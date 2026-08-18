@@ -173,6 +173,28 @@
             warnings: missing };
     }
 
+    function buildMorningBaseline(input, marketDate) {
+        const baseline = input?.baseline;
+        if (input?.available !== true || !isObject(baseline)) {
+            return { available: false, reason: typeof input?.reason === "string"
+                ? input.reason : "not_captured", baselineId: null, capturedAt: null,
+            dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+        }
+        if (baseline.marketDate !== marketDate) {
+            return { available: false, reason: "market_date_mismatch", baselineId: null,
+                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+        }
+        const revision = baseline.revisions?.find(item => item.baselineId === baseline.activeBaselineId);
+        if (!revision) {
+            return { available: false, reason: "morning_baseline_corrupted", baselineId: null,
+                capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null };
+        }
+        return { available: true, reason: null, baselineId: revision.baselineId,
+            capturedAt: revision.capturedAt, dataQuality: clone(revision.dataQuality),
+            sourceSummaryId: revision.sourceSummaryId,
+            sourceSummarySignature: revision.sourceSummarySignature };
+    }
+
     function compactSourceVersions(input) {
         const output = [];
         for (const source of input || []) {
@@ -201,9 +223,11 @@
                 ? "qri_unavailable" : "current_price_unavailable"), lower: unavailableLevel("lower",
             currentPrice.available ? "qri_unavailable" : "current_price_unavailable") };
         }
-        const morningBaseline = { available: false, reason: "not_captured" };
-        const changeSinceMorning = { available: false, reason: "morning_baseline_missing" };
-        const optionChanges = { available: false, reason: "morning_baseline_missing", items: [] };
+        const morningBaseline = buildMorningBaseline(source.morningBaseline, source.marketDate);
+        const changeSinceMorning = { available: false, reason: morningBaseline.available
+            ? "comparison_not_implemented" : "morning_baseline_missing" };
+        const optionChanges = { available: false, reason: morningBaseline.available
+            ? "comparison_not_implemented" : "morning_baseline_missing", items: [] };
         const alerts = buildAlerts({ overallV2, currentPrice, nearestLevels, qri,
             morningBaseline, observedAt: generatedAt });
         const payload = { overallV2, currentPrice, nearestLevels, morningBaseline,
@@ -277,14 +301,24 @@
             }
         }
         const baseline = summary?.payload?.morningBaseline;
-        if (!isObject(baseline) || baseline.available !== false || baseline.reason !== "not_captured")
-            errors.push("morning_baseline_invalid");
+        const baselineKeys = ["available", "reason", "baselineId", "capturedAt", "dataQuality",
+            "sourceSummaryId", "sourceSummarySignature"];
+        if (!hasExactKeys(baseline, baselineKeys) || typeof baseline.available !== "boolean" ||
+            baseline.available && (baseline.reason !== null || !/^mb1-[a-f0-9]{24}$/.test(baseline.baselineId || "") ||
+                !validTimestamp(baseline.capturedAt) || !["complete", "partial"].includes(baseline.dataQuality?.status) ||
+                !/^ms1-[a-f0-9]{24}$/.test(baseline.sourceSummaryId || "") ||
+                !/^[a-f0-9]{64}$/.test(baseline.sourceSummarySignature || "")) ||
+            !baseline.available && (typeof baseline.reason !== "string" || baseline.baselineId !== null ||
+                baseline.capturedAt !== null || baseline.dataQuality !== null || baseline.sourceSummaryId !== null ||
+                baseline.sourceSummarySignature !== null)) errors.push("morning_baseline_invalid");
         const change = summary?.payload?.changeSinceMorning;
-        if (!isObject(change) || change.available !== false || change.reason !== "morning_baseline_missing")
+        if (!isObject(change) || change.available !== false || change.reason !==
+            (baseline?.available ? "comparison_not_implemented" : "morning_baseline_missing"))
             errors.push("change_since_morning_invalid");
         const optionChanges = summary?.payload?.optionChanges;
         if (!isObject(optionChanges) || optionChanges.available !== false ||
-            optionChanges.reason !== "morning_baseline_missing" || !Array.isArray(optionChanges.items) || optionChanges.items.length)
+            optionChanges.reason !== (baseline?.available ? "comparison_not_implemented" : "morning_baseline_missing") ||
+            !Array.isArray(optionChanges.items) || optionChanges.items.length)
             errors.push("option_changes_invalid");
         const alerts = summary?.payload?.alerts;
         if (!Array.isArray(alerts) || new Set(alerts?.map(alert => alert?.code)).size !== alerts?.length ||
