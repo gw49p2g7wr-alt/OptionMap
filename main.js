@@ -195,7 +195,8 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
   
         return {
             success: true,
-            html: pageInfo.html
+            html: pageInfo.html,
+            sourceUrl: fetchWindow.webContents.getURL()
         };
     } catch (error) {
         console.error(

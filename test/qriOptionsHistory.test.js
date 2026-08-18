@@ -186,3 +186,22 @@ test("renderer wiring persists only in fetchQriData and leaves specific path dis
     assert.match(normal, /persistQriOptionsHistory/);
     assert.doesNotMatch(normal, /optionMapJpxSnapshots/);
 });
+
+test("active refreshはpartial manifestを生成し非active QRIを巡回しない", () => {
+    const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+    const update = html.slice(html.indexOf("async function updateQriContractManifest"),
+        html.indexOf('qriContractSelect?.addEventListener("change"'));
+    assert.match(update, /createPartialManifest\(defaultPayload\.canonicalV2\)/);
+    assert.doesNotMatch(update, /Promise\.all|fetch-option-page|parseQriOptionsBundle/);
+});
+
+test("unresolved lazy fetchは表示専用でsequence確認後だけmanifestへ反映する", () => {
+    const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+    const lazy = html.slice(html.indexOf("async function showUnresolvedQriEntry"),
+        html.indexOf("async function updateQriContractManifest"));
+    assert.match(lazy, /qriLazyManifestResolver\.resolve/);
+    assert.match(lazy, /ipcRenderer\.invoke\("fetch-option-page", url\)/);
+    assert.match(lazy, /sequence !== qriContractSelectionState\.requestSequence/);
+    assert.match(lazy, /qriContractManifest = resolved\.manifest/);
+    assert.doesNotMatch(lazy, /persistQriOptionsHistory|morningBaseline|overallJudgment/);
+});

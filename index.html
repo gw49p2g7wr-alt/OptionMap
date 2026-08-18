@@ -961,9 +961,9 @@ const qriOptionsHistoryPersistence =
 let qriOptionsHistoryComparisonSequence = 0;
 
 function selectedQriHistoryContract() {
-    return qriContractSelectionState?.mode === "specific"
-        ? qriContractSelectionState.contract
-        : qriContractManifest?.defaultContract || null;
+    if (qriContractSelectionState?.mode === "specific") return qriContractSelectionState.contract;
+    return qriContractSelectionState?.mode === "auto"
+        ? qriContractManifest?.defaultContract || null : null;
 }
 
 function appendQriComparisonList(parent, title, items) {
@@ -3684,6 +3684,7 @@ const qriContractSelect = document.getElementById("qriContractSelect");
 const qriContractSelectionNote = document.getElementById("qriContractSelectionNote");
 let qriContractManifest = null;
 let qriContractSelectionState = window.OptionMapQriOptionsSelection.createState();
+const qriLazyManifestResolver = window.OptionMapQriOptionsSelection.createLazyManifestResolver();
 let qriManifestSequence = 0;
 
 function setQriContractSelectionNote(text, status) {
@@ -3696,11 +3697,14 @@ function setQriContractSelectionNote(text, status) {
 function renderQriContractOptions() {
     if (!qriContractSelect || !qriContractManifest) return;
     const selectedValue = qriContractSelectionState.mode === "specific"
-        ? qriContractSelectionState.contract : "auto";
+        ? qriContractSelectionState.contract
+        : qriContractSelectionState.mode === "unresolved"
+            ? qriContractSelectionState.selectionKey : "auto";
     const options = window.OptionMapQriOptionsSelection.createSelectOptions(qriContractManifest);
     qriContractSelect.replaceChildren(...options.map(item => {
         const option = document.createElement("option");
-        option.value = item.value; option.textContent = item.label; return option;
+        option.value = item.value; option.textContent = item.label;
+        option.disabled = item.disabled === true; return option;
     }));
     if ([...qriContractSelect.options].some(option => option.value === selectedValue)) {
         qriContractSelect.value = selectedValue;
@@ -3754,7 +3758,7 @@ async function showSpecificQriContract(contract) {
             setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
             return { status: "fetch_failed" };
         }
-        const payload = createQriPayload(response.html, listed.url);
+        const payload = createQriPayload(response.html, response.sourceUrl);
         const valid = validateQriPayload(payload) &&
             window.OptionMapQriOptionsSelection.validateSpecificResult({ requestedContract: contract,
                 requestedUrl: listed.url, manifest: qriContractManifest, canonical: payload.canonicalV2,
@@ -3785,20 +3789,85 @@ async function showSpecificQriContract(contract) {
     }
 }
 
-async function updateQriContractManifest(defaultHtml, defaultPayload) {
+async function showUnresolvedQriEntry(selectionKey) {
+    const entry = qriContractManifest?.availableContracts.find(item =>
+        item.contract === null && item.selectionKey === selectionKey);
+    if (!entry) return { status: "unavailable" };
+    qriContractSelectionState = window.OptionMapQriOptionsSelection.beginRequest(
+        qriContractSelectionState);
+    const sequence = qriContractSelectionState.requestSequence;
+    qriContractSelect?.setAttribute("aria-busy", "true");
+    window.setQriContractDisplayUnavailable?.(null);
+    setQriContractSelectionNote(
+        `表示用：${entry.label}を確認中…（総合判定には未使用）`, "loading");
+    try {
+        const resolved = await qriLazyManifestResolver.resolve({
+            manifest: qriContractManifest,
+            selectionKey,
+            validateCanonical: window.OptionMapQriOptions.validateCanonical,
+            load: async url => {
+                const response = await ipcRenderer.invoke("fetch-option-page", url);
+                if (!response.success) throw new Error(`lazy_fetch_failed:${response.error || "unknown"}`);
+                if (response.sourceUrl !== url) throw new Error("lazy_source_url_mismatch");
+                const payload = createQriPayload(response.html, response.sourceUrl);
+                if (!validateQriPayload(payload) || !payload.canonicalV2) {
+                    throw new Error("lazy_payload_invalid");
+                }
+                return { canonical: payload.canonicalV2, payload };
+            }
+        });
+        if (sequence !== qriContractSelectionState.requestSequence ||
+            qriContractSelectionState.selectionKey !== selectionKey) {
+            return { status: "stale_ignored" };
+        }
+        const display = createSpecificDisplayData(resolved.payload, resolved.canonical);
+        if (!display || !window.setQriContractDisplayData?.(display)) {
+            throw new Error("display_data_invalid");
+        }
+        qriContractManifest = resolved.manifest;
+        qriContractSelectionState = { ...qriContractSelectionState, mode: "specific",
+            contract: resolved.canonical.contract, selectionKey: null };
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+            qriContractSelectionState, sequence, { status: "ready" });
+        renderQriContractOptions();
+        void renderQriOptionsHistoryComparison();
+        const unavailable = resolved.canonical.openInterestStatus !== "available";
+        setQriContractSelectionNote(unavailable
+            ? `表示用：${resolved.canonical.contract}限。この限月の建玉残は現在利用できません。本日の取引高のみ表示できます。総合判定には未使用`
+            : `表示用：${resolved.canonical.contract}限（総合判定には未使用）`,
+        unavailable ? "unavailable" : "ready");
+        return { status: unavailable ? "unavailable" : "ready",
+            canonical: resolved.canonical };
+    } catch (error) {
+        if (sequence !== qriContractSelectionState.requestSequence) {
+            return { status: "stale_ignored" };
+        }
+        const fetchFailed = String(error?.message || error).startsWith("lazy_fetch_failed:");
+        const status = fetchFailed ? "fetch_failed" : "validation_failed";
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
+            qriContractSelectionState, sequence, { status, error: error?.message });
+        setQriContractSelectionNote(`表示用：${entry.label}の確認に失敗しました。総合判定には未使用`, status);
+        return { status, error: error?.message };
+    } finally {
+        if (sequence === qriContractSelectionState.requestSequence) {
+            qriContractSelect?.removeAttribute("aria-busy");
+        }
+    }
+}
+
+async function updateQriContractManifest(defaultPayload) {
     const manifestSequence = ++qriManifestSequence;
     try {
-        const links = defaultPayload.canonicalV2?.availableContracts || [];
-        if (!defaultPayload.canonicalV2 || links.length === 0) throw new Error("manifest_missing");
-        const linkedPages = await Promise.all(links.filter(item => !item.active).map(async item => {
-            const response = await ipcRenderer.invoke("fetch-option-page", item.url);
-            if (!response.success) throw new Error(response.error || "contract_fetch_failed");
-            return { sourceUrl: item.url, html: response.html };
-        }));
+        if (!defaultPayload.canonicalV2) throw new Error("manifest_missing");
+        const partialManifest = window.OptionMapQriOptionsSelection
+            .createPartialManifest(defaultPayload.canonicalV2);
+        if (!window.OptionMapQriOptionsSelection.validateManifest(partialManifest)) {
+            throw new Error("manifest_invalid");
+        }
         if (manifestSequence !== qriManifestSequence) return { status: "stale_ignored" };
-        qriContractManifest = window.OptionMapQriOptions.parseQriOptionsBundle([
-            { sourceUrl: defaultPayload.canonicalV2.sourceUrl, html: defaultHtml }, ...linkedPages
-        ], defaultPayload.canonicalV2.sourceUrl);
+        qriContractManifest = partialManifest;
+        qriContractSelectionState = window.OptionMapQriOptionsSelection.invalidateRequest(
+            qriContractSelectionState);
         renderQriContractOptions();
         if (qriContractSelectionState.mode === "specific") {
             if (!qriContractManifest.availableContracts.some(item =>
@@ -3824,6 +3893,8 @@ async function updateQriContractManifest(defaultHtml, defaultPayload) {
 
 qriContractSelect?.addEventListener("change", () => {
     const value = qriContractSelect.value;
+    qriContractSelectionState = window.OptionMapQriOptionsSelection.invalidateRequest(
+        qriContractSelectionState);
     qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
         qriContractSelectionState, value, qriContractManifest);
     void renderQriOptionsHistoryComparison();
@@ -3831,6 +3902,10 @@ qriContractSelect?.addEventListener("change", () => {
         window.clearQriContractDisplayData?.();
         setQriContractSelectionNote(
             `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
+        return;
+    }
+    if (qriContractSelectionState.mode === "unresolved") {
+        void showUnresolvedQriEntry(value);
         return;
     }
     void showSpecificQriContract(value);
@@ -4036,7 +4111,7 @@ async function fetchQriData({ requestId } = {}) {
             error: null
         });
 
-        void updateQriContractManifest(result.html, payload);
+        void updateQriContractManifest(payload);
 
         return {
             source,
