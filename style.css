@@ -1517,20 +1517,64 @@ canvas {
 }
 .mobile-summary-preview {
     margin-top: 16px;
-    padding: 12px;
+    padding: 16px;
 }
 .mobile-summary-preview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
 }
-.mobile-summary-preview-grid > div {
+.mobile-summary-card {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding: 8px;
-    border: 1px solid rgba(128, 128, 128, 0.3);
-    border-radius: 6px;
+    gap: 7px;
+    min-width: 0;
+    padding: 14px 15px;
+    border: 1px solid #dfe5ec;
+    border-left: 4px solid #98a2b3;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+.mobile-summary-card > span {
+    color: #667085;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+.mobile-summary-card > strong {
+    color: #243142;
+    font-size: 1.05rem;
+    line-height: 1.45;
+}
+.mobile-summary-card > small {
+    color: #7b8492;
+    font-size: .78rem;
+    line-height: 1.45;
+}
+.mobile-summary-card-overall,
+.mobile-summary-card-change {
+    grid-column: span 2;
+}
+.mobile-summary-card-overall > strong,
+.mobile-summary-card-price > strong,
+.mobile-summary-card-change > strong {
+    font-size: 1.35rem;
+}
+.mobile-summary-card-overall.is-buy { background: #f2faf6; border-left-color: #4f8b6b; }
+.mobile-summary-card-overall.is-sell { background: #fdf5f4; border-left-color: #b56762; }
+.mobile-summary-card-overall.is-neutral { background: #f6f7f9; border-left-color: #87909e; }
+.mobile-summary-card-price { background: #f5f8fb; border-left-color: #70859f; }
+.mobile-summary-card-morning { background: #fff9ec; border-left-color: #d09a37; }
+.mobile-summary-card-change { background: #f5f6fb; border-left-color: #7379a5; }
+.mobile-summary-card-upper { background: #fdf5f4; border-left-color: #bd746f; }
+.mobile-summary-card-lower { background: #f2f8fc; border-left-color: #5f8eb0; }
+.mobile-summary-card-options { background: #f8f6fb; border-left-color: #8b78a3; }
+.mobile-summary-card-quality.is-complete { background: #f2faf6; border-left-color: #4f8b6b; }
+.mobile-summary-card-quality.is-partial { background: #fff9ec; border-left-color: #d09a37; }
+.mobile-summary-card-quality.is-unavailable { background: #f7f7f8; border-left-color: #98a2b3; }
+@media (max-width: 620px) {
+    .mobile-summary-card-overall,
+    .mobile-summary-card-change { grid-column: span 1; }
 }
 .mobile-summary-preview pre {
     max-height: 320px;

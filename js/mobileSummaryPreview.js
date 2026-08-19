@@ -16,6 +16,22 @@
     const price = value => Number.isFinite(value) ? `${value.toLocaleString("ja-JP")}円` : "利用不可";
     const time = value => value ? new Date(value).toLocaleString("ja-JP") : "時刻なし";
     const signed = value => Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value}` : "--";
+    const qualityLabel = value => ({ complete: "データ良好", partial: "一部データ不足",
+        unavailable: "データ利用不可" })[value] || "状態不明";
+    const freshnessLabel = key => ({ currentPriceAt: "現在値", qriAt: "QRIオプション",
+        weeklyFuturesAt: "週次先物", weeklyOptionsAt: "週次オプション",
+        participantAt: "参加者別" })[key] || key;
+    const reasonLabel = reason => ({ candidate_missing: "現在値付近に該当候補がありません",
+        legacy_exact_match_only: "従来形式の朝基準のため、現在は比較対象外です",
+        session_mismatch: "保存済みの朝基準は現在の比較時間外です",
+        not_captured: "朝基準はまだ保存されていません",
+        current_state_invalid: "現在の市場状態を確認できません" })[reason] ||
+        window.OptionMapMobileMorningComparison.formatReason(reason);
+    const setCardState = (id, state, states) => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        states.forEach(item => element.classList.toggle(`is-${item}`, item === state));
+    };
 
     function render(summary) {
         const payload = summary.payload;
@@ -23,13 +39,17 @@
         text("mobileSummaryPreviewOverall", payload.overallV2.available
             ? `${payload.overallV2.directionLabel} (${payload.overallV2.direction > 0 ? "+" : ""}${payload.overallV2.direction})`
             : "総合判定v2：利用不可");
-        text("mobileSummaryPreviewMetrics", `信頼度 ${payload.overallV2.confidence ?? "--"}% / ` +
-            `coverage ${payload.overallV2.coverage ?? "--"}% / agreement ${payload.overallV2.agreement ?? "--"}%`);
-        text("mobileSummaryPreviewPrice", `${price(payload.currentPrice.value)} / ` +
-            `${payload.currentPrice.source || "source不明"} / ${payload.currentPrice.mode || "mode不明"}`);
+        const overallState = !payload.overallV2.available ? "neutral" : payload.overallV2.direction > 0
+            ? "buy" : payload.overallV2.direction < 0 ? "sell" : "neutral";
+        setCardState("mobileSummaryPreviewOverallCard", overallState, ["buy", "sell", "neutral"]);
+        text("mobileSummaryPreviewMetrics", `信頼度 ${payload.overallV2.confidence ?? "--"}% ・ ` +
+            `網羅率 ${payload.overallV2.coverage ?? "--"}% ・ 一致度 ${payload.overallV2.agreement ?? "--"}%`);
+        text("mobileSummaryPreviewPrice", price(payload.currentPrice.value));
+        text("mobileSummaryPreviewPriceMeta", `${payload.currentPrice.source || "取得元不明"} ・ ` +
+            `${payload.currentPrice.mode || "方式不明"} ・ ${payload.currentPrice.contract || "限月不明"}`);
         const levelText = level => level.available
             ? `${price(level.price)}（距離 ${price(level.distance)} / 建玉 ${level.openInterest.toLocaleString("ja-JP")} / ${level.sourceContract}限）`
-            : `候補なし（${level.reason}）`;
+            : reasonLabel(level.reason);
         text("mobileSummaryPreviewUpper", levelText(payload.nearestLevels.upper));
         text("mobileSummaryPreviewLower", levelText(payload.nearestLevels.lower));
         const change = payload.changeSinceMorning;
@@ -41,39 +61,45 @@
             : "v2利用不可";
         text("mobileSummaryPreviewBaseline", payload.morningBaseline.available
             ? `${time(payload.morningBaseline.capturedAt)} / ${latestBaselineResolution?.activeRevision?.baselineDay
-                ? `運用日 ${latestBaselineResolution.activeRevision.baselineDay} / session有効 / ` : ""}` +
+                ? `運用日 ${latestBaselineResolution.activeRevision.baselineDay} / 比較時間内 / ` : ""}` +
                 `${change.available ? `${baselineOverall} / ` : ""}` +
-                `品質 ${payload.morningBaseline.dataQuality.status} / 朝QRI：${
+                `${qualityLabel(payload.morningBaseline.dataQuality.status)} / 朝QRI：${
                     payload.morningBaseline.qriAvailability?.available ? "正式建玉あり" :
                         payload.morningBaseline.qriAvailability?.openInterestStatus === "unavailable" ? "未提供" :
                             payload.morningBaseline.qriAvailability === null ? "状態不明" : "比較不可"}`
             : latestBaselineResolution?.baseline
                 ? "保存済み（現在の比較対象外）"
                 : "未設定（朝基準はまだ保存していません）");
+        const demandArrow = change.available && change.overallV2.available
+            ? change.overallV2.directionDelta > 0 ? "↑" : change.overallV2.directionDelta < 0 ? "↓" : "→" : "--";
+        const priceArrow = change.available && change.currentPrice.available
+            ? change.currentPrice.delta > 0 ? "↑" : change.currentPrice.delta < 0 ? "↓" : "→" : "--";
         text("mobileSummaryPreviewChange", change.available
-            ? `${baselineOverall} → ${currentOverall} / ` +
-                `${change.currentPrice.available ? `現在値 ${change.currentPrice.delta > 0 ? "+" : ""}` +
-                    `${change.currentPrice.delta.toLocaleString("ja-JP")}円 / ` : ""}` +
-                `品質 ${change.dataQuality.baselineStatus} → ${change.dataQuality.currentStatus} / ` +
-                `${change.summaryItems.map(item => item.text).join(" / ") || "区分変化なし"}`
-            : window.OptionMapMobileMorningComparison.formatReason(change.reason));
+            ? `需給 ${demandArrow}　価格 ${priceArrow}` : reasonLabel(change.reason));
+        text("mobileSummaryPreviewChangeMeta", change.available
+            ? `${baselineOverall} → ${currentOverall} ・ ` +
+                `${change.currentPrice.available ? `価格差 ${signed(change.currentPrice.delta)}円 ・ ` : ""}` +
+                `品質 ${qualityLabel(change.dataQuality.baselineStatus)} → ${qualityLabel(change.dataQuality.currentStatus)} ・ ` +
+                `${change.summaryItems.map(item => item.text).join(" / ") || "区分変化なし"}` : "比較情報なし");
         const options = payload.optionChanges;
         const topText = side => {
             const up = side.topIncreases[0]; const down = side.topDecreases[0];
-            return `${up ? `${up.strike} +${up.delta}` : "増加なし"} / ${down ? `${down.strike} ${down.delta}` : "減少なし"}`;
+            return `増加 ${up ? `${up.strike.toLocaleString("ja-JP")}（+${up.delta}）` : "なし"} / ` +
+                `減少 ${down ? `${down.strike.toLocaleString("ja-JP")}（${down.delta}）` : "なし"}`;
         };
         text("mobileSummaryPreviewOptionChanges", options.available
             ? `CALL ${topText(options.CALL)}、PUT ${topText(options.PUT)}`
-            : window.OptionMapMobileMorningComparison.formatReason(options.reason));
-        text("mobileSummaryPreviewQuality", `${summary.dataQuality.status} / ` +
-            (summary.dataQuality.warnings.join(", ") || "不足componentなし"));
+            : reasonLabel(options.reason));
+        text("mobileSummaryPreviewQuality", qualityLabel(summary.dataQuality.status));
+        setCardState("mobileSummaryPreviewQualityCard", summary.dataQuality.status,
+            ["complete", "partial", "unavailable"]);
         const alerts = document.getElementById("mobileSummaryPreviewAlerts");
         if (alerts) alerts.replaceChildren(...payload.alerts.map(alert => {
             const item = document.createElement("li"); item.textContent = alert.message; return item;
         }));
         const freshness = document.getElementById("mobileSummaryPreviewFreshness");
         if (freshness) freshness.replaceChildren(...Object.entries(summary.freshness).map(([key, value]) => {
-            const item = document.createElement("li"); item.textContent = `${key}: ${time(value)}`; return item;
+            const item = document.createElement("li"); item.textContent = `${freshnessLabel(key)}：${time(value)}`; return item;
         }));
         text("mobileSummaryPreviewJson", JSON.stringify(summary, null, 2));
         const saveButton = document.getElementById("saveMorningBaselineButton");
@@ -228,14 +254,14 @@
         if (!result.available) {
             text("morningBaselineSaveStatus", result.reason === "morning_baseline_corrupted"
                 ? "朝基準：保存データが壊れているため利用できません"
-                : result.baseline ? `朝基準：保存済み（現在の比較対象外：${result.reason}）`
+                : result.baseline ? `朝基準：保存済み（現在の比較対象外）— ${reasonLabel(result.reason)}`
                     : "朝基準：未設定");
             return;
         }
         const baseline = result.baseline;
         const active = window.OptionMapMorningBaseline.activeRevision(baseline);
         const format = value => new Date(value).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-        const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / session有効 / current ${marketDate}` : "";
+        const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / 比較時間内 / 市場日 ${marketDate}` : "";
         text("morningBaselineSaveStatus", baseline.revisions.length > 1
             ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${active.dataQuality.status}`
             : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${active.dataQuality.status}${session}`);

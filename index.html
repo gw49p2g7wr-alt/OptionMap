@@ -458,18 +458,20 @@
                         <span id="morningBaselineSaveMessage" role="status"></span>
                     </div>
                     <div class="mobile-summary-preview-grid">
-                        <div><span>総合判定 v2</span><strong id="mobileSummaryPreviewOverall">--</strong>
+                        <div id="mobileSummaryPreviewOverallCard" class="mobile-summary-card mobile-summary-card-overall"><span>総合判定 v2</span><strong id="mobileSummaryPreviewOverall">--</strong>
                             <small id="mobileSummaryPreviewMetrics">--</small></div>
-                        <div><span>現在値</span><strong id="mobileSummaryPreviewPrice">--</strong></div>
-                        <div><span>上側重要帯</span><strong id="mobileSummaryPreviewUpper">--</strong></div>
-                        <div><span>下側重要帯</span><strong id="mobileSummaryPreviewLower">--</strong></div>
-                        <div><span>morning baseline</span><strong id="mobileSummaryPreviewBaseline">未設定</strong></div>
-                        <div><span>朝からの変化</span><strong id="mobileSummaryPreviewChange">比較なし</strong></div>
-                        <div><span>option changes</span><strong id="mobileSummaryPreviewOptionChanges">未生成</strong></div>
-                        <div><span>dataQuality</span><strong id="mobileSummaryPreviewQuality">--</strong></div>
+                        <div class="mobile-summary-card mobile-summary-card-price"><span>現在値</span>
+                            <strong id="mobileSummaryPreviewPrice">--</strong><small id="mobileSummaryPreviewPriceMeta">--</small></div>
+                        <div class="mobile-summary-card mobile-summary-card-upper"><span>上側重要帯</span><strong id="mobileSummaryPreviewUpper">--</strong></div>
+                        <div class="mobile-summary-card mobile-summary-card-lower"><span>下側重要帯</span><strong id="mobileSummaryPreviewLower">--</strong></div>
+                        <div class="mobile-summary-card mobile-summary-card-morning"><span>朝基準</span><strong id="mobileSummaryPreviewBaseline">未設定</strong></div>
+                        <div class="mobile-summary-card mobile-summary-card-change"><span>朝からの変化</span>
+                            <strong id="mobileSummaryPreviewChange">比較なし</strong><small id="mobileSummaryPreviewChangeMeta">--</small></div>
+                        <div class="mobile-summary-card mobile-summary-card-options"><span>オプション変化</span><strong id="mobileSummaryPreviewOptionChanges">未生成</strong></div>
+                        <div id="mobileSummaryPreviewQualityCard" class="mobile-summary-card mobile-summary-card-quality"><span>データ品質</span><strong id="mobileSummaryPreviewQuality">--</strong></div>
                     </div>
-                    <h5>alerts</h5><ul id="mobileSummaryPreviewAlerts"><li>--</li></ul>
-                    <h5>source freshness</h5><ul id="mobileSummaryPreviewFreshness"><li>--</li></ul>
+                    <h5>お知らせ</h5><ul id="mobileSummaryPreviewAlerts"><li>--</li></ul>
+                    <h5>データ更新時刻</h5><ul id="mobileSummaryPreviewFreshness"><li>--</li></ul>
                     <details><summary>検証用JSON</summary><pre id="mobileSummaryPreviewJson"></pre></details>
                 </details>
             
