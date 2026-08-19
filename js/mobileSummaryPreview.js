@@ -137,7 +137,22 @@
             versionKey, pageUpdatedAt: canonical?.pageUpdatedAt || null, fetchedAt: qri?.fetchedAt || null,
             usingFallback: state.qriOpenInterest?.usingFallback === true }, sourceVersions,
         morningBaseline,
-        freshness: state.freshness, comparison };
+        freshness: state.freshness, comparison,
+        observationState: { overallV2: state.overallV2, currentPrice: state.currentPrice,
+            qriOpenInterest: state.qriOpenInterest } };
+    }
+
+    async function resolveFormalQriReference(summary) {
+        const source = summary.sourceVersions.find(item => item.source === "qri-options");
+        if (!source?.versionKey) return { formalRevisionAvailable: false, confirmedAt: null };
+        try {
+            const loaded = await window.OptionMapQriOptionsHistoryStore?.loadHistory();
+            const revision = loaded?.status === "ready" ? loaded.history.entries
+                .flatMap(entry => entry.revisions).find(item => item.versionKey === source.versionKey) : null;
+            return { formalRevisionAvailable: Boolean(revision), confirmedAt: revision?.confirmedAt || null };
+        } catch (_error) {
+            return { formalRevisionAvailable: false, confirmedAt: null };
+        }
     }
 
     async function createComparison(qri, initialSummary, input) {
@@ -238,6 +253,15 @@
             latestSummary = summary;
             render(summary);
             await renderMorningBaselineState(summary.marketDate);
+            const formalQri = await resolveFormalQriReference(summary);
+            await window.OptionMapMarketObservation?.persistBestEffort({
+                summary, rendererState: input.observationState,
+                qri: { ...input.qri, ...formalQri, canonicalV2: input.qri.canonical },
+                observedAt: new Date().toISOString()
+            }, window.OptionMapMarketObservationStore, observationError => {
+                console.warn("Observation historyの保存に失敗しました。表示は継続します:",
+                    observationError);
+            });
             return { success: true, summary: clone(summary) };
         } catch (error) {
             text("mobileSummaryPreviewStatus", latestSummary
