@@ -69,9 +69,9 @@ test("baseline, morning changes and option changes are explicitly unavailable", 
         baselineId: null, capturedAt: null, dataQuality: null, sourceSummaryId: null,
         sourceSummarySignature: null, qriAvailability: null });
     assert.deepEqual(summary.payload.changeSinceMorning,
-        { available: false, reason: "morning_baseline_missing" });
+        { available: false, reason: "not_captured" });
     assert.deepEqual(summary.payload.optionChanges,
-        { available: false, reason: "morning_baseline_missing", items: [] });
+        { available: false, reason: "not_captured", items: [] });
 });
 
 test("builder generates quality, alerts, source versions and freshness", async () => {

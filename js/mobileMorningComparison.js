@@ -143,8 +143,9 @@
         const currentError = await validateQri(current, input.currentVersionKey, input.currentSignature);
         if (baselineError || currentError) return unavailable(baselineError || currentError);
         if (baseline.contract !== current.contract) return unavailable("contract_mismatch");
-        if (baseline.tradingDate !== current.tradingDate) return unavailable("trading_date_mismatch");
-        if (input.marketDate !== baseline.tradingDate) return unavailable("market_date_mismatch");
+        if (input.marketDate !== current.tradingDate) return unavailable("market_date_mismatch");
+        if (baseline.tradingDate !== current.tradingDate && input.sessionApplicable !== true)
+            return unavailable("trading_date_mismatch");
         if (baseline.openInterestStatus === "unavailable") return unavailable("baseline_qri_unavailable");
         if (current.openInterestStatus === "unavailable") return unavailable("current_qri_unavailable");
         return { available: true, contract: current.contract, tradingDate: current.tradingDate,
@@ -183,6 +184,9 @@
     }
     function formatReason(reason) {
         return ({ morning_baseline_missing: "朝基準がないため比較できません",
+            not_captured: "朝基準がないため比較できません",
+            session_mismatch: "保存済みの朝基準は現在の比較session対象外です",
+            legacy_exact_match_only: "従来形式の朝基準は同じ市場日のみ比較できます",
             market_date_mismatch: "朝基準と現在の営業日が異なるため比較できません",
             qri_reference_missing: "朝のQRI参照情報がないため比較できません",
             baseline_revision_missing: "朝のQRI正式revisionを取得できないため比較できません",

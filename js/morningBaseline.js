@@ -4,7 +4,8 @@
     if (root) root.OptionMapMorningBaseline = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
-    const BASELINE_VERSION = 2;
+    const BASELINE_VERSION = 3;
+    const QRI_AVAILABILITY_VERSION = 2;
     const LEGACY_BASELINE_VERSION = 1;
     const STORAGE_VERSION = 1;
     const mobileSummaryApi = typeof module === "object" && module.exports && !globalThis.document
@@ -17,6 +18,19 @@
     const timestamp = value => typeof value === "string" &&
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
         !Number.isNaN(Date.parse(value));
+    const jstDay = value => {
+        if (!timestamp(value)) return null;
+        return new Date(Date.parse(value) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    };
+    function createSessionMetadata(capturedAt) {
+        const baselineDay = jstDay(capturedAt);
+        if (!baselineDay) throw new Error("captured_at_invalid");
+        const nextDay = new Date(`${baselineDay}T00:00:00Z`);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        return { baselineDay, validFrom: capturedAt,
+            validUntil: `${nextDay.toISOString().slice(0, 10)}T00:00:00+09:00`,
+            sessionBoundary: "jst_calendar_day" };
+    }
     const exact = (value, keys) => object(value) && Object.keys(value).length === keys.length &&
         keys.every(key => Object.hasOwn(value, key));
     const canonicalize = value => Array.isArray(value) ? `[${value.map(canonicalize).join(",")}]` :
@@ -39,7 +53,7 @@
             /\b(?:Error|TypeError|ReferenceError):.*(?:\n|\\n).*\bat\s/i].some(pattern => pattern.test(text));
     };
 
-    function snapshotContent(summary, qriAvailability, comparisonReference) {
+    function snapshotContent(summary, qriAvailability, comparisonReference, session) {
         const snapshot = { marketDate: summary.marketDate, sourceVersions: clone(summary.sourceVersions),
             dataQuality: clone(summary.dataQuality), freshness: clone(summary.freshness),
             overallV2: clone(summary.payload.overallV2), currentPrice: clone(summary.payload.currentPrice),
@@ -48,6 +62,7 @@
             snapshot.qriAvailability = clone(qriAvailability);
             snapshot.comparisonReference = clone(comparisonReference);
         }
+        if (session !== undefined) Object.assign(snapshot, clone(session));
         return snapshot;
     }
 
@@ -65,9 +80,10 @@
         if (summary.dataQuality.status === "unavailable") throw new Error("source_summary_unavailable");
         if (!timestamp(capturedAt)) throw new Error("captured_at_invalid");
         const v2 = Object.hasOwn(options, "qriAvailability");
+        const session = Object.hasOwn(options, "session") ? clone(options.session) : undefined;
         const availability = v2 ? clone(options.qriAvailability) : undefined;
         const reference = v2 ? clone(options.comparisonReference ?? null) : qriReference(summary);
-        const snapshot = snapshotContent(summary, availability, reference);
+        const snapshot = snapshotContent(summary, availability, reference, session);
         const contentSignature = await sha256(snapshot);
         const idSeed = await sha256({ contentSignature, capturedAt, sourceSummaryId: summary.summaryId });
         return { baselineId: `mb1-${idSeed.slice(0, 24)}`, contentSignature,
@@ -76,7 +92,7 @@
             sourceVersions: snapshot.sourceVersions, freshness: snapshot.freshness,
             overallV2: snapshot.overallV2, currentPrice: snapshot.currentPrice,
             nearestLevels: snapshot.nearestLevels, comparisonReference: reference,
-            ...(v2 ? { qriAvailability: availability } : {}) };
+            ...(v2 ? { qriAvailability: availability } : {}), ...(session || {}) };
     }
 
     function validateQriAvailability(value, reference) {
@@ -108,11 +124,15 @@
             "sourceSummarySignature", "dataQuality", "sourceVersions", "freshness", "overallV2",
             "currentPrice", "nearestLevels", "comparisonReference"];
         const v2Keys = [...legacyKeys, "qriAvailability"];
-        const isV2Revision = exact(revision, v2Keys);
-        const keys = isV2Revision ? v2Keys : legacyKeys;
+        const v3Keys = [...v2Keys, "baselineDay", "validFrom", "validUntil", "sessionBoundary"];
+        const isV3Revision = exact(revision, v3Keys);
+        const isV2Revision = !isV3Revision && exact(revision, v2Keys);
+        const keys = isV3Revision ? v3Keys : isV2Revision ? v2Keys : legacyKeys;
         if (!exact(revision, keys)) errors.push("revision_fields_invalid");
-        if (baselineVersion === LEGACY_BASELINE_VERSION && isV2Revision)
+        if (baselineVersion === LEGACY_BASELINE_VERSION && (isV2Revision || isV3Revision))
             errors.push("legacy_revision_version_invalid");
+        if (baselineVersion === QRI_AVAILABILITY_VERSION && isV3Revision)
+            errors.push("revision_version_invalid");
         if (!/^mb1-[a-f0-9]{24}$/.test(revision?.baselineId || "")) errors.push("baseline_id_invalid");
         if (!/^[a-f0-9]{64}$/.test(revision?.contentSignature || "")) errors.push("content_signature_invalid");
         if (!timestamp(revision?.capturedAt) || revision?.replacedAt !== null && !timestamp(revision.replacedAt))
@@ -148,8 +168,16 @@
             reference.tradingDate !== qri.tradingDate || reference.versionKey !== qri.versionKey ||
             reference.signature !== qri.signature || reference.pageUpdatedAt !== revision.freshness?.qriAt))
             errors.push("comparison_reference_mismatch");
-        if (isV2Revision && !validateQriAvailability(revision.qriAvailability, reference))
+        if ((isV2Revision || isV3Revision) && !validateQriAvailability(revision.qriAvailability, reference))
             errors.push("qri_availability_invalid");
+        const expectedSession = isV3Revision && timestamp(revision?.capturedAt)
+            ? createSessionMetadata(revision.capturedAt) : null;
+        if (isV3Revision && (!date(revision.baselineDay) || !timestamp(revision.validFrom) ||
+            !timestamp(revision.validUntil) || revision.sessionBoundary !== "jst_calendar_day" ||
+            revision.baselineDay !== jstDay(revision.capturedAt) || revision.validFrom !== revision.capturedAt ||
+            Date.parse(revision.validUntil) <= Date.parse(revision.validFrom) ||
+            revision.validUntil !== expectedSession?.validUntil))
+            errors.push("session_metadata_invalid");
         if (revision?.sourceVersions?.some(item => item.tradingDate && item.tradingDate !== marketDate &&
             item.source === "qri-options")) errors.push("revision_market_date_invalid");
         if (exact(revision, keys)) {
@@ -157,10 +185,13 @@
                 dataQuality: revision.dataQuality, freshness: revision.freshness,
                 overallV2: revision.overallV2, currentPrice: revision.currentPrice,
                 nearestLevels: revision.nearestLevels };
-            if (isV2Revision) {
+            if (isV2Revision || isV3Revision) {
                 snapshot.qriAvailability = revision.qriAvailability;
                 snapshot.comparisonReference = revision.comparisonReference;
             }
+            if (isV3Revision) Object.assign(snapshot, { baselineDay: revision.baselineDay,
+                validFrom: revision.validFrom, validUntil: revision.validUntil,
+                sessionBoundary: revision.sessionBoundary });
             const expectedContent = await sha256(snapshot);
             if (revision.contentSignature !== expectedContent) errors.push("content_signature_mismatch");
             const expectedId = await sha256({ contentSignature: expectedContent,
@@ -176,7 +207,7 @@
         const keys = ["baselineVersion", "marketDate", "activeBaselineId", "firstCapturedAt",
             "lastUpdatedAt", "revisions"];
         if (!exact(baseline, keys)) errors.push("baseline_fields_invalid");
-        if (![LEGACY_BASELINE_VERSION, BASELINE_VERSION].includes(baseline?.baselineVersion))
+        if (![LEGACY_BASELINE_VERSION, QRI_AVAILABILITY_VERSION, BASELINE_VERSION].includes(baseline?.baselineVersion))
             errors.push("baseline_version_invalid");
         if (!date(baseline?.marketDate)) errors.push("market_date_invalid");
         if (typeof baseline?.activeBaselineId !== "string" || !baseline.activeBaselineId)
@@ -194,8 +225,8 @@
         const activeIndex = baseline?.revisions?.findIndex(item => item.baselineId === baseline.activeBaselineId) ?? -1;
         if (activeIndex < 0) errors.push("active_revision_missing");
         if (baseline?.baselineVersion === BASELINE_VERSION && activeIndex >= 0 &&
-            !Object.hasOwn(baseline.revisions[activeIndex], "qriAvailability"))
-            errors.push("active_qri_availability_missing");
+            !Object.hasOwn(baseline.revisions[activeIndex], "baselineDay"))
+            errors.push("active_session_metadata_missing");
         baseline?.revisions?.forEach((revision, index) => {
             if (index === activeIndex && revision.replacedAt !== null) errors.push("active_revision_replaced");
             if (index !== activeIndex && revision.replacedAt === null) errors.push("inactive_revision_not_replaced");
@@ -211,8 +242,8 @@
     async function saveCandidate(existing, candidate, marketDate, { allowUpdate = false } = {}) {
         if (!date(marketDate) || !candidate || sensitive(candidate)) throw new Error("candidate_invalid");
         if (!existing) {
-            const baseline = { baselineVersion: Object.hasOwn(candidate, "qriAvailability")
-                ? BASELINE_VERSION : LEGACY_BASELINE_VERSION, marketDate,
+            const baseline = { baselineVersion: Object.hasOwn(candidate, "baselineDay") ? BASELINE_VERSION :
+                Object.hasOwn(candidate, "qriAvailability") ? QRI_AVAILABILITY_VERSION : LEGACY_BASELINE_VERSION, marketDate,
                 activeBaselineId: candidate.baselineId, firstCapturedAt: candidate.capturedAt,
                 lastUpdatedAt: candidate.capturedAt, revisions: [clone(candidate)] };
             if (!(await validateBaseline(baseline)).valid) throw new Error("baseline_invalid");
@@ -228,7 +259,8 @@
         const baseline = clone(existing);
         baseline.revisions.find(item => item.baselineId === baseline.activeBaselineId).replacedAt = candidate.capturedAt;
         baseline.revisions.push(clone(candidate));
-        if (Object.hasOwn(candidate, "qriAvailability")) baseline.baselineVersion = BASELINE_VERSION;
+        if (Object.hasOwn(candidate, "baselineDay")) baseline.baselineVersion = BASELINE_VERSION;
+        else if (Object.hasOwn(candidate, "qriAvailability")) baseline.baselineVersion = QRI_AVAILABILITY_VERSION;
         baseline.activeBaselineId = candidate.baselineId;
         baseline.lastUpdatedAt = candidate.capturedAt;
         if (!(await validateBaseline(baseline)).valid) throw new Error("baseline_invalid");
@@ -251,6 +283,31 @@
         return baseline ? { available: true, reason: null, baseline: clone(baseline) } :
             { available: false, reason: "not_captured", baseline: null };
     }
+    async function resolveApplicableBaseline(storage, current) {
+        const validation = await validateStorage(storage);
+        if (!validation.valid) return { available: false, reason: "morning_baseline_corrupted",
+            baseline: null, activeRevision: null };
+        if (!timestamp(current?.generatedAt) || !date(current?.marketDate)) return {
+            available: false, reason: "current_state_invalid", baseline: null, activeRevision: null };
+        const active = baseline => baseline.revisions.find(item => item.baselineId === baseline.activeBaselineId);
+        const v3 = storage.baselines.map(baseline => ({ baseline, revision: active(baseline) }))
+            .filter(item => item.baseline.baselineVersion === BASELINE_VERSION &&
+                Date.parse(current.generatedAt) >= Date.parse(item.revision.validFrom) &&
+                Date.parse(current.generatedAt) < Date.parse(item.revision.validUntil))
+            .sort((a, b) => Date.parse(b.revision.capturedAt) - Date.parse(a.revision.capturedAt))[0];
+        if (v3) return { available: true, reason: "applicable", baseline: clone(v3.baseline),
+            activeRevision: clone(v3.revision) };
+        const exactLegacy = storage.baselines.find(baseline => baseline.baselineVersion < BASELINE_VERSION &&
+            baseline.marketDate === current.marketDate);
+        if (exactLegacy) return { available: true, reason: "legacy_exact_match", baseline: clone(exactLegacy),
+            activeRevision: clone(active(exactLegacy)) };
+        const newest = storage.baselines.map(baseline => ({ baseline, revision: active(baseline) }))
+            .sort((a, b) => Date.parse(b.revision.capturedAt) - Date.parse(a.revision.capturedAt))[0];
+        if (!newest) return { available: false, reason: "not_captured", baseline: null, activeRevision: null };
+        return { available: false, reason: newest.baseline.baselineVersion === BASELINE_VERSION
+            ? "session_mismatch" : "legacy_exact_match_only", baseline: clone(newest.baseline),
+        activeRevision: clone(newest.revision) };
+    }
     async function upsertStorage(storage, baseline) {
         if (!(await validateStorage(storage)).valid || !(await validateBaseline(baseline)).valid)
             throw new Error("storage_or_baseline_invalid");
@@ -263,7 +320,8 @@
     function activeRevision(baseline) {
         return clone(baseline?.revisions?.find(item => item.baselineId === baseline.activeBaselineId) || null);
     }
-    return Object.freeze({ BASELINE_VERSION, LEGACY_BASELINE_VERSION, STORAGE_VERSION, canonicalize, createCandidate,
+    return Object.freeze({ BASELINE_VERSION, QRI_AVAILABILITY_VERSION, LEGACY_BASELINE_VERSION, STORAGE_VERSION,
+        canonicalize, createSessionMetadata, createCandidate,
         validateBaseline, saveCandidate, createEmptyStorage, validateStorage, getForMarketDate,
-        upsertStorage, activeRevision });
+        resolveApplicableBaseline, upsertStorage, activeRevision });
 });

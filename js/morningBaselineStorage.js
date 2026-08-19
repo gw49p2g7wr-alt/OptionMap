@@ -20,6 +20,12 @@
         if (!loaded.storage) return { available: false, reason: "morning_baseline_corrupted", baseline: null };
         return api().getForMarketDate(loaded.storage, marketDate);
     }
+    async function resolveApplicable(current) {
+        const loaded = await load();
+        if (!loaded.storage) return { available: false, reason: "morning_baseline_corrupted",
+            baseline: null, activeRevision: null };
+        return api().resolveApplicableBaseline(loaded.storage, current);
+    }
     async function save(baseline) {
         const loaded = await load();
         if (!loaded.storage) throw new Error("morning_baseline_storage_corrupted");
@@ -27,5 +33,5 @@
         root.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         return clone(next);
     }
-    return Object.freeze({ STORAGE_KEY, load, getForMarketDate, save });
+    return Object.freeze({ STORAGE_KEY, load, getForMarketDate, resolveApplicable, save });
 });

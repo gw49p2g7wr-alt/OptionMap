@@ -75,6 +75,80 @@ test("baseline v2 separates available/unavailable QRI facts from formal referenc
     assert.equal((await baselineApi.validateBaseline(unavailable)).valid, true);
 });
 
+test("baseline v3 signs an explicit JST calendar-day session", async () => {
+    const source = await fixture();
+    const session = baselineApi.createSessionMetadata(NOW);
+    const candidate = await baselineApi.createCandidate(source, NOW,
+        { qriAvailability: qriAvailable(), comparisonReference: formalReference(), session });
+    const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+    assert.equal(baseline.baselineVersion, 3);
+    assert.deepEqual(session, { baselineDay: "2026-08-18", validFrom: NOW,
+        validUntil: "2026-08-19T00:00:00+09:00", sessionBoundary: "jst_calendar_day" });
+    assert.equal((await baselineApi.validateBaseline(baseline)).valid, true);
+    for (const change of [
+        x => { x.revisions[0].baselineDay = "2026-08-17"; },
+        x => { x.revisions[0].validUntil = "2026-08-20T00:00:00+09:00"; },
+        x => { x.revisions[0].sessionBoundary = "guessed_time"; }
+    ]) assert.ok((await baselineApi.validateBaseline(mutate(baseline, change))).errors
+        .includes("session_metadata_invalid"));
+    const changedSession = { ...session, validUntil: "2026-08-18T23:59:59+09:00" };
+    const changed = await baselineApi.createCandidate(source, NOW,
+        { qriAvailability: qriAvailable(), comparisonReference: formalReference(), session: changedSession });
+    assert.notEqual(candidate.contentSignature, changed.contentSignature);
+    assert.notEqual(candidate.baselineId, changed.baselineId);
+});
+
+test("v3 resolver continues through same-day night trading-date change and stops at JST midnight", async () => {
+    const source = await fixture();
+    const candidate = await baselineApi.createCandidate(source, NOW, { qriAvailability: qriAvailable(),
+        comparisonReference: formalReference(), session: baselineApi.createSessionMetadata(NOW) });
+    const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+    const storage = await baselineApi.upsertStorage(baselineApi.createEmptyStorage(), baseline);
+    const night = await baselineApi.resolveApplicableBaseline(storage,
+        { generatedAt: "2026-08-18T14:30:00.000Z", marketDate: "2026-08-19" });
+    assert.equal(night.available, true);
+    assert.equal(night.reason, "applicable");
+    assert.equal(night.activeRevision.baselineDay, "2026-08-18");
+    const nextDay = await baselineApi.resolveApplicableBaseline(storage,
+        { generatedAt: "2026-08-18T15:00:00.000Z", marketDate: "2026-08-19" });
+    assert.equal(nextDay.available, false);
+    assert.equal(nextDay.reason, "session_mismatch");
+    assert.equal(nextDay.baseline.activeBaselineId, baseline.activeBaselineId);
+});
+
+test("v3 session does not guess across a weekend or holiday calendar gap", async () => {
+    const friday = "2026-08-21T20:42:00+09:00";
+    const source = await fixture({ summary: { marketDate: "2026-08-21",
+        sourceVersions: input().sourceVersions.map(item => ({ ...item, sourceDate: "2026-08-21",
+            tradingDate: "2026-08-21" })) } });
+    const reference = { ...formalReference(), tradingDate: "2026-08-21" };
+    const candidate = await baselineApi.createCandidate(source, friday, { qriAvailability: qriAvailable(),
+        comparisonReference: reference, session: baselineApi.createSessionMetadata(friday) });
+    const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+    const storage = await baselineApi.upsertStorage(baselineApi.createEmptyStorage(), baseline);
+    const saturday = await baselineApi.resolveApplicableBaseline(storage,
+        { generatedAt: "2026-08-22T00:01:00+09:00", marketDate: "2026-08-24" });
+    assert.equal(saturday.available, false);
+    assert.equal(saturday.reason, "session_mismatch");
+});
+
+test("legacy v1/v2 remain exact-match-only and are never migrated", async () => {
+    const source = await fixture();
+    for (const options of [{}, { qriAvailability: qriAvailable(), comparisonReference: formalReference() }]) {
+        const candidate = await baselineApi.createCandidate(source, NOW, options);
+        const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+        const before = structuredClone(baseline);
+        const storage = await baselineApi.upsertStorage(baselineApi.createEmptyStorage(), baseline);
+        assert.equal((await baselineApi.resolveApplicableBaseline(storage,
+            { generatedAt: LATER, marketDate: source.marketDate })).available, true);
+        const mismatch = await baselineApi.resolveApplicableBaseline(storage,
+            { generatedAt: LATER, marketDate: "2026-08-19" });
+        assert.equal(mismatch.available, false);
+        assert.equal(mismatch.reason, "legacy_exact_match_only");
+        assert.deepEqual(baseline, before);
+    }
+});
+
 test("baseline v2 validator rejects availability, reason, count and reference inconsistencies", async () => {
     const candidate = await baselineApi.createCandidate(await fixture(), NOW,
         { qriAvailability: qriAvailable(), comparisonReference: formalReference() });
@@ -169,7 +243,7 @@ test("validator rejects schema, date, timestamps, active/revision and duplicate 
     const candidate = await baselineApi.createCandidate(await fixture(), NOW);
     const valid = (await baselineApi.saveCandidate(null, candidate, "2026-08-18")).baseline;
     const cases = [
-        [x => { x.baselineVersion = 3; }, "baseline_version_invalid"],
+        [x => { x.baselineVersion = 4; }, "baseline_version_invalid"],
         [x => { x.marketDate = "2026-02-30"; }, "market_date_invalid"],
         [x => { x.firstCapturedAt = "bad"; }, "baseline_timestamp_invalid"],
         [x => { x.activeBaselineId = ""; }, "active_baseline_id_invalid"],
@@ -225,6 +299,19 @@ test("MobileSummary reflects only matching valid baseline and keeps comparison u
     const otherDate = await summary({ morningBaseline: { available: true,
         baseline: { ...baseline, marketDate: "2026-08-17" } } });
     assert.equal(otherDate.payload.morningBaseline.reason, "market_date_mismatch");
+});
+
+test("MobileSummary keeps latest marketDate while applying an in-session v3 baseline", async () => {
+    const source = await fixture();
+    const candidate = await baselineApi.createCandidate(source, NOW, { qriAvailability: qriAvailable(),
+        comparisonReference: formalReference(), session: baselineApi.createSessionMetadata(NOW) });
+    const baseline = (await baselineApi.saveCandidate(null, candidate, source.marketDate)).baseline;
+    const current = await summary({ generatedAt: "2026-08-18T14:30:00.000Z", marketDate: "2026-08-19",
+        sourceVersions: input().sourceVersions.map(item => ({ ...item, sourceDate: "2026-08-19",
+            tradingDate: "2026-08-19" })), morningBaseline: { available: true, reason: "applicable", baseline } });
+    assert.equal(current.marketDate, "2026-08-19");
+    assert.equal(current.payload.morningBaseline.available, true);
+    assert.equal(current.payload.morningBaseline.baselineId, candidate.baselineId);
 });
 
 test("MobileSummary accepts Phase 3 comparison, signs it, and permits option partial failure", async () => {

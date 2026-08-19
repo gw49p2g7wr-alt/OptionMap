@@ -123,6 +123,25 @@ test("QRI comparison rejects unavailable, identity and date/contract mismatches"
         baselineVersionKey: ui.versionKey, baselineSignature: ui.signature })).reason, "baseline_qri_unavailable");
 });
 
+test("QRI comparison permits a validated session trading-date transition only when explicit", async () => {
+    const morning = canonical();
+    const current = canonical({ tradingDate: "2026-08-19", pageUpdatedAt: "2026-08-18T18:00:00+09:00" });
+    const mi = await identity(morning); const ci = await identity(current);
+    const input = { marketDate: "2026-08-19", baselineCanonical: morning,
+        baselineVersionKey: mi.versionKey, baselineSignature: mi.signature,
+        currentCanonical: current, currentVersionKey: ci.versionKey, currentSignature: ci.signature };
+    assert.equal((await api.compareQriIntraday(input)).reason, "trading_date_mismatch");
+    assert.equal((await api.compareQriIntraday({ ...input, sessionApplicable: true })).available, true);
+    const rolled = canonical({ contract: "2026-10", tradingDate: "2026-08-19",
+        pageUpdatedAt: "2026-08-18T18:00:00+09:00" });
+    rolled.contractLabel = "10月限月";
+    rolled.availableContracts[0].label = "10月限月";
+    const ri = await identity(rolled);
+    assert.equal((await api.compareQriIntraday({ ...input, sessionApplicable: true,
+        currentCanonical: rolled, currentVersionKey: ri.versionKey,
+        currentSignature: ri.signature })).reason, "contract_mismatch");
+});
+
 test("resolver uses active baseline reference and resolves an old non-active QRI revision", async () => {
     const firstCache = await qri.createCacheV2(canonical(), NOW);
     const secondCache = await qri.createCacheV2(canonical({ pageUpdatedAt: "2026-08-18T17:00:00+09:00" }), NOW);

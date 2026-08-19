@@ -5,6 +5,7 @@
     "use strict";
     let latestQri = null;
     let latestSummary = null;
+    let latestBaselineResolution = null;
     let saveInProgress = false;
 
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -39,12 +40,16 @@
             ? `${change.overallV2.currentLabel} ${signed(change.overallV2.currentDirection)}`
             : "v2利用不可";
         text("mobileSummaryPreviewBaseline", payload.morningBaseline.available
-            ? `${time(payload.morningBaseline.capturedAt)} / ${change.available ? `${baselineOverall} / ` : ""}` +
+            ? `${time(payload.morningBaseline.capturedAt)} / ${latestBaselineResolution?.activeRevision?.baselineDay
+                ? `運用日 ${latestBaselineResolution.activeRevision.baselineDay} / session有効 / ` : ""}` +
+                `${change.available ? `${baselineOverall} / ` : ""}` +
                 `品質 ${payload.morningBaseline.dataQuality.status} / 朝QRI：${
                     payload.morningBaseline.qriAvailability?.available ? "正式建玉あり" :
                         payload.morningBaseline.qriAvailability?.openInterestStatus === "unavailable" ? "未提供" :
                             payload.morningBaseline.qriAvailability === null ? "状態不明" : "比較不可"}`
-            : "未設定（朝基準はまだ保存していません）");
+            : latestBaselineResolution?.baseline
+                ? "保存済み（現在の比較対象外）"
+                : "未設定（朝基準はまだ保存していません）");
         text("mobileSummaryPreviewChange", change.available
             ? `${baselineOverall} → ${currentOverall} / ` +
                 `${change.currentPrice.available ? `現在値 ${change.currentPrice.delta > 0 ? "+" : ""}` +
@@ -94,9 +99,12 @@
             tradingDate: null, contract: null, versionKey: weekly.versionKey, signature: null });
         const marketDate = canonical?.tradingDate;
         if (!marketDate) throw new Error("formal_market_date_unavailable");
+        const generatedAt = new Date().toISOString();
         const morningBaseline = await window.OptionMapMorningBaselineStorage
-            .getForMarketDate(marketDate);
-        return { generatedAt: new Date().toISOString(), marketDate,
+            .resolveApplicable({ generatedAt, marketDate, qriTradingDate: canonical.tradingDate,
+                contract: canonical.contract });
+        latestBaselineResolution = clone(morningBaseline);
+        return { generatedAt, marketDate,
         producer: { appVersion: "1.0.0", platform: navigator.platform || null },
         overallV2: state.overallV2, currentPrice: state.currentPrice,
         qri: { available: Boolean(canonical), canonical, activeContract: canonical?.contract || null,
@@ -111,9 +119,9 @@
         if (!baselineResult?.available) return null;
         const baseline = baselineResult.baseline;
         const active = window.OptionMapMorningBaseline.activeRevision(baseline);
-        if (!active || baseline.marketDate !== initialSummary.marketDate) return {
-            changeSinceMorning: { available: false, reason: "market_date_mismatch" },
-            optionChanges: { available: false, reason: "market_date_mismatch" } };
+        if (!active) return {
+            changeSinceMorning: { available: false, reason: "morning_baseline_corrupted" },
+            optionChanges: { available: false, reason: "morning_baseline_corrupted" } };
         let resolved;
         try {
             const loaded = await window.OptionMapQriOptionsHistoryStore.loadHistory();
@@ -131,7 +139,8 @@
             baselineVersionKey: active.comparisonReference.versionKey,
             baselineSignature: active.comparisonReference.signature,
             currentCanonical: qri?.canonicalV2 || null, currentVersionKey: qriSource?.versionKey || null,
-            currentSignature: qriSource?.signature || null });
+            currentSignature: qriSource?.signature || null,
+            sessionApplicable: baseline.baselineVersion === 3 });
         const changeSinceMorning = window.OptionMapMobileMorningComparison.createComparison({
             marketDate: initialSummary.marketDate, baselineRevision: active,
             currentSummary: initialSummary, optionChanges, comparedAt: initialSummary.generatedAt });
@@ -182,8 +191,8 @@
             const initial = await window.OptionMapMobileSummary.buildMobileSummary(input);
             const comparison = await createComparison(latestQri, initial, input);
             if (comparison?.pins) {
-                const currentBaseline = await window.OptionMapMorningBaselineStorage
-                    .getForMarketDate(initial.marketDate);
+                const currentBaseline = await window.OptionMapMorningBaselineStorage.resolveApplicable({
+                    generatedAt: initial.generatedAt, marketDate: initial.marketDate });
                 const currentActive = currentBaseline.available
                     ? window.OptionMapMorningBaseline.activeRevision(currentBaseline.baseline) : null;
                 const liveInput = await createInput(latestQri);
@@ -214,19 +223,22 @@
     }
 
     async function renderMorningBaselineState(marketDate) {
-        const result = await window.OptionMapMorningBaselineStorage.getForMarketDate(marketDate);
+        const result = latestBaselineResolution || await window.OptionMapMorningBaselineStorage.resolveApplicable({
+            generatedAt: new Date().toISOString(), marketDate });
         if (!result.available) {
             text("morningBaselineSaveStatus", result.reason === "morning_baseline_corrupted"
                 ? "朝基準：保存データが壊れているため利用できません"
-                : "朝基準：未設定");
+                : result.baseline ? `朝基準：保存済み（現在の比較対象外：${result.reason}）`
+                    : "朝基準：未設定");
             return;
         }
         const baseline = result.baseline;
         const active = window.OptionMapMorningBaseline.activeRevision(baseline);
         const format = value => new Date(value).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+        const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / session有効 / current ${marketDate}` : "";
         text("morningBaselineSaveStatus", baseline.revisions.length > 1
             ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${active.dataQuality.status}`
-            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${active.dataQuality.status}`);
+            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${active.dataQuality.status}${session}`);
     }
 
     async function saveMorningBaseline() {
@@ -247,8 +259,10 @@
                 return { success: false, reason: "partial_cancelled" };
             }
             const qriCapture = await captureQriAvailability(summary);
+            const capturedAt = new Date().toISOString();
+            const session = window.OptionMapMorningBaseline.createSessionMetadata(capturedAt);
             const candidate = await window.OptionMapMorningBaseline.createCandidate(
-                summary, new Date().toISOString(), qriCapture);
+                summary, capturedAt, { ...qriCapture, session });
             const existingResult = await window.OptionMapMorningBaselineStorage
                 .getForMarketDate(summary.marketDate);
             if (existingResult.reason === "morning_baseline_corrupted")

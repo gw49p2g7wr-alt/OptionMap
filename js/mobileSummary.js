@@ -180,19 +180,23 @@
             warnings: missing };
     }
 
-    function buildMorningBaseline(input, marketDate) {
+    function buildMorningBaseline(input, marketDate, generatedAt) {
         const baseline = input?.baseline;
         if (input?.available !== true || !isObject(baseline)) {
             return { available: false, reason: typeof input?.reason === "string"
                 ? input.reason : "not_captured", baselineId: null, capturedAt: null,
             dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null, qriAvailability: null };
         }
-        if (baseline.marketDate !== marketDate) {
+        const selectedRevision = baseline.revisions?.find(item => item.baselineId === baseline.activeBaselineId);
+        const v3Applicable = baseline.baselineVersion === 3 && selectedRevision &&
+            Date.parse(generatedAt) >= Date.parse(selectedRevision.validFrom) &&
+            Date.parse(generatedAt) < Date.parse(selectedRevision.validUntil);
+        if (baseline.marketDate !== marketDate && !v3Applicable) {
             return { available: false, reason: "market_date_mismatch", baselineId: null,
                 capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null,
                 qriAvailability: null };
         }
-        const revision = baseline.revisions?.find(item => item.baselineId === baseline.activeBaselineId);
+        const revision = selectedRevision;
         if (!revision) {
             return { available: false, reason: "morning_baseline_corrupted", baselineId: null,
                 capturedAt: null, dataQuality: null, sourceSummaryId: null, sourceSummarySignature: null,
@@ -233,14 +237,14 @@
                 ? "qri_unavailable" : "current_price_unavailable"), lower: unavailableLevel("lower",
             currentPrice.available ? "qri_unavailable" : "current_price_unavailable") };
         }
-        const morningBaseline = buildMorningBaseline(source.morningBaseline, source.marketDate);
+        const morningBaseline = buildMorningBaseline(source.morningBaseline, source.marketDate, generatedAt);
         const supplied = source.comparison;
         const changeSinceMorning = morningBaseline.available && isObject(supplied?.changeSinceMorning)
             ? clone(supplied.changeSinceMorning) : { available: false, reason: morningBaseline.available
-                ? "comparison_not_implemented" : "morning_baseline_missing" };
+                ? "comparison_not_implemented" : morningBaseline.reason || "morning_baseline_missing" };
         const optionChanges = morningBaseline.available && isObject(supplied?.optionChanges)
             ? clone(supplied.optionChanges) : { available: false, reason: morningBaseline.available
-                ? "comparison_not_implemented" : "morning_baseline_missing", items: [] };
+                ? "comparison_not_implemented" : morningBaseline.reason || "morning_baseline_missing", items: [] };
         const alerts = buildAlerts({ overallV2, currentPrice, nearestLevels, qri,
             morningBaseline, comparison: { changeSinceMorning, optionChanges }, observedAt: generatedAt });
         const payload = { overallV2, currentPrice, nearestLevels, morningBaseline,
