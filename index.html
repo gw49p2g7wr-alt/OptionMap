@@ -869,6 +869,13 @@
         期間を指定して公式掲載候補を確認してください。
       </p>
       <p id="weeklyFuturesHistoryStatus" role="status"></p>
+      <details>
+        <summary>participantCode shadow診断（開発者向け）</summary>
+        <p id="weeklyFuturesParticipantCodeShadowStatus" role="status">
+          正式history読込後にread-only検証します。
+        </p>
+        <pre id="weeklyFuturesParticipantCodeShadowJson"></pre>
+      </details>
     </details>
   
     <canvas id="futureOpenInterestChart"></canvas>
@@ -909,6 +916,7 @@
 <script src="js/mobileMorningComparison.js"></script>
 <script src="js/mobileSummaryPreview.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
+<script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
 
@@ -1128,6 +1136,12 @@ const weeklyFuturesBackfillStatus = document.getElementById(
 const weeklyFuturesHistoryStatus = document.getElementById(
     "weeklyFuturesHistoryStatus"
 );
+const weeklyFuturesParticipantCodeShadowStatus = document.getElementById(
+    "weeklyFuturesParticipantCodeShadowStatus"
+);
+const weeklyFuturesParticipantCodeShadowJson = document.getElementById(
+    "weeklyFuturesParticipantCodeShadowJson"
+);
 const weeklyOptionsBackfillStartDate = document.getElementById("weeklyOptionsBackfillStartDate");
 const weeklyOptionsBackfillEndDate = document.getElementById("weeklyOptionsBackfillEndDate");
 const weeklyOptionsBackfillPreviewButton = document.getElementById("weeklyOptionsBackfillPreviewButton");
@@ -1288,6 +1302,29 @@ function renderWeeklyFuturesHistoryStatus() {
         : "正式history：0週";
 }
 
+async function renderWeeklyFuturesParticipantCodeShadow(history) {
+    const report = await window.OptionMapWeeklyFuturesParticipantCodeShadow
+        .validateHistoryShadow(history);
+    if (weeklyFuturesParticipantCodeShadowStatus) {
+        const statusLabel = {
+            matched: "一致",
+            mismatched: "差分あり",
+            insufficient_history: "比較対象不足",
+            invalid_history: "正式history検証失敗"
+        }[report.status] || report.status;
+        weeklyFuturesParticipantCodeShadowStatus.textContent =
+            `participantCode shadow：${statusLabel}　` +
+            `revision ${report.checkedRevisions}／pair ${report.checkedPairs}／` +
+            `一致 ${report.matchedPairs}／差分 ${report.mismatchedPairs}`;
+    }
+    if (weeklyFuturesParticipantCodeShadowJson) {
+        weeklyFuturesParticipantCodeShadowJson.textContent =
+            JSON.stringify(report, null, 2);
+    }
+    console.debug("participantCode shadow report", report);
+    return report;
+}
+
 async function initializeWeeklyFuturesHistory() {
     let serialized = null;
     try {
@@ -1295,6 +1332,7 @@ async function initializeWeeklyFuturesHistory() {
     } catch (error) {
         weeklyFuturesHistoryStorageInvalid = true;
         renderWeeklyFuturesHistoryStatus();
+        await renderWeeklyFuturesParticipantCodeShadow(null);
         return;
     }
     const parsed = await window.OptionMapWeeklyFuturesHistory
@@ -1302,10 +1340,12 @@ async function initializeWeeklyFuturesHistory() {
     if (parsed.status === "invalid") {
         weeklyFuturesHistoryStorageInvalid = true;
         renderWeeklyFuturesHistoryStatus();
+        await renderWeeklyFuturesParticipantCodeShadow(null);
         return;
     }
     weeklyFuturesHistory = parsed.history;
     renderWeeklyFuturesHistoryStatus();
+    await renderWeeklyFuturesParticipantCodeShadow(weeklyFuturesHistory);
     await window.setWeeklyFuturesJudgmentHistory?.(weeklyFuturesHistory);
 }
 
