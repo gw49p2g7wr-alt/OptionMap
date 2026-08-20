@@ -1167,6 +1167,47 @@ canvas {
     gap: 12px;
 }
 
+.optionmap-v2-horizon-label {
+    margin: -4px 0 12px;
+    color: #667085;
+    font-size: 13px;
+}
+
+.mobile-timeframe-observation {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.mobile-timeframe-card.is-up,
+.mobile-timeframe-card.is-aligned {
+    border-color: #a9d5b0;
+    background: #f1f8f3;
+}
+
+.mobile-timeframe-card.is-down {
+    border-color: #e7b4b4;
+    background: #fdf3f3;
+}
+
+.mobile-timeframe-card.is-diverged {
+    border-color: #e6c77a;
+    background: #fff8e8;
+}
+
+.mobile-timeframe-card.is-neutral,
+.mobile-timeframe-card.is-neutral_mixed {
+    border-color: #d6dbe3;
+    background: #f7f9fc;
+}
+
+.mobile-timeframe-card.is-unavailable {
+    border-color: #dfe4ec;
+    background: #f4f5f7;
+    color: #667085;
+}
+
 .optionmap-v2-headline > div {
     display: grid;
     gap: 5px;
@@ -1224,6 +1265,10 @@ canvas {
     }
 
     .optionmap-v2-headline {
+        grid-template-columns: 1fr;
+    }
+
+    .mobile-timeframe-observation {
         grid-template-columns: 1fr;
     }
 }

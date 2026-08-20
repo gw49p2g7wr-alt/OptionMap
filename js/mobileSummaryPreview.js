@@ -81,6 +81,25 @@
                 `${change.currentPrice.available ? `価格差 ${signed(change.currentPrice.delta)}円 ・ ` : ""}` +
                 `品質 ${qualityLabel(change.dataQuality.baselineStatus)} → ${qualityLabel(change.dataQuality.currentStatus)} ・ ` +
                 `${change.summaryItems.map(item => item.text).join(" / ") || "区分変化なし"}` : "比較情報なし");
+        const timeframe = window.OptionMapMobileTimeframeObservation
+            .createTimeframeObservation(summary);
+        const shortDelta = timeframe.shortTerm.available
+            ? `朝から ${signed(timeframe.shortTerm.delta)}円` : "朝基準との比較ができません";
+        text("mobileSummaryPreviewShortTerm",
+            `${timeframe.shortTerm.arrow} ${timeframe.shortTerm.label}`);
+        text("mobileSummaryPreviewShortTermMeta", shortDelta);
+        setCardState("mobileSummaryPreviewShortTermCard", timeframe.shortTerm.direction,
+            ["up", "down", "neutral", "unavailable"]);
+        text("mobileSummaryPreviewMediumTerm", timeframe.mediumTerm.available
+            ? `${timeframe.mediumTerm.arrow} ${timeframe.mediumTerm.label} ${signed(timeframe.mediumTerm.score)}`
+            : "判定不能");
+        setCardState("mobileSummaryPreviewMediumTermCard", timeframe.mediumTerm.direction,
+            ["up", "down", "neutral", "unavailable"]);
+        text("mobileSummaryPreviewAlignment", timeframe.alignment.status === "diverged"
+            ? `⚠ ${timeframe.alignment.label}` : timeframe.alignment.label);
+        text("mobileSummaryPreviewAlignmentMeta", timeframe.alignment.message);
+        setCardState("mobileSummaryPreviewAlignmentCard", timeframe.alignment.status,
+            ["aligned", "diverged", "neutral_mixed", "unavailable"]);
         const options = payload.optionChanges;
         const topText = side => {
             const up = side.topIncreases[0]; const down = side.topDecreases[0];

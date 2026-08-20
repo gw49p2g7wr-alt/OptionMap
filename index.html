@@ -405,6 +405,7 @@
                     <h4 class="ui-category-title">🧭 OptionMap総合判断 v2
                         <span class="ui-category-badge category-overall-badge">総合</span>
                     </h4>
+                    <p class="optionmap-v2-horizon-label">総合判定v2 ／ 1日～数日の総合需給</p>
 
                     <div class="optionmap-v2-headline">
                         <div>
@@ -435,7 +436,7 @@
                         </p>
                         <p><strong>想定時間軸：</strong>1日～数日</p>
                         <p class="optionmap-v2-disclaimer">
-                            総合方向は地合いを示すもので、売買タイミングを意味しません。
+                            短期売買タイミングを直接示すものではありません。
                         </p>
                     </div>
                 </div>
@@ -461,6 +462,14 @@
                         <div class="mobile-summary-card mobile-summary-card-morning"><span>朝基準</span><strong id="mobileSummaryPreviewBaseline">未設定</strong></div>
                         <div class="mobile-summary-card mobile-summary-card-change"><span>朝からの変化</span>
                             <strong id="mobileSummaryPreviewChange">比較なし</strong><small id="mobileSummaryPreviewChangeMeta">--</small></div>
+                        <section class="mobile-timeframe-observation" aria-label="時間軸別の観測">
+                            <div id="mobileSummaryPreviewShortTermCard" class="mobile-summary-card mobile-timeframe-card"><span>短期価格</span>
+                                <strong id="mobileSummaryPreviewShortTerm">判定不能</strong><small id="mobileSummaryPreviewShortTermMeta">朝基準との比較ができません</small></div>
+                            <div id="mobileSummaryPreviewMediumTermCard" class="mobile-summary-card mobile-timeframe-card"><span>中期需給</span>
+                                <strong id="mobileSummaryPreviewMediumTerm">判定不能</strong><small>1日～数日</small></div>
+                            <div id="mobileSummaryPreviewAlignmentCard" class="mobile-summary-card mobile-timeframe-card"><span>時間軸</span>
+                                <strong id="mobileSummaryPreviewAlignment">判定不能</strong><small id="mobileSummaryPreviewAlignmentMeta">短期価格と中期需給を比較できません。</small></div>
+                        </section>
                         <div class="mobile-summary-card mobile-summary-card-options"><span>オプション変化</span><strong id="mobileSummaryPreviewOptionChanges">未生成</strong></div>
                         <div id="mobileSummaryPreviewQualityCard" class="mobile-summary-card mobile-summary-card-quality"><span>データ品質</span><strong id="mobileSummaryPreviewQuality">--</strong></div>
                     </div>
@@ -922,6 +931,7 @@
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/mobileMorningComparison.js"></script>
+<script src="js/mobileTimeframeObservation.js"></script>
 <script src="js/mobileSummaryPreview.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
