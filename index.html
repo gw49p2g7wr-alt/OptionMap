@@ -876,6 +876,14 @@
         </p>
         <pre id="weeklyFuturesParticipantCodeShadowJson"></pre>
       </details>
+      <details>
+        <summary>主要5社 拡張shadow診断（開発者向け）</summary>
+        <p id="weeklyFuturesExpansionShadowStatus" role="status">
+          正式history読込後にread-only検証します。
+        </p>
+        <div id="weeklyFuturesExpansionShadowSummary"></div>
+        <pre id="weeklyFuturesExpansionShadowJson"></pre>
+      </details>
     </details>
   
     <canvas id="futureOpenInterestChart"></canvas>
@@ -917,6 +925,7 @@
 <script src="js/mobileSummaryPreview.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
+<script src="js/weeklyFuturesExpansionShadow.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
 
@@ -1142,6 +1151,15 @@ const weeklyFuturesParticipantCodeShadowStatus = document.getElementById(
 const weeklyFuturesParticipantCodeShadowJson = document.getElementById(
     "weeklyFuturesParticipantCodeShadowJson"
 );
+const weeklyFuturesExpansionShadowStatus = document.getElementById(
+    "weeklyFuturesExpansionShadowStatus"
+);
+const weeklyFuturesExpansionShadowSummary = document.getElementById(
+    "weeklyFuturesExpansionShadowSummary"
+);
+const weeklyFuturesExpansionShadowJson = document.getElementById(
+    "weeklyFuturesExpansionShadowJson"
+);
 const weeklyOptionsBackfillStartDate = document.getElementById("weeklyOptionsBackfillStartDate");
 const weeklyOptionsBackfillEndDate = document.getElementById("weeklyOptionsBackfillEndDate");
 const weeklyOptionsBackfillPreviewButton = document.getElementById("weeklyOptionsBackfillPreviewButton");
@@ -1325,6 +1343,50 @@ async function renderWeeklyFuturesParticipantCodeShadow(history) {
     return report;
 }
 
+function formatExpansionShadowNumber(value) {
+    return Number.isFinite(value) ? value.toFixed(4) : "--";
+}
+
+async function renderWeeklyFuturesExpansionShadow(history) {
+    const report = await window.OptionMapWeeklyFuturesExpansionShadow
+        .analyzeHistory(history);
+    const statusLabel = {
+        complete: "検証完了",
+        insufficient_history: "比較対象不足",
+        invalid_history: "正式history検証失敗",
+        invalid_groups: "group定義不正",
+        formal_mismatch: "GROUP A正式判定差分あり"
+    }[report.status] || report.status;
+    if (weeklyFuturesExpansionShadowStatus) {
+        weeklyFuturesExpansionShadowStatus.textContent =
+            `主要5社 拡張shadow：${statusLabel}　` +
+            `revision ${report.checkedRevisions}／pair ${report.checkedPairs}`;
+    }
+    if (weeklyFuturesExpansionShadowSummary) {
+        weeklyFuturesExpansionShadowSummary.replaceChildren();
+        for (const group of report.groupDefinitions || []) {
+            const summary = report.summaries[group.id];
+            const row = document.createElement("p");
+            row.textContent = `${group.label}：available ` +
+                `${summary.availablePairs}/${summary.checkedPairs}／` +
+                `方向変化 ${summary.directionChangedFromACount ?? "基準"}／` +
+                `±100到達 ${summary.saturatedTotalPairs}／` +
+                `平均|scoreDiff| ${formatExpansionShadowNumber(
+                    summary.averageAbsScoreDiff
+                )}／平均|Aとの差| ${formatExpansionShadowNumber(
+                    summary.averageAbsScoreDeltaFromA
+                )}`;
+            weeklyFuturesExpansionShadowSummary.append(row);
+        }
+    }
+    if (weeklyFuturesExpansionShadowJson) {
+        weeklyFuturesExpansionShadowJson.textContent =
+            JSON.stringify(report, null, 2);
+    }
+    console.debug("weekly futures expansion shadow report", report);
+    return report;
+}
+
 async function initializeWeeklyFuturesHistory() {
     let serialized = null;
     try {
@@ -1333,6 +1395,7 @@ async function initializeWeeklyFuturesHistory() {
         weeklyFuturesHistoryStorageInvalid = true;
         renderWeeklyFuturesHistoryStatus();
         await renderWeeklyFuturesParticipantCodeShadow(null);
+        await renderWeeklyFuturesExpansionShadow(null);
         return;
     }
     const parsed = await window.OptionMapWeeklyFuturesHistory
@@ -1341,11 +1404,13 @@ async function initializeWeeklyFuturesHistory() {
         weeklyFuturesHistoryStorageInvalid = true;
         renderWeeklyFuturesHistoryStatus();
         await renderWeeklyFuturesParticipantCodeShadow(null);
+        await renderWeeklyFuturesExpansionShadow(null);
         return;
     }
     weeklyFuturesHistory = parsed.history;
     renderWeeklyFuturesHistoryStatus();
     await renderWeeklyFuturesParticipantCodeShadow(weeklyFuturesHistory);
+    await renderWeeklyFuturesExpansionShadow(weeklyFuturesHistory);
     await window.setWeeklyFuturesJudgmentHistory?.(weeklyFuturesHistory);
 }
 
