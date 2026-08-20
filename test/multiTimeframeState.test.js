@@ -146,7 +146,8 @@ test("module remains runtime-only and disconnected from protected systems", () =
     const moduleText = fs.readFileSync(path.join(root, "js/multiTimeframeState.js"), "utf8");
     const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
     const preview = fs.readFileSync(path.join(root, "js/mobileSummaryPreview.js"), "utf8");
-    assert.doesNotMatch(html + preview, /OptionMapMultiTimeframeState/);
+    assert.match(html, /<script src="js\/multiTimeframeState\.js"><\/script>/);
+    assert.match(preview, /OptionMapMobileMultiTimeframeView\.createView/);
     assert.doesNotMatch(moduleText, /\bfetch\s*\(|ipcRenderer|indexedDB|localStorage|setInterval|setTimeout/);
     assert.doesNotMatch(moduleText, /resolveApproximatePrior|3h|6h|翌朝/);
     assert.doesNotMatch(moduleText, /entry|reversal|momentum|trend|score/i);

@@ -68,14 +68,24 @@
         setCardState("mobileSummaryPreviewSnapshotComparisonCard", comparison.direction, states);
     }
 
-    async function refreshSnapshotComparison() {
+    function renderMultiTimeframe(summary, comparison, records) {
+        const view = window.OptionMapMobileMultiTimeframeView.createView(summary, comparison, records);
+        text("mobileSummaryPreviewTimeframeDirections", view.summary);
+        text("mobileSummaryPreviewAlignmentMeta", view.relationship);
+        text("mobileSummaryPreviewTimeframeQuality", view.quality);
+    }
+
+    async function refreshSnapshotComparison(summary) {
         try {
             const records = await window.OptionMapPriceSnapshotStore.listAll();
             const comparison = await window.OptionMapPriceSnapshotComparison
                 .createPriceSnapshotComparison(records);
             renderSnapshotComparison(comparison);
+            renderMultiTimeframe(summary, comparison, records);
         } catch (error) {
-            renderSnapshotComparison({ available: false, reason: "history_invalid" });
+            const comparison = { available: false, reason: "history_invalid" };
+            renderSnapshotComparison(comparison);
+            renderMultiTimeframe(summary, comparison, []);
             console.warn("Price Snapshot Comparisonを表示できません。表示は継続します:", error);
         }
     }
@@ -335,7 +345,7 @@
                 console.warn("Price Snapshot Historyの保存に失敗しました。表示は継続します:",
                     snapshotError);
             });
-            await refreshSnapshotComparison();
+            await refreshSnapshotComparison(summary);
             return { success: true, summary: clone(summary) };
         } catch (error) {
             text("mobileSummaryPreviewStatus", latestSummary

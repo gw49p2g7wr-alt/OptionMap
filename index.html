@@ -470,7 +470,10 @@
                             <div id="mobileSummaryPreviewMediumTermCard" class="mobile-summary-card mobile-timeframe-card"><span>中期需給</span>
                                 <strong id="mobileSummaryPreviewMediumTerm">判定不能</strong><small>1日～数日</small></div>
                             <div id="mobileSummaryPreviewAlignmentCard" class="mobile-summary-card mobile-timeframe-card"><span>時間軸</span>
-                                <strong id="mobileSummaryPreviewAlignment">判定不能</strong><small id="mobileSummaryPreviewAlignmentMeta">短期価格と中期需給を比較できません。</small></div>
+                                <strong id="mobileSummaryPreviewAlignment">判定不能</strong>
+                                <small id="mobileSummaryPreviewTimeframeDirections">朝 比較待ち / 前回 比較待ち / 中期 判定不能</small>
+                                <small id="mobileSummaryPreviewAlignmentMeta">短期価格と中期需給を比較できません。</small>
+                                <small id="mobileSummaryPreviewTimeframeQuality"></small></div>
                         </section>
                         <div class="mobile-summary-card mobile-summary-card-options"><span>オプション変化</span><strong id="mobileSummaryPreviewOptionChanges">未生成</strong></div>
                         <div id="mobileSummaryPreviewQualityCard" class="mobile-summary-card mobile-summary-card-quality"><span>データ品質</span><strong id="mobileSummaryPreviewQuality">--</strong></div>
@@ -937,6 +940,8 @@
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/mobileMorningComparison.js"></script>
 <script src="js/mobileTimeframeObservation.js"></script>
+<script src="js/multiTimeframeState.js"></script>
+<script src="js/mobileMultiTimeframeView.js"></script>
 <script src="js/mobileSummaryPreview.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
