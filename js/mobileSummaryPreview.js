@@ -33,6 +33,53 @@
         states.forEach(item => element.classList.toggle(`is-${item}`, item === state));
     };
 
+    const elapsedLabel = milliseconds => {
+        const minutes = Math.floor(milliseconds / 60000);
+        if (minutes < 60) return `${minutes}分`;
+        return `${Math.floor(minutes / 60)}時間${String(minutes % 60).padStart(2, "0")}分`;
+    };
+    const observationTime = value => new Date(value).toLocaleTimeString("ja-JP",
+        { hour: "2-digit", minute: "2-digit" });
+    const snapshotReasonLabel = reason => ({
+        current_snapshot_unavailable: "価格観測データがありません",
+        previous_comparable_unavailable: "比較データ待ち",
+        contract_unavailable: "限月を確認できないため比較できません",
+        contract_mismatch: "比較対象なし",
+        invalid_snapshot: "価格観測データを検証できません",
+        history_invalid: "価格観測履歴を確認できません",
+        snapshot_invalid: "価格観測データを検証できません",
+        observation_order_invalid: "観測時刻を比較できません"
+    })[reason] || "価格観測を比較できません";
+
+    function renderSnapshotComparison(comparison) {
+        const states = ["up", "down", "neutral", "unavailable"];
+        if (!comparison?.available) {
+            text("mobileSummaryPreviewSnapshotComparison", snapshotReasonLabel(comparison?.reason));
+            text("mobileSummaryPreviewSnapshotComparisonMeta", comparison?.reason === "contract_mismatch"
+                ? "同一限月の過去価格がありません" : "同一限月の価格観測が2件必要です");
+            setCardState("mobileSummaryPreviewSnapshotComparisonCard", "unavailable", states);
+            return;
+        }
+        const percent = `${comparison.percentChange > 0 ? "+" : ""}${comparison.percentChange.toFixed(2)}%`;
+        text("mobileSummaryPreviewSnapshotComparison",
+            `${comparison.arrow} ${signed(comparison.priceDelta)}円　${percent}`);
+        text("mobileSummaryPreviewSnapshotComparisonMeta",
+            `前回 ${observationTime(comparison.previous.observedAt)} → 現在 ${observationTime(comparison.current.observedAt)} ・ 経過 ${elapsedLabel(comparison.elapsedMs)}`);
+        setCardState("mobileSummaryPreviewSnapshotComparisonCard", comparison.direction, states);
+    }
+
+    async function refreshSnapshotComparison() {
+        try {
+            const records = await window.OptionMapPriceSnapshotStore.listAll();
+            const comparison = await window.OptionMapPriceSnapshotComparison
+                .createPriceSnapshotComparison(records);
+            renderSnapshotComparison(comparison);
+        } catch (error) {
+            renderSnapshotComparison({ available: false, reason: "history_invalid" });
+            console.warn("Price Snapshot Comparisonを表示できません。表示は継続します:", error);
+        }
+    }
+
     function render(summary) {
         const payload = summary.payload;
         text("mobileSummaryPreviewStatus", `生成済み ${time(summary.generatedAt)}`);
@@ -288,6 +335,7 @@
                 console.warn("Price Snapshot Historyの保存に失敗しました。表示は継続します:",
                     snapshotError);
             });
+            await refreshSnapshotComparison();
             return { success: true, summary: clone(summary) };
         } catch (error) {
             text("mobileSummaryPreviewStatus", latestSummary

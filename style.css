@@ -1609,6 +1609,22 @@ canvas {
 .mobile-summary-card-overall.is-sell { background: #fdf5f4; border-left-color: #b56762; }
 .mobile-summary-card-overall.is-neutral { background: #f6f7f9; border-left-color: #87909e; }
 .mobile-summary-card-price { background: #f5f8fb; border-left-color: #70859f; }
+.mobile-summary-card-snapshot-comparison.is-up {
+    background: #f1f8f3;
+    border-left-color: #4f8b6b;
+}
+.mobile-summary-card-snapshot-comparison.is-down {
+    background: #fdf3f3;
+    border-left-color: #b56762;
+}
+.mobile-summary-card-snapshot-comparison.is-neutral {
+    background: #f6f7f9;
+    border-left-color: #87909e;
+}
+.mobile-summary-card-snapshot-comparison.is-unavailable {
+    background: #f4f5f7;
+    border-left-color: #98a2b3;
+}
 .mobile-summary-card-morning { background: #fff9ec; border-left-color: #d09a37; }
 .mobile-summary-card-change { background: #f5f6fb; border-left-color: #7379a5; }
 .mobile-summary-card-upper { background: #fdf5f4; border-left-color: #bd746f; }
