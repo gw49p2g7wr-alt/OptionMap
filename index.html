@@ -289,13 +289,7 @@
             </div>
 
             <div class="cumulative-chart-controls">
-                <select id="cumulativeBrokerSelect">
-                    <option value="JPM">JPM</option>
-                    <option value="GS">GS</option>
-                    <option value="NOMURA">野村</option>
-                    <option value="BNP">BNP</option>
-                    <option value="ABN">ABN</option>
-                  </select>
+                <select id="cumulativeBrokerSelect"></select>
 
                   <select id="cumulativePeriodSelect">
                     <option value="20" selected>直近20営業日</option>
@@ -485,19 +479,7 @@
                         正式な異なる2週分のデータ待ち
                     </p>
                 
-                    <div id="weeklyBrokerSummary">
-                
-                        <div>JPM：<strong id="weeklyStatusJPM">未確定</strong></div>
-                
-                        <div>GS：<strong id="weeklyStatusGS">未確定</strong></div>
-                
-                        <div>野村：<strong id="weeklyStatusNOMURA">未確定</strong></div>
-                
-                        <div>BNP：<strong id="weeklyStatusBNP">未確定</strong></div>
-                
-                        <div>ABN：<strong id="weeklyStatusABN">未確定</strong></div>
-                
-                    </div>
+                    <div id="weeklyBrokerSummary"></div>
                 
                     <div class="weekly-broker-direction">
                 
@@ -905,6 +887,7 @@
 <script src="js/participantHistory.js"></script>
 <script src="js/participantActivity.js"></script>
 <script src="js/backfill/adapters/participantBackfillAdapter.js"></script>
+<script src="js/weeklyBrokerConfig.js"></script>
 <script src="js/weeklyFutures.js"></script>
 <script src="js/weeklyOptions.js"></script>
 <script src="js/weeklyOptionsHistory.js"></script>

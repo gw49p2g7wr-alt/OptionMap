@@ -1,11 +1,16 @@
 (function (root, factory) {
-    const api = factory();
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root.document);
+    const brokerConfig = commonJs
+        ? require("./weeklyBrokerConfig.js")
+        : root.OptionMapWeeklyBrokerConfig;
+    const api = factory(brokerConfig);
 
-    if (typeof module === "object" && module.exports) {
+    if (commonJs) {
         module.exports = api;
     }
     if (root) root.OptionMapWeeklyFutures = api;
-})(typeof window !== "undefined" ? window : globalThis, function () {
+})(typeof window !== "undefined" ? window : globalThis, function (brokerConfig) {
     "use strict";
 
     const SCHEMA_VERSION = 2;
@@ -17,13 +22,7 @@
         "日経225mini",
         "TOPIX先物"
     ]);
-    const CORE_BROKERS = Object.freeze({
-        JPM: "ＪＰモルガン証券",
-        GS: "ゴールドマン証券",
-        NOMURA: "野村証券",
-        BNP: "ＢＮＰパリバ証券",
-        ABN: "ＡＢＮクリアリン証券"
-    });
+    const CORE_BROKERS = brokerConfig.BROKER_MAP;
 
     function normalizeText(value) {
         return String(value ?? "")

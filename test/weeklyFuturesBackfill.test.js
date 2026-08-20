@@ -16,6 +16,7 @@ test("Electron renderer相当でもwindowへadapterを公開する", () => {
     };
     vm.createContext(context);
     for (const file of [
+        "js/weeklyBrokerConfig.js",
         "js/weeklyFutures.js",
         "js/weeklyFuturesHistory.js",
         "js/backfill/adapters/weeklyFuturesBackfillAdapter.js"

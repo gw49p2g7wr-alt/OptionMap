@@ -4012,13 +4012,35 @@ const snapshotSaveStatus =
         }
     }
 
-const weeklyBrokerMap = {
-    JPM: "ＪＰモルガン証券",
-    GS: "ゴールドマン証券",
-    NOMURA: "野村証券",
-    BNP: "ＢＮＰパリバ証券",
-    ABN: "ＡＢＮクリアリン証券"
-};
+const weeklyBrokerConfig = window.OptionMapWeeklyBrokerConfig;
+const weeklyBrokerParticipants = weeklyBrokerConfig.PARTICIPANTS;
+const weeklyBrokerMap = weeklyBrokerConfig.BROKER_MAP;
+
+function initializeWeeklyBrokerConfigUi() {
+    const selector = document.getElementById("cumulativeBrokerSelect");
+    if (selector) {
+        selector.replaceChildren(...weeklyBrokerParticipants.map(participant => {
+            const option = document.createElement("option");
+            option.value = participant.key;
+            option.textContent = participant.displayName;
+            return option;
+        }));
+    }
+
+    const summary = document.getElementById("weeklyBrokerSummary");
+    if (summary) {
+        summary.replaceChildren(...weeklyBrokerParticipants.map(participant => {
+            const row = document.createElement("div");
+            const status = document.createElement("strong");
+            row.append(`${participant.displayName}：`, status);
+            status.id = participant.statusElementId;
+            status.textContent = "未確定";
+            return row;
+        }));
+    }
+}
+
+initializeWeeklyBrokerConfigUi();
 
 const weeklyJudgmentScoreMap = Object.freeze({
     "強い買い優勢": 2,
@@ -5391,13 +5413,12 @@ async function renderSavedSnapshots() {
             "比較できる週次データが不足しています。";
     }
 
-    const weeklyStatusIds = {
-        JPM: "weeklyStatusJPM",
-        GS: "weeklyStatusGS",
-        NOMURA: "weeklyStatusNOMURA",
-        BNP: "weeklyStatusBNP",
-        ABN: "weeklyStatusABN"
-    };
+    const weeklyStatusIds = Object.fromEntries(
+        weeklyBrokerParticipants.map(participant => [
+            participant.key,
+            participant.statusElementId
+        ])
+    );
 
     Object.values(weeklyStatusIds).forEach(elementId => {
         const element = document.getElementById(elementId);
@@ -5499,13 +5520,12 @@ async function renderSavedSnapshots() {
             }
 
             if (weeklyBrokerCommentElement) {
-                const displayBrokerNames = {
-                    JPM: "JPM",
-                    GS: "GS",
-                    NOMURA: "野村",
-                    BNP: "BNP",
-                    ABN: "ABN"
-                };
+                const displayBrokerNames = Object.fromEntries(
+                    weeklyBrokerParticipants.map(participant => [
+                        participant.key,
+                        participant.displayName
+                    ])
+                );
 
                 const brokerKeysByStatus = status =>
                     Object.entries(weeklyBrokerDiffs)
@@ -5749,17 +5769,9 @@ console.log("snapshotの中身", testSnapshot);
 const cumulativeCompanySelect =
   document.getElementById("cumulativeBrokerSelect");
 
-const companyMap = {
-    JPM: "ＪＰモルガン証券",
-    GS: "ゴールドマン証券",
-    NOMURA: "野村証券",
-    BNP: "ＢＮＰパリバ証券",
-    ABN: "ＡＢＮクリアリン証券"
-  };
-  
   const companyName =
-    companyMap[cumulativeCompanySelect.value] ||
-    "ＪＰモルガン証券";
+    weeklyBrokerMap[cumulativeCompanySelect.value] ||
+    weeklyBrokerParticipants[0].brokerName;
 
 const dayAuctionRecords =
   testSnapshot?.parsedDayData?.dayAuction?.large?.records || [];
