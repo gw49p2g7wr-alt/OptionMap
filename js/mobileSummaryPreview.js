@@ -281,6 +281,13 @@
                 console.warn("Observation historyの保存に失敗しました。表示は継続します:",
                     observationError);
             });
+            await window.OptionMapPriceSnapshot?.persistBestEffort({
+                summary, rendererState: input.observationState,
+                observedAt: new Date().toISOString()
+            }, window.OptionMapPriceSnapshotStore, snapshotError => {
+                console.warn("Price Snapshot Historyの保存に失敗しました。表示は継続します:",
+                    snapshotError);
+            });
             return { success: true, summary: clone(summary) };
         } catch (error) {
             text("mobileSummaryPreviewStatus", latestSummary
