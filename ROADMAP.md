@@ -381,3 +381,162 @@ OptionMapの保存・分析機能が一段安定した
 * ✅ ExcelダウンロードURL取得
 * ✅ Excelダウンロード成功（47,238バイト！）
 
+
+
+## 2026-08-22 現在版ROADMAP（正本）
+
+### 直近ゴール
+
+友人が一人で安定して使え、初回導入後の更新もなるべく容易な
+OptionMap β版を完成させてから配布する。
+
+2026年9月SQは目安とし、品質を犠牲にして合わせるdeadlineにはしない。
+友人からは「急がなくてよいので、ちゃんとできてからでよい」と確認済み。
+
+### 配布前必須
+
+#### 1. 友人指定12 scoring groups
+
+現行主要5グループ：
+
+* JPM
+* Goldman Sachs
+* 野村
+* BNP
+* ABN
+
+追加7グループ：
+
+* ソシエテG
+* モルガンMUFG
+* SBI＋楽天
+* 三菱UFJ証券
+* 大和
+* シティ
+* バークレイズ
+
+physical participantsは13、scoring groupsは12。
+三菱は `11520 / 三菱ＵＦＪ証券` でidentity確認済み。
+SBI＋楽天は両社必須・建玉先合算を第一候補とする。
+
+Shadow Missing Policy候補：
+
+* 全体10/12以上
+* 現行主要5社は5/5必須
+* N=12固定
+* normalizationは `raw × 5 / 12`
+* 12/12は `full`
+* 11/12は `partial_one_missing`
+* 10/12は `partial_two_missing`
+* core欠損または9/12以下は `unavailable`
+
+上記はshadow仕様候補であり、formal scoringとしては未確定。
+12group OverallV2 shadow、qualityFactor、dominance、missing policyを検証後、
+formal接続のGo/No-Goを判断する。
+
+#### 2. IVグラフ
+
+友人の明示要望として、CALLとPUTのIVを権利行使価格500円刻みで並べ、
+折れ線グラフで表示する。未実装。
+
+#### 3. 休場中データ保持
+
+市場休場中などで最新データを取得できない場合も、前営業日の最終確定データを
+消さずに保持・表示する。現在データと誤認しないよう、取得日時・鮮度・stale状態を
+明示する。OverallV2での扱いは別途設計する。
+
+#### 4. 配布・更新
+
+友人の前回インストール負担が大きかったため、次回配布では更新方式を重要課題とする。
+
+最低限の検討項目：
+
+* 上書きアップデート
+* 既存設定、LocalStorage、IndexedDB、historyの維持
+* version migration
+* rollback
+* 可能なら自動アップデート
+
+Windows installer、GitHub Actions、GitHub Releasesは既存基盤として利用する。
+友人環境で初回起動から通常利用まで確認し、取得失敗やエラーでも壊れないこと、
+β版配布とrollbackが成立することを確認する。
+
+### 完了した研究・基盤
+
+* overallV2
+* Morning Baseline / comparison
+* Observation History
+* QRI revision history
+* weekly futures history
+* weekly options history
+* Price Snapshot History v1
+* Price Snapshot Comparison v1
+* Multi-Timeframe State Builder v1
+* Multi-Timeframe State UI Phase 1
+* Timeframe Outcome Resolver v1
+* Timeframe Outcome Lifecycle v1
+* Weekly Futures History Read-Only Diagnostic Bridge v1
+* 12 Group Weekly Shadow
+* formal 5社 vs 12group dual-run Phase 4
+
+Phase 4実history検収結果：
+
+* formal/shadow dual-run成功
+* `full`、`partial_one_missing`、`unavailable`を確認
+* core missingを確認
+* SBI＋楽天Compositeの両社available・片側欠損を確認
+* formal / OverallV2隔離を確認
+* storage・repositoryへの副作用なし
+* `partial_two_missing`のみ実historyでは未確認
+
+### データ熟成・研究待ち
+
+* weekly normalization base 0.40候補の正式採用判断
+* neutral / strong threshold再評価
+* 12group OverallV2 shadow
+* 12group qualityFactor
+* dominance評価
+* `partial_two_missing`実データ検収
+* Price Snapshot 3h / 6h / 翌朝Outcome
+* Outcome tolerance決定
+* Multi-Timeframe Stateの有効性検証
+* 主要社拡張後overallV2の長期成績
+* 短期判定の研究・正式化
+
+### 配布後でもよい案件
+
+* カレンダーを過去historyの入口にする
+* カレンダーからJPX表示・比較
+* カレンダー完成後、現在の「保存済みJPXデータ」一覧撤去検討
+* DataCube 1分OHLC研究
+* QUICK API検討
+* 世界市場自動取得（スクリーンショット方式は廃止）
+* AIコメント高度化
+* 過去データとの一致率（「過去○回中○回」）
+* 学習レベル（Lv.1→Lv.10）
+* 週間・月間レポート
+* アドバンテージスコア
+* 建玉移動の自動検出
+* AIによる売買コメント
+* 壁突破確率、自動レポート、長期データ学習
+
+### 開発ルール
+
+新機能を思いついた場合、先に次のいずれかへ分類する。
+
+1. 配布前必須
+2. データ待ち
+3. 配布後でよい
+
+品質を犠牲にして期限へ合わせない。
+正式ロジック変更前は原則として、
+`調査 → shadow → test → live/history検収 → formal接続` の順で進める。
+
+### 今後のROADMAP管理
+
+今後はユーザーが毎回VS Codeで編集することを前提にせず、開発上重要な新規宿題、
+仕様確定、Phase完了、優先順位変更、配布条件変更が発生した場合、必要に応じて
+技術部長がROADMAP更新を担当する。
+
+ただし、コード変更commitへ無関係なROADMAP変更を勝手に混ぜず、
+独立した変更として管理する。
