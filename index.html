@@ -963,6 +963,10 @@
 <script src="js/qriOptionsHistoryPersistence.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
+<script src="js/dataFreshness.js"></script>
+<script src="js/currentPriceFreshnessShadow.js"></script>
+<script src="js/currentPriceLastValidCache.js"></script>
+<script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/mobileMorningComparison.js"></script>
 <script src="js/mobileTimeframeObservation.js"></script>
 <script src="js/multiTimeframeState.js"></script>
@@ -4391,6 +4395,37 @@ async function fetchQriData({ requestId } = {}) {
                 "QRI日経225先物参考価格の反映結果:",
                 priceResult
             );
+            if (priceResult?.success === true && priceResult.mode === "automatic") {
+                void window.OptionMapCurrentPriceLastValidStore?.buildAndSaveCurrentPriceLastValid(
+                    localStorage,
+                    {
+                        price: {
+                            value: priceResult.value,
+                            source: priceResult.source,
+                            mode: priceResult.mode,
+                            contract: priceResult.contract,
+                            quotedAt: priceResult.quotedAt,
+                            fetchedAt: priceResult.fetchedAt
+                        },
+                        activeContract: payload.canonicalV2?.contract || null,
+                        tradingDate: payload.canonicalV2?.tradingDate || null,
+                        sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl
+                    },
+                    {
+                        requestMode: "auto",
+                        requestOrigin: "live",
+                        responseStatus: "success",
+                        isCurrent: () => isCurrentFetchRequest(source, activeRequestId)
+                    }
+                ).then(cacheResult => {
+                    if (!cacheResult?.success) {
+                        console.warn("CurrentPrice last-valid cache保存をスキップしました:",
+                            cacheResult?.reason || "unknown");
+                    }
+                }).catch(error => {
+                    console.warn("CurrentPrice last-valid cache保存に失敗しました:", error);
+                });
+            }
         }
 
         if (typeof window.drawJpxPriceChart === "function") {
