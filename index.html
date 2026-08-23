@@ -932,6 +932,9 @@
 <script src="js/weeklyOptionsHistoryComparison.js"></script>
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
 <script src="js/qriOptions.js"></script>
+<script src="js/qriOptionIv.js"></script>
+<script src="js/qriIvGraphViewModel.js"></script>
+<script src="js/qriOptionIvRuntime.js"></script>
 <script src="js/qriOptionsSelection.js"></script>
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
@@ -3678,12 +3681,22 @@ function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {
         (left, right) => left.strike - right.strike
     );
     let canonicalV2 = null;
+    let ivCanonicalV1 = null;
+    let ivParserError = null;
     try {
         canonicalV2 = window.OptionMapQriOptions?.parseQriOptionsPage(
             html, sourceUrl
         ) || null;
     } catch (error) {
         console.warn("QRI canonical v2を生成できませんでした:", error);
+    }
+    try {
+        ivCanonicalV1 = window.OptionMapQriOptionIv?.parseQriOptionIvPage(
+            html, sourceUrl
+        ) || null;
+    } catch (error) {
+        ivParserError = error?.message || String(error);
+        console.warn("QRI IV canonical v1を生成できませんでした:", error);
     }
 
     return {
@@ -3701,7 +3714,9 @@ function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {
         putOpenInterestAvailable:
             parsedRows.putOpenInterestAvailable === true,
         parsedRows,
-        canonicalV2
+        canonicalV2,
+        ivCanonicalV1,
+        ivParserError
     };
 }
 
@@ -3799,6 +3814,53 @@ let qriContractManifest = null;
 let qriContractSelectionState = window.OptionMapQriOptionsSelection.createState();
 const qriLazyManifestResolver = window.OptionMapQriOptionsSelection.createLazyManifestResolver();
 let qriManifestSequence = 0;
+let currentQriOptionIv = window.OptionMapQriOptionIvRuntime.createState();
+
+async function adoptQriOptionIv(channel, payload, fetchedAt, requestContext, guard) {
+    try {
+        const candidate = await window.OptionMapQriOptionIvRuntime.createCandidate({
+            canonical: payload?.ivCanonicalV1 || null,
+            parserError: payload?.ivParserError || null,
+            fetchedAt,
+            contract: requestContext?.requestedContract || null,
+            requestContext
+        });
+        const result = window.OptionMapQriOptionIvRuntime.adopt(
+            currentQriOptionIv, channel, candidate, guard()
+        );
+        currentQriOptionIv = result.state;
+        return result;
+    } catch (error) {
+        console.warn("QRI IV runtime stateを更新できませんでした:", error);
+        return { status: "canonical_invalid", adopted: false };
+    }
+}
+
+async function markQriOptionIvSourceUnavailable(channel, fetchedAt,
+    requestContext, guard, error) {
+    try {
+        const candidate = await window.OptionMapQriOptionIvRuntime.createCandidate({
+            sourceAvailable: false, fetchedAt, contract: requestContext?.requestedContract || null,
+            requestContext, error
+        });
+        const result = window.OptionMapQriOptionIvRuntime.adopt(
+            currentQriOptionIv, channel, candidate, guard()
+        );
+        currentQriOptionIv = result.state;
+        return result;
+    } catch (runtimeError) {
+        console.warn("QRI IV取得失敗stateを更新できませんでした:", runtimeError);
+        return { status: "source_unavailable", adopted: false };
+    }
+}
+
+window.getCurrentQriOptionIv = () => JSON.parse(JSON.stringify(currentQriOptionIv));
+window.buildCurrentQriIvGraphViewModel = ({ channel = "active", rangeMode,
+    currentPrice } = {}) => window.OptionMapQriIvGraphViewModel.build({
+    canonical: currentQriOptionIv[channel]?.canonical || null,
+    rangeMode,
+    currentPrice
+});
 
 function setQriContractSelectionNote(text, status) {
     if (qriContractSelectionNote) {
@@ -3859,6 +3921,7 @@ async function showSpecificQriContract(contract) {
     qriContractSelectionState = window.OptionMapQriOptionsSelection.beginRequest(qriContractSelectionState);
     const sequence = qriContractSelectionState.requestSequence;
     qriContractSelect?.setAttribute("aria-busy", "true");
+    let qriHtmlAcquired = false;
     window.setQriContractDisplayUnavailable?.(contract);
     setQriContractSelectionNote(`表示用：${contract}限を取得中…（総合判定には未使用）`, "loading");
     try {
@@ -3866,11 +3929,20 @@ async function showSpecificQriContract(contract) {
         if (sequence !== qriContractSelectionState.requestSequence ||
             qriContractSelectionState.contract !== contract) return { status: "stale_ignored" };
         if (!response.success) {
+            const ivFetchedAt = new Date().toISOString();
+            await markQriOptionIvSourceUnavailable("selected", ivFetchedAt,
+                { mode: "specific", sequence, requestedContract: contract,
+                    sourceUrl: listed.url },
+                () => ({ isCurrent: sequence === qriContractSelectionState.requestSequence &&
+                    qriContractSelectionState.contract === contract,
+                requestedContract: contract,
+                selectedContract: qriContractSelectionState.contract }), response.error);
             qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
                 qriContractSelectionState, sequence, { status: "fetch_failed", error: response.error });
             setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
             return { status: "fetch_failed" };
         }
+        qriHtmlAcquired = true;
         const payload = createQriPayload(response.html, response.sourceUrl);
         const valid = validateQriPayload(payload) &&
             window.OptionMapQriOptionsSelection.validateSpecificResult({ requestedContract: contract,
@@ -3882,6 +3954,15 @@ async function showSpecificQriContract(contract) {
             setQriContractSelectionNote(`表示用：${contract}限の検証に失敗しました。総合判定には未使用`, "validation_failed");
             return { status: "validation_failed" };
         }
+        const ivFetchedAt = new Date().toISOString();
+        await adoptQriOptionIv("selected", payload, ivFetchedAt,
+            { mode: "specific", sequence, requestedContract: contract,
+                sourceUrl: listed.url },
+            () => ({ isCurrent: sequence === qriContractSelectionState.requestSequence &&
+                qriContractSelectionState.contract === contract,
+            requestedContract: contract,
+            selectedContract: qriContractSelectionState.contract,
+            responseContract: payload.ivCanonicalV1?.contract || null }));
         const display = createSpecificDisplayData(payload, payload.canonicalV2);
         if (!display || !window.setQriContractDisplayData?.(display)) throw new Error("display_data_invalid");
         qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
@@ -3893,6 +3974,15 @@ async function showSpecificQriContract(contract) {
         return { status: unavailable ? "unavailable" : "ready", canonical: payload.canonicalV2 };
     } catch (error) {
         if (sequence !== qriContractSelectionState.requestSequence) return { status: "stale_ignored" };
+        if (!qriHtmlAcquired) {
+            await markQriOptionIvSourceUnavailable("selected", new Date().toISOString(),
+                { mode: "specific", sequence, requestedContract: contract,
+                    sourceUrl: listed.url },
+                () => ({ isCurrent: sequence === qriContractSelectionState.requestSequence &&
+                    qriContractSelectionState.contract === contract,
+                requestedContract: contract,
+                selectedContract: qriContractSelectionState.contract }), error?.message || error);
+        }
         qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
             qriContractSelectionState, sequence, { status: "fetch_failed", error: error?.message });
         setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
@@ -3926,7 +4016,8 @@ async function showUnresolvedQriEntry(selectionKey) {
                 if (!validateQriPayload(payload) || !payload.canonicalV2) {
                     throw new Error("lazy_payload_invalid");
                 }
-                return { canonical: payload.canonicalV2, payload };
+                return { canonical: payload.canonicalV2, payload,
+                    ivFetchedAt: new Date().toISOString() };
             }
         });
         if (sequence !== qriContractSelectionState.requestSequence ||
@@ -3942,6 +4033,15 @@ async function showUnresolvedQriEntry(selectionKey) {
             contract: resolved.canonical.contract, selectionKey: null };
         qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
             qriContractSelectionState, sequence, { status: "ready" });
+        await adoptQriOptionIv("selected", resolved.payload, resolved.ivFetchedAt,
+            { mode: "specific", sequence,
+                requestedContract: resolved.canonical.contract,
+                selectionKey, sourceUrl: resolved.canonical.sourceUrl },
+            () => ({ isCurrent: sequence === qriContractSelectionState.requestSequence &&
+                qriContractSelectionState.contract === resolved.canonical.contract,
+            requestedContract: resolved.canonical.contract,
+            selectedContract: qriContractSelectionState.contract,
+            responseContract: resolved.payload.ivCanonicalV1?.contract || null }));
         renderQriContractOptions();
         void renderQriOptionsHistoryComparison();
         const unavailable = resolved.canonical.openInterestStatus !== "available";
@@ -4034,6 +4134,7 @@ async function fetchQriData({ requestId } = {}) {
     const activeRequestId = requestId ||
         window.createFetchRequestId(source);
     const startedAt = new Date().toISOString();
+    let qriHtmlAcquired = false;
 
     window.updateFetchState(source, {
         status: window.FETCH_STATUS.LOADING,
@@ -4071,6 +4172,7 @@ async function fetchQriData({ requestId } = {}) {
                 result.error || "オプションページの取得に失敗しました"
             );
         }
+        qriHtmlAcquired = true;
 
         const payload = createQriPayload(result.html, sourceUrl);
 
@@ -4093,6 +4195,13 @@ async function fetchQriData({ requestId } = {}) {
 
         const fetchedAt = new Date().toISOString();
         const sourceDate = payload.sourceDate.toISOString();
+
+        await adoptQriOptionIv("active", payload, fetchedAt,
+            { mode: "auto", requestId: activeRequestId, requestedContract: "auto",
+                sourceUrl },
+            () => ({ isCurrent: isCurrentFetchRequest(source, activeRequestId),
+                activeContract: payload.canonicalV2?.contract || null,
+                responseContract: payload.ivCanonicalV1?.contract || null }));
 
         if (payload.canonicalV2) {
             await persistQriOptionsHistory(
@@ -4254,6 +4363,13 @@ async function fetchQriData({ requestId } = {}) {
         }
 
         const fetchedAt = new Date().toISOString();
+        if (!qriHtmlAcquired) {
+            await markQriOptionIvSourceUnavailable("active", fetchedAt,
+                { mode: "auto", requestId: activeRequestId,
+                    requestedContract: "auto", sourceUrl },
+                () => ({ isCurrent: isCurrentFetchRequest(source, activeRequestId) }),
+                errorMessage);
+        }
         window.updateFetchState(source, {
             status: window.FETCH_STATUS.FAILED,
             fetchedAt,

@@ -159,5 +159,6 @@ test("module is pure and disconnected from Chart, DOM, storage, UI and OverallV2
     const index = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.doesNotMatch(source, /new\s+Chart|canvas|querySelector|createElement/);
     assert.doesNotMatch(source, /localStorage|indexedDB|fetch\s*\(|ipcRenderer|OverallV2/i);
-    assert.equal(index.includes("js/qriIvGraphViewModel.js"), false);
+    assert.equal(index.includes('<script src="js/qriIvGraphViewModel.js"></script>'), true);
+    assert.doesNotMatch(index, /new\s+Chart\([^)]*qriIv|id=["']qriIv/i);
 });

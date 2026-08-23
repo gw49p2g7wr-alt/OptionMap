@@ -181,5 +181,6 @@ test("module stays pure and disconnected from storage, fetch, history, UI and Ov
     const indexSource = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.doesNotMatch(moduleSource, /localStorage|indexedDB|fetch\s*\(|ipcRenderer|Chart\s*\(/);
     assert.doesNotMatch(moduleSource, /OverallV2|HistoryStore|commitHistory|persist/i);
-    assert.equal(indexSource.includes("js/qriOptionIv.js"), false);
+    assert.equal(indexSource.includes('<script src="js/qriOptionIv.js"></script>'), true);
+    assert.doesNotMatch(indexSource, /new\s+Chart\([^)]*qriIv|id=["']qriIv/i);
 });
