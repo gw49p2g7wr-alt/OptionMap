@@ -136,3 +136,141 @@ test("foundation has no storage, fetch, UI, renderer, mobile or Overall wiring",
     assert.equal(/localStorage|indexedDB|\bfetch\s*\(|document\.|OverallV2|MobileSummary/.test(source), false);
     assert.equal(Cache.STORAGE_KEY_CANDIDATE, "optionMapCurrentPriceLastValidV1");
 });
+
+const INPUT_V2 = Object.freeze({ source: "qri-nikkei225-futures", mode: "automatic",
+    value: 66010, contract: "2026-09", pageTradingDate: "2026-08-24",
+    pageUpdatedAt: "2026-08-24T06:34:00+09:00", quotedAtRaw: "08/22 06:00",
+    fetchedAt: "2026-08-24T06:34:30+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
+const buildV2 = overrides => Cache.buildCurrentPriceLastValidCacheV2({ ...INPUT_V2, ...overrides });
+
+test("schema v2 preserves source facts and derived quote fields", async () => {
+    const result = await buildV2();
+    assert.equal(result.success, true);
+    assert.equal(result.cache.schemaVersion, 2);
+    assert.deepEqual({ pageTradingDate: result.cache.pageTradingDate,
+        pageUpdatedAt: result.cache.pageUpdatedAt, quotedAtRaw: result.cache.quotedAtRaw,
+        quoteDate: result.cache.quoteDate, quotedAtNormalized: result.cache.quotedAtNormalized },
+    { pageTradingDate: "2026-08-24", pageUpdatedAt: "2026-08-24T06:34:00+09:00",
+        quotedAtRaw: "08/22 06:00", quoteDate: "2026-08-22",
+        quotedAtNormalized: "2026-08-22T06:00:00+09:00" });
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2(result.cache), true);
+});
+
+for (const [name, pageTradingDate, pageUpdatedAt, quotedAtRaw, expected] of [
+    ["same day", "2026-07-23", "2026-07-23T05:33:00+09:00", "07/23 05:31", "2026-07-23"],
+    ["one day earlier", "2026-07-29", "2026-07-28T20:26:00+09:00", "07/28 20:26", "2026-07-28"],
+    ["two days earlier", "2026-07-27", "2026-07-27T05:44:00+09:00", "07/25 06:00", "2026-07-25"],
+    ["three days earlier", "2026-07-21", "2026-07-18T07:49:00+09:00", "07/18 06:00", "2026-07-18"],
+    ["year boundary", "2027-01-04", "2027-01-04T05:00:00+09:00", "12/30 06:00", "2026-12-30"]
+]) test(`v2 resolves ${name} against pageUpdatedAt`, () => {
+    const result = Cache.resolveQuotedAt({ pageTradingDate, pageUpdatedAt, quotedAtRaw });
+    assert.deepEqual([result.success, result.quoteDate], [true, expected]);
+});
+
+test("v2 never uses current, fetchedAt or contract year for resolution", () => {
+    const result = Cache.resolveQuotedAt({ quotedAtRaw: "12/30 06:00",
+        pageUpdatedAt: "2027-01-04T05:00:00+09:00", pageTradingDate: "2027-01-04",
+        fetchedAt: "2099-01-01T00:00:00Z", contract: "2099-12" });
+    assert.equal(result.quoteDate, "2026-12-30");
+});
+
+test("future same-year candidate is moved to the nearest prior year", () => {
+    const result = Cache.resolveQuotedAt({ quotedAtRaw: "12/30 06:00",
+        pageUpdatedAt: "2027-01-04T05:00:00+09:00", pageTradingDate: "2027-01-04",
+        maximumDistanceDays: 400 });
+    assert.equal(result.quotedAtNormalized, "2026-12-30T06:00:00+09:00");
+    assert.ok(Date.parse(result.quotedAtNormalized) <= Date.parse("2027-01-04T05:00:00+09:00"));
+});
+
+test("reverse year boundary never accepts a future January quote", () => {
+    const result = Cache.resolveQuotedAt({ quotedAtRaw: "01/01 06:00",
+        pageUpdatedAt: "2026-12-31T05:00:00+09:00", pageTradingDate: "2026-12-31" });
+    assert.equal(result.success, false);
+    assert.equal(result.reason, "quote_distance_exceeded");
+    assert.equal(result.quotedAtNormalized, null);
+});
+
+test("seven and ten day safety ceilings remain explicit resolver inputs", () => {
+    const input = { quotedAtRaw: "08/16 06:00",
+        pageUpdatedAt: "2026-08-24T06:00:00+09:00", pageTradingDate: "2026-08-24" };
+    assert.equal(Cache.resolveQuotedAt({ ...input, maximumDistanceDays: 7 }).success, false);
+    assert.equal(Cache.resolveQuotedAt({ ...input, maximumDistanceDays: 10 }).success, true);
+});
+
+test("valid but excessively distant raw quote is preserved unresolved", async () => {
+    const result = await buildV2({ pageTradingDate: "2026-08-24",
+        pageUpdatedAt: "2026-08-24T06:34:00+09:00", quotedAtRaw: "07/01 06:00" });
+    assert.equal(result.success, true);
+    assert.equal(result.reason, "quote_date_unresolved");
+    assert.deepEqual([result.cache.quotedAtRaw, result.cache.quoteDate,
+        result.cache.quotedAtNormalized, result.cache.quoteDateResolution],
+    ["07/01 06:00", null, null, "unresolved"]);
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2(result.cache), true);
+});
+
+for (const [name, overrides, reason] of [
+    ["malformed raw", { quotedAtRaw: "06:00" }, "quoted_at_raw_malformed"],
+    ["malformed pageUpdatedAt", { pageUpdatedAt: "08/24 06:34" }, "page_updated_at_invalid"],
+    ["malformed pageTradingDate", { pageTradingDate: "2026-02-30" }, "page_trading_date_invalid"]
+]) test(`v2 rejects ${name}`, async () => {
+    const result = await buildV2(overrides);
+    assert.deepEqual([result.success, result.reason], [false, reason]);
+});
+
+test("v2 records deterministic resolution metadata", async () => {
+    const cache = (await buildV2()).cache;
+    assert.deepEqual([cache.quoteDateResolution, cache.quoteDateResolutionSource],
+        ["nearest_not_after_page_updated_at", "pageUpdatedAt"]);
+});
+
+test("schema v1 and legacy objects are rejected by the v2 validator", async () => {
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2((await build()).cache), false);
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2({ value: 66010 }), false);
+});
+
+test("v2 quote identity and version key survive later page republication", async () => {
+    const first = (await buildV2()).cache;
+    const second = (await buildV2({ pageTradingDate: "2026-08-25",
+        pageUpdatedAt: "2026-08-25T05:00:00+09:00",
+        fetchedAt: "2026-08-25T05:01:00+09:00" })).cache;
+    assert.equal(first.quoteSignature, second.quoteSignature);
+    assert.equal(first.versionKey, second.versionKey);
+    assert.notEqual(first.signature, second.signature);
+});
+
+test("v2 cache signature changes with acquisition and page metadata", async () => {
+    const original = (await buildV2()).cache;
+    const fetched = (await buildV2({ fetchedAt: "2026-08-24T06:35:00+09:00" })).cache;
+    const page = (await buildV2({ pageTradingDate: "2026-08-25",
+        pageUpdatedAt: "2026-08-25T05:00:00+09:00" })).cache;
+    assert.notEqual(original.signature, fetched.signature);
+    assert.notEqual(original.signature, page.signature);
+});
+
+test("v2 validator detects tampering and unknown fields", async () => {
+    const cache = (await buildV2()).cache;
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2({ ...cache, value: 1 }), false);
+    assert.equal(await Cache.validateCurrentPriceLastValidCacheV2({ ...cache, unknown: true }), false);
+});
+
+test("v2 builder is non-mutating", async () => {
+    const input = { ...INPUT_V2 }; const before = JSON.stringify(input);
+    await Cache.buildCurrentPriceLastValidCacheV2(input);
+    assert.equal(JSON.stringify(input), before);
+});
+
+test("resolved v2 cache feeds stale freshness without enabling calculation", async () => {
+    const cache = (await buildV2()).cache;
+    const result = Shadow.evaluateCurrentPriceFreshness({ value: cache.value, source: cache.source,
+        mode: cache.mode, contract: cache.contract, quotedAt: cache.quotedAtNormalized,
+        fetchedAt: cache.fetchedAt }, { origin: "live", dataTradingDate: cache.quoteDate,
+        expectedTradingDate: cache.pageTradingDate, selectedContract: cache.contract });
+    assert.equal(result.freshness.status, "stale");
+    assert.equal(result.freshness.calculationEligible, "undetermined");
+});
+
+test("v2 pure redesign remains disconnected from storage and runtime", () => {
+    const source = fs.readFileSync(path.join(__dirname,
+        "../js/currentPriceLastValidCache.js"), "utf8");
+    assert.equal(/localStorage|indexedDB|\bfetch\s*\(|document\.|OverallV2|MobileSummary/.test(source), false);
+});
