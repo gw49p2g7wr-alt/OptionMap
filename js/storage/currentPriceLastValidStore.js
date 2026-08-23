@@ -43,22 +43,25 @@
         }
         if (input.restored === true || context.restored === true) return failure("restored_price_ineligible");
         if (!contractsMatch(price.contract, input.activeContract)) return failure("contract_mismatch");
-        if (!cacheApi?.buildCurrentPriceLastValidCache || !shadowApi?.evaluateCurrentPriceFreshness) {
+        if (!cacheApi?.buildCurrentPriceLastValidCacheV2 ||
+            !cacheApi?.validateCurrentPriceLastValidCacheV2 ||
+            !shadowApi?.evaluateCurrentPriceFreshness) {
             return failure("dependency_unavailable");
         }
 
         let built;
         try {
-            built = await cacheApi.buildCurrentPriceLastValidCache({
+            built = await cacheApi.buildCurrentPriceLastValidCacheV2({
                 source: price.source, mode: price.mode, value: price.value,
-                contract: input.activeContract, tradingDate: input.tradingDate,
+                contract: input.activeContract, pageTradingDate: input.pageTradingDate,
+                pageUpdatedAt: input.pageUpdatedAt,
                 quotedAtRaw: price.quotedAt, fetchedAt: price.fetchedAt,
                 sourceUrl: input.sourceUrl
             });
         } catch (_) { return failure("cache_builder_error"); }
         if (!built?.success || !built.cache) return failure("cache_builder_failed");
         let valid = false;
-        try { valid = await cacheApi.validateCurrentPriceLastValidCache(built.cache); }
+        try { valid = await cacheApi.validateCurrentPriceLastValidCacheV2(built.cache); }
         catch (_) { return failure("cache_validation_error"); }
         if (!valid) return failure("cache_validation_failed");
 
@@ -66,11 +69,9 @@
             value: built.cache.value, source: built.cache.source, mode: built.cache.mode,
             contract: built.cache.contract, quotedAt: built.cache.quotedAtNormalized,
             fetchedAt: built.cache.fetchedAt
-        }, { origin: "live", dataTradingDate: built.cache.tradingDate,
-            expectedTradingDate: built.cache.tradingDate, selectedContract: input.activeContract,
+        }, { origin: "live", dataTradingDate: built.cache.quoteDate,
+            expectedTradingDate: built.cache.pageTradingDate, selectedContract: input.activeContract,
             lastAttemptStatus: "success", signatureValid: true });
-        if (shadow?.freshness?.status !== "fresh" || shadow.freshness.reason !== "current" ||
-            shadow.freshness.origin !== "live") return failure("freshness_ineligible", built.cache);
         if (context.isCurrent === false || typeof context.isCurrent === "function" && !context.isCurrent()) {
             return failure("stale_response");
         }

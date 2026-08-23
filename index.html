@@ -4408,7 +4408,8 @@ async function fetchQriData({ requestId } = {}) {
                             fetchedAt: priceResult.fetchedAt
                         },
                         activeContract: payload.canonicalV2?.contract || null,
-                        tradingDate: payload.canonicalV2?.tradingDate || null,
+                        pageTradingDate: payload.canonicalV2?.tradingDate || null,
+                        pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
                         sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl
                     },
                     {

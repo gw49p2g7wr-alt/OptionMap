@@ -6,10 +6,11 @@ const Cache = require("../js/currentPriceLastValidCache.js");
 const Restore = require("../js/currentPriceLastValidRestore.js");
 
 const INPUT = Object.freeze({ source: "qri-nikkei225-futures", mode: "automatic", value: 66010,
-    contract: "2026-09", tradingDate: "2026-08-24", quotedAtRaw: "8/24 05:30",
-    fetchedAt: "2026-08-24T05:31:00+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
+    contract: "2026-09", pageTradingDate: "2026-08-24",
+    pageUpdatedAt: "2026-08-24T06:34:00+09:00", quotedAtRaw: "08/22 06:00",
+    fetchedAt: "2026-08-24T06:34:30+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
 async function valid(overrides = {}) {
-    const result = await Cache.buildCurrentPriceLastValidCache({ ...INPUT, ...overrides });
+    const result = await Cache.buildCurrentPriceLastValidCacheV2({ ...INPUT, ...overrides });
     assert.equal(result.success, true);
     return result.cache;
 }
@@ -42,12 +43,24 @@ test("legacy object is never migrated or restored", async () => {
     assert.equal((await Restore.restoreCurrentPriceLastValidCache(legacy)).reason, "cache_invalid");
 });
 
+test("schema v1 cache is explicitly unsupported and never migrated", async () => {
+    const legacy = await Cache.buildCurrentPriceLastValidCache({ source: INPUT.source,
+        mode: INPUT.mode, value: INPUT.value, contract: INPUT.contract,
+        tradingDate: "2026-08-24", quotedAtRaw: "08/24 05:30",
+        fetchedAt: INPUT.fetchedAt, sourceUrl: INPUT.sourceUrl });
+    const result = await Restore.restoreCurrentPriceLastValidCache(legacy.cache);
+    assert.deepEqual([result.success, result.reason], [false, "schema_v1_unsupported"]);
+});
+
 for (const [name, field, value] of [
-    ["cacheVersion", "cacheVersion", 2], ["schemaVersion", "schemaVersion", 2],
+    ["cacheVersion", "cacheVersion", 2], ["schemaVersion", "schemaVersion", 3],
     ["source", "source", "manual"], ["mode", "mode", "manual"],
     ["value", "value", 0], ["contract", "contract", null],
-    ["tradingDate", "tradingDate", null], ["quotedAtRaw", "quotedAtRaw", "bad"],
+    ["pageTradingDate", "pageTradingDate", null], ["pageUpdatedAt", "pageUpdatedAt", "bad"],
+    ["quotedAtRaw", "quotedAtRaw", "bad"], ["quoteDate", "quoteDate", "2026-08-21"],
     ["quotedAtNormalized", "quotedAtNormalized", "bad"],
+    ["quoteDateResolution", "quoteDateResolution", "other"],
+    ["quoteDateResolutionSource", "quoteDateResolutionSource", "other"],
     ["fetchedAt", "fetchedAt", "bad"], ["sourceUrl", "sourceUrl", "https://example.com/"],
     ["quoteSignature", "quoteSignature", "0".repeat(64)],
     ["signature", "signature", "0".repeat(64)], ["versionKey", "versionKey", "bad"]
@@ -78,14 +91,16 @@ test("successful result and cache are deeply frozen", async () => {
     assert.equal(Object.isFrozen(result.cache), true);
     assert.equal(Object.isFrozen(result.diagnostics), true);
 });
-test("old tradingDate cache remains restorable when internally valid", async () => {
-    const cache = await valid({ tradingDate: "2026-08-21", quotedAtRaw: "8/21 15:30",
-        fetchedAt: "2026-08-21T15:31:00+09:00" });
+test("old quote cache remains restorable when internally valid", async () => {
+    const cache = await valid({ pageTradingDate: "2026-08-24",
+        pageUpdatedAt: "2026-08-24T05:30:00+09:00", quotedAtRaw: "08/21 15:30",
+        fetchedAt: "2026-08-24T05:31:00+09:00" });
     assert.equal((await Restore.restoreCurrentPriceLastValidCache(cache)).success, true);
 });
 test("old restored cache is stale in Freshness Shadow", async () => {
-    const cache = await valid({ tradingDate: "2026-08-21", quotedAtRaw: "8/21 15:30",
-        fetchedAt: "2026-08-21T15:31:00+09:00" });
+    const cache = await valid({ pageTradingDate: "2026-08-24",
+        pageUpdatedAt: "2026-08-24T05:30:00+09:00", quotedAtRaw: "08/21 15:30",
+        fetchedAt: "2026-08-24T05:31:00+09:00" });
     const result = await Restore.restoreCurrentPriceLastValidWithFreshness(cache,
         { expectedTradingDate: "2026-08-24", selectedContract: "2026-09" });
     assert.deepEqual([result.freshness.status, result.freshness.reason,
@@ -97,6 +112,14 @@ test("restored same-day cache is saved last-valid, not live", async () => {
     assert.deepEqual([result.freshness.status, result.freshness.reason,
         result.freshness.displayEligible, result.freshness.calculationEligible],
         ["stale", "saved_last_valid", true, "undetermined"]);
+});
+test("restored unresolved cache is visible but never made calculation eligible", async () => {
+    const cache = await valid({ quotedAtRaw: "07/01 06:00" });
+    const result = await Restore.restoreCurrentPriceLastValidWithFreshness(cache,
+        { expectedTradingDate: "2026-08-24", selectedContract: "2026-09" });
+    assert.deepEqual([result.cache.quoteDate, result.freshness.status,
+        result.freshness.displayEligible, result.freshness.calculationEligible],
+    [null, "stale", true, "undetermined"]);
 });
 test("contract mismatch belongs to Freshness context, not restore validation", async () => {
     const result = await Restore.restoreCurrentPriceLastValidWithFreshness(await valid(),

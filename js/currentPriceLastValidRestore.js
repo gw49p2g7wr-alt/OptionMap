@@ -70,12 +70,15 @@
         } catch (_) {
             return failure("clone_error", inputType);
         }
-        if (!cacheApi?.validateCurrentPriceLastValidCache) {
+        if (isolated?.cacheVersion === 1 && isolated?.schemaVersion === 1) {
+            return failure("schema_v1_unsupported", inputType);
+        }
+        if (!cacheApi?.validateCurrentPriceLastValidCacheV2) {
             return failure("validator_unavailable", inputType);
         }
         let valid = false;
         try {
-            valid = await cacheApi.validateCurrentPriceLastValidCache(isolated);
+            valid = await cacheApi.validateCurrentPriceLastValidCacheV2(isolated);
         } catch (_) {
             return failure("validation_error", inputType);
         }
@@ -101,7 +104,7 @@
             value: cache.value, source: cache.source, mode: cache.mode,
             contract: cache.contract, quotedAt: cache.quotedAtNormalized,
             fetchedAt: cache.fetchedAt
-        }, { ...context, restored: true, dataTradingDate: cache.tradingDate,
+        }, { ...context, restored: true, dataTradingDate: cache.quoteDate,
             signatureValid: true });
         return Object.freeze({ ...restored, freshness: shadow.freshness, shadow });
     }

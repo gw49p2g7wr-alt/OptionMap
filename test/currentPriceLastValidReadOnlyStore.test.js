@@ -8,10 +8,11 @@ const Store = require("../js/storage/currentPriceLastValidReadOnlyStore.js");
 
 const KEY = "optionMapCurrentPriceLastValidV1";
 const INPUT = Object.freeze({ source: "qri-nikkei225-futures", mode: "automatic", value: 66010,
-    contract: "2026-09", tradingDate: "2026-08-24", quotedAtRaw: "8/24 05:30",
-    fetchedAt: "2026-08-24T05:31:00+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
+    contract: "2026-09", pageTradingDate: "2026-08-24",
+    pageUpdatedAt: "2026-08-24T06:34:00+09:00", quotedAtRaw: "08/22 06:00",
+    fetchedAt: "2026-08-24T06:34:30+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
 async function serialized() {
-    const result = await Cache.buildCurrentPriceLastValidCache(INPUT);
+    const result = await Cache.buildCurrentPriceLastValidCacheV2(INPUT);
     assert.equal(result.success, true);
     return JSON.stringify(result.cache);
 }
@@ -53,6 +54,15 @@ test("legacy serialized is not repaired or restored", async () => {
     const legacy = JSON.stringify({ value: 66010, source: INPUT.source, quotedAt: "8/24 05:30" });
     const result = await Store.readAndRestoreCurrentPriceLastValid(storage([[KEY, legacy]]));
     assert.deepEqual([result.status, result.reason], ["invalid", "cache_invalid"]);
+});
+test("schema v1 serialized is explicitly unsupported", async () => {
+    const legacy = await Cache.buildCurrentPriceLastValidCache({ source: INPUT.source,
+        mode: INPUT.mode, value: INPUT.value, contract: INPUT.contract,
+        tradingDate: "2026-08-24", quotedAtRaw: "08/24 05:30",
+        fetchedAt: INPUT.fetchedAt, sourceUrl: INPUT.sourceUrl });
+    const result = await Store.readAndRestoreCurrentPriceLastValid(
+        storage([[KEY, JSON.stringify(legacy.cache)]]));
+    assert.deepEqual([result.status, result.reason], ["invalid", "schema_v1_unsupported"]);
 });
 test("tampered serialized is rejected", async () => {
     const cache = JSON.parse(await serialized()); cache.value = 1;

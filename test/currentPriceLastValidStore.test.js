@@ -8,9 +8,10 @@ const Read = require("../js/storage/currentPriceLastValidReadOnlyStore.js");
 
 const KEY = "optionMapCurrentPriceLastValidV1";
 const INPUT = Object.freeze({ price: Object.freeze({ source: "qri-nikkei225-futures",
-    mode: "automatic", value: 66010, contract: "26年09月限", quotedAt: "8/24 05:30",
-    fetchedAt: "2026-08-24T05:31:00+09:00" }), activeContract: "2026-09",
-    tradingDate: "2026-08-24", sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
+    mode: "automatic", value: 66010, contract: "26年09月限", quotedAt: "08/22 06:00",
+    fetchedAt: "2026-08-24T06:34:30+09:00" }), activeContract: "2026-09",
+    pageTradingDate: "2026-08-24", pageUpdatedAt: "2026-08-24T06:34:00+09:00",
+    sourceUrl: "https://svc.qri.jp/jpx/nkopm/" });
 const CONTEXT = Object.freeze({ requestMode: "auto", requestOrigin: "live",
     responseStatus: "success", isCurrent: true });
 function storage(entries = []) {
@@ -30,18 +31,20 @@ function browserStore(cacheApi, shadowApi) {
 }
 function fakeShadow() {
     return { evaluateCurrentPriceFreshness() { return { freshness: {
-        status: "fresh", reason: "current", origin: "live" } }; } };
+        status: "stale", reason: "source_not_updated", origin: "live",
+        calculationEligible: "undetermined" } }; } };
 }
 function fakeCache(overrides = {}) {
     const cache = { source: INPUT.price.source, mode: INPUT.price.mode, value: INPUT.price.value,
-        contract: INPUT.activeContract, tradingDate: INPUT.tradingDate,
-        quotedAtNormalized: "2026-08-24T05:30:00+09:00", fetchedAt: INPUT.price.fetchedAt };
+        contract: INPUT.activeContract, pageTradingDate: INPUT.pageTradingDate,
+        pageUpdatedAt: INPUT.pageUpdatedAt, quoteDate: "2026-08-22",
+        quotedAtNormalized: "2026-08-22T06:00:00+09:00", fetchedAt: INPUT.price.fetchedAt };
     return { SOURCE: INPUT.price.source,
-        async buildCurrentPriceLastValidCache() { return { success: true, cache }; },
-        async validateCurrentPriceLastValidCache() { return true; }, ...overrides };
+        async buildCurrentPriceLastValidCacheV2() { return { success: true, cache }; },
+        async validateCurrentPriceLastValidCacheV2() { return true; }, ...overrides };
 }
 
-test("valid fresh automatic QRI price saves once to the fixed key", async () => {
+test("valid stale automatic QRI price saves once to the fixed key", async () => {
     const target = storage(); const result = await save(target);
     assert.deepEqual([result.success, result.saved, target.writes.length], [true, true, 1]);
     assert.equal(target.writes[0][0], KEY);
@@ -49,7 +52,10 @@ test("valid fresh automatic QRI price saves once to the fixed key", async () => 
 test("saved value is a valid serialized cache", async () => {
     const target = storage(); await save(target);
     const cache = JSON.parse(target.values.get(KEY));
-    assert.deepEqual([cache.cacheVersion, cache.schemaVersion, cache.contract], [1, 1, "2026-09"]);
+    assert.deepEqual([cache.cacheVersion, cache.schemaVersion, cache.contract], [1, 2, "2026-09"]);
+    assert.deepEqual([cache.quoteDate, cache.quotedAtNormalized,
+        cache.quoteDateResolution], ["2026-08-22", "2026-08-22T06:00:00+09:00",
+        "nearest_not_after_page_updated_at"]);
 });
 test("saved cache passes read-back restore", async () => {
     const target = storage(); await save(target);
@@ -57,13 +63,36 @@ test("saved cache passes read-back restore", async () => {
         { expectedTradingDate: "2026-08-24", selectedContract: "2026-09" });
     assert.deepEqual([read.status, read.restore.success], ["restored", true]);
 });
+for (const [name, pageTradingDate, pageUpdatedAt, quotedAt, quoteDate] of [
+    ["same-day", "2026-07-23", "2026-07-23T05:33:00+09:00", "07/23 05:31", "2026-07-23"],
+    ["one-day earlier", "2026-07-29", "2026-07-28T20:26:00+09:00", "07/28 20:26", "2026-07-28"],
+    ["two-day earlier", "2026-07-27", "2026-07-27T05:44:00+09:00", "07/25 06:00", "2026-07-25"],
+    ["three-day earlier", "2026-07-21", "2026-07-18T07:49:00+09:00", "07/18 06:00", "2026-07-18"]
+]) test(`${name} valid quote is saved independently of pageTradingDate`, async () => {
+    const target = storage();
+    const result = await save(target, { ...INPUT, pageTradingDate, pageUpdatedAt,
+        price: { ...INPUT.price, quotedAt, fetchedAt: pageUpdatedAt } });
+    assert.deepEqual([result.saved, result.cache.quoteDate], [true, quoteDate]);
+});
+test("valid unresolved raw quote is saved without becoming calculation eligible", async () => {
+    const target = storage();
+    const result = await save(target, { ...INPUT, price: { ...INPUT.price,
+        quotedAt: "07/01 06:00" } });
+    assert.equal(result.saved, true);
+    assert.deepEqual([result.cache.quotedAtRaw, result.cache.quoteDate,
+        result.cache.quotedAtNormalized, result.cache.quoteDateResolution],
+    ["07/01 06:00", null, null, "unresolved"]);
+    assert.equal(result.freshness.calculationEligible, "undetermined");
+});
 for (const [name, input, context, reason] of [
     ["manual", { ...INPUT, price: { ...INPUT.price, mode: "manual" } }, CONTEXT, "price_source_ineligible"],
     ["stale automatic", INPUT, { ...CONTEXT, responseStatus: "stale" }, "stale_response"],
     ["restored", { ...INPUT, restored: true }, CONTEXT, "restored_price_ineligible"],
-    ["tradingDate missing", { ...INPUT, tradingDate: null }, CONTEXT, "cache_builder_failed"],
-    ["tradingDate malformed", { ...INPUT, tradingDate: "2026-02-30" }, CONTEXT, "cache_builder_failed"],
-    ["quotedAt mismatch", { ...INPUT, price: { ...INPUT.price, quotedAt: "8/23 05:30" } }, CONTEXT, "cache_builder_failed"],
+    ["pageTradingDate missing", { ...INPUT, pageTradingDate: null }, CONTEXT, "cache_builder_failed"],
+    ["pageTradingDate malformed", { ...INPUT, pageTradingDate: "2026-02-30" }, CONTEXT, "cache_builder_failed"],
+    ["pageUpdatedAt missing", { ...INPUT, pageUpdatedAt: null }, CONTEXT, "cache_builder_failed"],
+    ["pageUpdatedAt malformed", { ...INPUT, pageUpdatedAt: "8/24 06:34" }, CONTEXT, "cache_builder_failed"],
+    ["quotedAt malformed", { ...INPUT, price: { ...INPUT.price, quotedAt: "06:00" } }, CONTEXT, "cache_builder_failed"],
     ["contract mismatch", { ...INPUT, activeContract: "2026-12" }, CONTEXT, "contract_mismatch"],
     ["source mismatch", { ...INPUT, price: { ...INPUT.price, source: "manual" } }, CONTEXT, "price_source_ineligible"],
     ["specific", INPUT, { ...CONTEXT, requestMode: "specific" }, "request_context_ineligible"],
@@ -85,7 +114,7 @@ test("setItem and quota failures are isolated", async () => {
 });
 test("builder exception is isolated without a write", async () => {
     const api = browserStore(fakeCache({
-        async buildCurrentPriceLastValidCache() { throw new Error("builder"); }
+        async buildCurrentPriceLastValidCacheV2() { throw new Error("builder"); }
     }), fakeShadow());
     const target = storage(); const result = await api.buildAndSaveCurrentPriceLastValid(
         target, INPUT, CONTEXT);
@@ -93,7 +122,7 @@ test("builder exception is isolated without a write", async () => {
 });
 test("validator failure is isolated without a write", async () => {
     const api = browserStore(fakeCache({
-        async validateCurrentPriceLastValidCache() { return false; }
+        async validateCurrentPriceLastValidCacheV2() { return false; }
     }), fakeShadow());
     const target = storage(); const result = await api.buildAndSaveCurrentPriceLastValid(
         target, INPUT, CONTEXT);
@@ -101,10 +130,11 @@ test("validator failure is isolated without a write", async () => {
 });
 test("serialization failure is isolated without a partial write", async () => {
     const circular = fakeCache();
-    circular.buildCurrentPriceLastValidCache = async () => {
+    circular.buildCurrentPriceLastValidCacheV2 = async () => {
         const cache = { source: INPUT.price.source, mode: INPUT.price.mode, value: INPUT.price.value,
-            contract: INPUT.activeContract, tradingDate: INPUT.tradingDate,
-            quotedAtNormalized: "2026-08-24T05:30:00+09:00", fetchedAt: INPUT.price.fetchedAt };
+            contract: INPUT.activeContract, pageTradingDate: INPUT.pageTradingDate,
+            pageUpdatedAt: INPUT.pageUpdatedAt, quoteDate: "2026-08-22",
+            quotedAtNormalized: "2026-08-22T06:00:00+09:00", fetchedAt: INPUT.price.fetchedAt };
         cache.circular = cache;
         return { success: true, cache };
     };
@@ -116,11 +146,23 @@ test("serialization failure is isolated without a partial write", async () => {
 test("same quote refetch overwrites with new fetchedAt and stable versionKey", async () => {
     const target = storage(); const first = await save(target);
     const second = await save(target, { ...INPUT, price: { ...INPUT.price,
-        fetchedAt: "2026-08-24T05:35:00+09:00" } });
+        fetchedAt: "2026-08-24T06:35:00+09:00" } });
     assert.equal(target.writes.length, 2);
     assert.equal(first.cache.versionKey, second.cache.versionKey);
     assert.notEqual(first.cache.signature, second.cache.signature);
-    assert.equal(JSON.parse(target.values.get(KEY)).fetchedAt, "2026-08-24T05:35:00+09:00");
+    assert.equal(JSON.parse(target.values.get(KEY)).fetchedAt, "2026-08-24T06:35:00+09:00");
+});
+test("same quote republished on a later page keeps identity and updates acquisition facts", async () => {
+    const target = storage(); const first = await save(target);
+    const second = await save(target, { ...INPUT, pageTradingDate: "2026-08-25",
+        pageUpdatedAt: "2026-08-25T05:00:00+09:00",
+        price: { ...INPUT.price, fetchedAt: "2026-08-25T05:01:00+09:00" } });
+    assert.equal(first.cache.quoteSignature, second.cache.quoteSignature);
+    assert.equal(first.cache.versionKey, second.cache.versionKey);
+    assert.notEqual(first.cache.signature, second.cache.signature);
+    assert.deepEqual([second.cache.pageTradingDate, second.cache.pageUpdatedAt,
+        second.cache.fetchedAt], ["2026-08-25", "2026-08-25T05:00:00+09:00",
+        "2026-08-25T05:01:00+09:00"]);
 });
 test("request becoming stale during async build is not saved", async () => {
     const target = storage(); let checks = 0;
@@ -155,6 +197,8 @@ test("module touches no IndexedDB, history, fetch, UI, mobile or Overall system"
 test("renderer wiring saves only after active price application and adds no boot restore", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.match(html, /applyQriNikkei225FuturesPrice[\s\S]+?buildAndSaveCurrentPriceLastValid/);
+    assert.match(html, /pageTradingDate:\s*payload\.canonicalV2\?\.tradingDate/);
+    assert.match(html, /pageUpdatedAt:\s*payload\.canonicalV2\?\.pageUpdatedAt/);
     assert.doesNotMatch(html, /readAndRestoreCurrentPriceLastValid\s*\(/);
     assert.doesNotMatch(html, /CurrentPriceLastValidReadOnlyStore/);
 });
