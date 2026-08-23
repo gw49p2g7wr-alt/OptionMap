@@ -700,6 +700,27 @@
             <div class="chart-container combined-chart-container">
                 <canvas id="combinedPriceChart"></canvas>
             </div>
+
+            <details id="qriIvCurvePanel"
+                class="qri-iv-curve-panel ui-category-panel category-options">
+                <summary class="ui-category-title">IVカーブ
+                    <span class="ui-category-badge">オプション</span>
+                </summary>
+                <div class="qri-iv-content">
+                    <div class="iv-range-switch" role="group" aria-label="IVカーブ表示範囲">
+                        <button type="button" data-range-mode="plus_minus_3000" class="iv-range-button active">±3,000円</button>
+                        <button type="button" data-range-mode="plus_minus_5000" class="iv-range-button">±5,000円</button>
+                        <button type="button" data-range-mode="all" class="iv-range-button">全範囲</button>
+                    </div>
+                    <div id="qriIvMetadata" class="qri-iv-metadata" aria-live="polite"></div>
+                    <div id="qriIvCoverage" class="qri-iv-coverage" aria-live="polite"></div>
+                    <div id="qriIvSideMessages" class="qri-iv-side-messages" aria-live="polite"></div>
+                    <div id="qriIvSystemState" class="qri-iv-empty-state" role="status" aria-live="polite" hidden></div>
+                    <div id="qriIvChartContainer" class="chart-container qri-iv-chart-container" hidden>
+                        <canvas id="qriIvChart"></canvas>
+                    </div>
+                </div>
+            </details>
         </div>
     
 
@@ -935,6 +956,7 @@
 <script src="js/qriOptionIv.js"></script>
 <script src="js/qriIvGraphViewModel.js"></script>
 <script src="js/qriOptionIvRuntime.js"></script>
+<script src="js/qriIvGraphView.js"></script>
 <script src="js/qriOptionsSelection.js"></script>
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
@@ -3829,6 +3851,7 @@ async function adoptQriOptionIv(channel, payload, fetchedAt, requestContext, gua
             currentQriOptionIv, channel, candidate, guard()
         );
         currentQriOptionIv = result.state;
+        renderQriIvGraph();
         return result;
     } catch (error) {
         console.warn("QRI IV runtime stateを更新できませんでした:", error);
@@ -3847,6 +3870,7 @@ async function markQriOptionIvSourceUnavailable(channel, fetchedAt,
             currentQriOptionIv, channel, candidate, guard()
         );
         currentQriOptionIv = result.state;
+        renderQriIvGraph();
         return result;
     } catch (runtimeError) {
         console.warn("QRI IV取得失敗stateを更新できませんでした:", runtimeError);
@@ -3861,6 +3885,124 @@ window.buildCurrentQriIvGraphViewModel = ({ channel = "active", rangeMode,
     rangeMode,
     currentPrice
 });
+
+const qriIvCurvePanel = document.getElementById("qriIvCurvePanel");
+const qriIvMetadata = document.getElementById("qriIvMetadata");
+const qriIvCoverage = document.getElementById("qriIvCoverage");
+const qriIvSideMessages = document.getElementById("qriIvSideMessages");
+const qriIvSystemState = document.getElementById("qriIvSystemState");
+const qriIvChartContainer = document.getElementById("qriIvChartContainer");
+const qriIvChartCanvas = document.getElementById("qriIvChart");
+const qriIvRangeButtons = [...document.querySelectorAll(".iv-range-button")];
+let qriIvRangeMode = "plus_minus_3000";
+let qriIvChart = null;
+
+function replaceTextItems(container, items) {
+    if (!container) return;
+    container.replaceChildren(...items.map(text => {
+        const item = document.createElement("span");
+        item.textContent = text;
+        return item;
+    }));
+}
+
+function destroyQriIvChart() {
+    const existing = qriIvChartCanvas && typeof Chart?.getChart === "function"
+        ? Chart.getChart(qriIvChartCanvas) : null;
+    if (existing) existing.destroy();
+    qriIvChart = null;
+}
+
+function renderQriIvGraph() {
+    if (!qriIvCurvePanel || !qriIvCurvePanel.open) return { status: "panel_closed" };
+    const runtime = window.getCurrentQriOptionIv();
+    const resolved = window.OptionMapQriIvGraphView.resolveChannel(
+        qriContractSelectionState, runtime
+    );
+    const currentPrice = Number(document.getElementById("currentPriceInput")?.value);
+    const viewModel = resolved.available
+        ? window.buildCurrentQriIvGraphViewModel({ channel: resolved.channel,
+            rangeMode: qriIvRangeMode, currentPrice })
+        : { available: false, reason: resolved.reason || "data_unavailable" };
+    const view = window.OptionMapQriIvGraphView.presentation(viewModel);
+
+    replaceTextItems(qriIvMetadata, view.metadata);
+    replaceTextItems(qriIvCoverage, view.coverage);
+    if (qriIvSideMessages) {
+        qriIvSideMessages.replaceChildren(...view.sideMessages.map(text => {
+            const item = document.createElement("p");
+            item.textContent = text;
+            return item;
+        }));
+    }
+
+    const stateMessage = view.systemMessage || view.emptyMessage;
+    if (qriIvSystemState) {
+        qriIvSystemState.hidden = !stateMessage;
+        qriIvSystemState.textContent = stateMessage || "";
+        if (view.emptyMessage) {
+            const hint = document.createElement("small");
+            hint.textContent = "表示範囲を広げるとデータがある場合があります";
+            qriIvSystemState.append(document.createElement("br"), hint);
+        }
+    }
+
+    if (!viewModel.chartAvailable || view.datasets.length === 0) {
+        destroyQriIvChart();
+        if (qriIvChartContainer) qriIvChartContainer.hidden = true;
+        return { status: view.available ? "empty" : "unavailable", reason: view.reason };
+    }
+
+    if (qriIvChartContainer) qriIvChartContainer.hidden = false;
+    destroyQriIvChart();
+    qriIvChart = new Chart(qriIvChartCanvas, {
+        type: "line",
+        data: {
+            labels: viewModel.labels.map(strike => Number(strike).toLocaleString()),
+            datasets: view.datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: "index", intersect: false },
+            scales: {
+                x: { title: { display: true, text: "権利行使価格" },
+                    ticks: { autoSkip: true, maxTicksLimit: 20 } },
+                y: { title: { display: true, text: "IV（%）" } }
+            },
+            plugins: {
+                legend: { ...readableLegendOptions() },
+                tooltip: { ...readableTooltipOptions(), callbacks: {
+                    label(context) {
+                        return context.raw === null ? `${context.dataset.label}：公表なし`
+                            : `${context.dataset.label}：${context.raw}%`;
+                    }
+                } }
+            }
+        }
+    });
+    return { status: "rendered", contract: resolved.contract,
+        rangeMode: qriIvRangeMode };
+}
+
+qriIvCurvePanel?.addEventListener("toggle", () => {
+    if (qriIvCurvePanel.open) renderQriIvGraph();
+});
+
+qriIvRangeButtons.forEach(button => button.addEventListener("click", () => {
+    const mode = button.dataset.rangeMode;
+    if (!window.OptionMapQriIvGraphView.RANGE_MODES.includes(mode)) return;
+    qriIvRangeMode = mode;
+    qriIvRangeButtons.forEach(item => item.classList.toggle("active", item === button));
+    renderQriIvGraph();
+}));
+
+document.getElementById("currentPriceInput")?.addEventListener("change", () => {
+    renderQriIvGraph();
+});
+
+window.renderQriIvGraph = renderQriIvGraph;
 
 function setQriContractSelectionNote(text, status) {
     if (qriContractSelectionNote) {
@@ -3914,6 +4056,7 @@ async function showSpecificQriContract(contract) {
     if (!listed) {
         qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
             qriContractSelectionState, contract, qriContractManifest);
+        renderQriIvGraph();
         window.setQriContractDisplayUnavailable?.(contract);
         setQriContractSelectionNote(`選択中の${contract}限は現在QRIに掲載されていません。総合判定には未使用`, "unavailable");
         return { status: "unavailable" };
@@ -3922,6 +4065,7 @@ async function showSpecificQriContract(contract) {
     const sequence = qriContractSelectionState.requestSequence;
     qriContractSelect?.setAttribute("aria-busy", "true");
     let qriHtmlAcquired = false;
+    renderQriIvGraph();
     window.setQriContractDisplayUnavailable?.(contract);
     setQriContractSelectionNote(`表示用：${contract}限を取得中…（総合判定には未使用）`, "loading");
     try {
@@ -3999,6 +4143,7 @@ async function showUnresolvedQriEntry(selectionKey) {
     qriContractSelectionState = window.OptionMapQriOptionsSelection.beginRequest(
         qriContractSelectionState);
     const sequence = qriContractSelectionState.requestSequence;
+    renderQriIvGraph();
     qriContractSelect?.setAttribute("aria-busy", "true");
     window.setQriContractDisplayUnavailable?.(null);
     setQriContractSelectionNote(
@@ -4091,6 +4236,7 @@ async function updateQriContractManifest(defaultPayload) {
         }
         qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
             qriContractSelectionState, "auto", qriContractManifest);
+        renderQriIvGraph();
         window.clearQriContractDisplayData?.();
         setQriContractSelectionNote(
             `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
@@ -4110,6 +4256,7 @@ qriContractSelect?.addEventListener("change", () => {
         qriContractSelectionState);
     qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
         qriContractSelectionState, value, qriContractManifest);
+    renderQriIvGraph();
     void renderQriOptionsHistoryComparison();
     if (value === "auto") {
         window.clearQriContractDisplayData?.();

@@ -176,11 +176,12 @@ test("existing QRI v2 canonical and signature remain unchanged by IV parsing", a
     assert.equal(QriV2.validateCanonical(v2, { allowUnresolvedContracts: true }), true);
 });
 
-test("module stays pure and disconnected from storage, fetch, history, UI and OverallV2", () => {
+test("parser module stays pure while renderer UI uses its runtime output", () => {
     const moduleSource = fs.readFileSync(path.join(__dirname, "../js/qriOptionIv.js"), "utf8");
     const indexSource = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.doesNotMatch(moduleSource, /localStorage|indexedDB|fetch\s*\(|ipcRenderer|Chart\s*\(/);
     assert.doesNotMatch(moduleSource, /OverallV2|HistoryStore|commitHistory|persist/i);
     assert.equal(indexSource.includes('<script src="js/qriOptionIv.js"></script>'), true);
-    assert.doesNotMatch(indexSource, /new\s+Chart\([^)]*qriIv|id=["']qriIv/i);
+    assert.match(indexSource, /id="qriIvCurvePanel"/);
+    assert.match(indexSource, /buildCurrentQriIvGraphViewModel/);
 });

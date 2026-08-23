@@ -116,10 +116,10 @@ test("runtime module has no fetch, storage, history, OverallV2, DOM or Chart con
     assert.doesNotMatch(source, /document\.|querySelector|createElement|new\s+Chart/);
 });
 
-test("renderer reuses one payload HTML, loads dependencies in order and adds no IV fetch or UI", () => {
+test("renderer reuses one payload HTML, loads dependencies in order and adds no IV fetch", () => {
     const index = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const scriptOrder = ["js/qriOptions.js", "js/qriOptionIv.js",
-        "js/qriIvGraphViewModel.js", "js/qriOptionIvRuntime.js",
+        "js/qriIvGraphViewModel.js", "js/qriOptionIvRuntime.js", "js/qriIvGraphView.js",
         "js/qriOptionsSelection.js"].map(name => index.indexOf(`src="${name}"`));
     assert.equal(scriptOrder.every((position, i) => position >= 0 &&
         (i === 0 || position > scriptOrder[i - 1])), true);
@@ -130,5 +130,5 @@ test("renderer reuses one payload HTML, loads dependencies in order and adds no 
     const active = index.slice(index.indexOf("async function fetchQriData"),
         index.indexOf("async function fetchParticipantData"));
     assert.equal((active.match(/ipcRenderer\.invoke\(/g) || []).length, 1);
-    assert.doesNotMatch(index, /id=["']qriIv|new\s+Chart\([^)]*qriIv/i);
+    assert.match(index, /id="qriIvCurvePanel"/);
 });

@@ -154,11 +154,12 @@ test("07-23 fixture remains point-centered without filling gaps", () => {
     assert.equal(result.series.put.message, "公表点のみ表示");
 });
 
-test("module is pure and disconnected from Chart, DOM, storage, UI and OverallV2", () => {
+test("view-model module stays pure while renderer consumes it for UI", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/qriIvGraphViewModel.js"), "utf8");
     const index = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.doesNotMatch(source, /new\s+Chart|canvas|querySelector|createElement/);
     assert.doesNotMatch(source, /localStorage|indexedDB|fetch\s*\(|ipcRenderer|OverallV2/i);
     assert.equal(index.includes('<script src="js/qriIvGraphViewModel.js"></script>'), true);
-    assert.doesNotMatch(index, /new\s+Chart\([^)]*qriIv|id=["']qriIv/i);
+    assert.match(index, /id="qriIvCurvePanel"/);
+    assert.match(index, /buildCurrentQriIvGraphViewModel/);
 });

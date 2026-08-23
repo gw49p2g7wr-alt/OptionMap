@@ -654,6 +654,77 @@ canvas {
     font-size: 0.9rem;
 }
 
+.qri-iv-curve-panel {
+    margin-top: 20px;
+}
+
+.qri-iv-curve-panel > summary {
+    cursor: pointer;
+}
+
+.qri-iv-content {
+    padding-top: 16px;
+}
+
+.iv-range-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.iv-range-button {
+    border: 1px solid #b9c7d8;
+    border-radius: 999px;
+    background: #f5f8fc;
+    color: #304761;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.iv-range-button.active {
+    border-color: #315f9d;
+    background: #315f9d;
+    color: #fff;
+}
+
+.qri-iv-metadata,
+.qri-iv-coverage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    color: #53677e;
+    margin-bottom: 10px;
+}
+
+.qri-iv-coverage {
+    color: #263e59;
+    font-weight: 700;
+}
+
+.qri-iv-side-messages {
+    color: #69572c;
+    margin-bottom: 10px;
+}
+
+.qri-iv-side-messages p {
+    margin: 4px 0;
+}
+
+.qri-iv-empty-state {
+    border: 1px solid #d6deea;
+    border-radius: 10px;
+    background: #f7f9fc;
+    color: #42566d;
+    padding: 20px;
+    text-align: center;
+}
+
+.qri-iv-chart-container {
+    height: 360px;
+}
+
 /* CALL・PUT 壁候補カード */
 .wall-summary {
     display: grid;
