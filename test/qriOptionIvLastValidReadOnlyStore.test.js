@@ -75,6 +75,7 @@ test("store has no writes arbitrary keys IndexedDB runtime history UI fetch or O
     assert.doesNotMatch(source, /setItem|removeItem|\.clear\s*\(|indexedDB|\bfetch\s*\(|ipcRenderer/);
     assert.doesNotMatch(source, /currentQriOptionIv|History|document\.|querySelector|Chart|OverallV2/);
     assert.doesNotMatch(source, /optionMapCurrentPrice|optionMapQriOptions/);
-    assert.equal(fs.readFileSync(path.join(__dirname, "../index.html"), "utf8")
-        .includes("qriOptionIvLastValidReadOnlyStore.js"), false);
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.equal(html.includes("qriOptionIvLastValidReadOnlyStore.js"), true);
+    assert.doesNotMatch(html, /OptionMapQriOptionIvLastValidReadOnlyStore\s*\.\s*(setItem|removeItem|clear)/);
 });

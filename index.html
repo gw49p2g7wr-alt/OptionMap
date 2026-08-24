@@ -982,6 +982,9 @@
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/dataFreshness.js"></script>
+<script src="js/qriOptionIvLastValidRestore.js"></script>
+<script src="js/storage/qriOptionIvLastValidReadOnlyStore.js"></script>
+<script src="js/qriOptionIvBootRestoreShadow.js"></script>
 <script src="js/currentPriceFreshnessShadow.js"></script>
 <script src="js/currentPriceLastValidCache.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
@@ -1053,6 +1056,17 @@ const currentPriceBootRestoreShadowPromise =
         }
     });
 void currentPriceBootRestoreShadowPromise?.then(() => refreshCurrentPriceSavedUi());
+
+const qriOptionIvBootRestoreShadowPromise =
+    window.OptionMapQriOptionIvBootRestoreShadow
+        ?.initializeQriOptionIvBootRestoreShadow({
+        storage: localStorage,
+        context: {
+            restoredAt: new Date().toISOString(),
+            requestId: "renderer-boot-qri-option-iv-shadow"
+        }
+    });
+void qriOptionIvBootRestoreShadowPromise;
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -4412,6 +4426,20 @@ async function fetchQriData({ requestId } = {}) {
                 responseContract: payload.ivCanonicalV1?.contract || null }));
 
         if (ivAdoption.adopted && ivAdoption.status === "available") {
+            const activeIv = ivAdoption.state.active;
+            if (isCurrentFetchRequest(source, activeRequestId)) {
+                window.OptionMapQriOptionIvBootRestoreShadow
+                    ?.markQriOptionIvBootRestoreShadowSuperseded({
+                        requestId: activeIv.requestContext?.requestId || activeRequestId,
+                        contract: activeIv.contract,
+                        acquiredAt: activeIv.fetchedAt,
+                        fetchedAt: activeIv.fetchedAt,
+                        canonicalSignature: activeIv.signature,
+                        canonicalVersionKey: activeIv.versionKey,
+                        acquisitionIdentity: [activeIv.contract, activeIv.fetchedAt,
+                            activeIv.signature, activeIv.versionKey].join("|")
+                    });
+            }
             void window.OptionMapQriOptionIvLastValidStore
                 ?.buildAndSaveQriOptionIvLastValid(localStorage, {
                     candidate: ivAdoption.state.active,

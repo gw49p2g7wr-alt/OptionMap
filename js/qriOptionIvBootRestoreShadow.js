@@ -191,13 +191,17 @@
             return pending;
         }
         function markLiveAcquisitionSuperseded({ requestId = null,
-            acquisitionIdentity = null, acquiredAt = null } = {}) {
+            acquisitionIdentity = null, acquiredAt = null, contract = null,
+            fetchedAt = null, canonicalSignature = null, canonicalVersionKey = null } = {}) {
             const ownGeneration = ++generation;
             current = runtimeState("superseded", "replaced_by_live", ownGeneration, {
                 ...current, diagnostics: { ...current.diagnostics,
                     liveRequestId: text(requestId),
                     liveAcquisitionIdentity: text(acquisitionIdentity),
                     liveAcquiredAt: timestamp(acquiredAt), supersededGeneration: ownGeneration,
+                    liveContract: text(contract), liveFetchedAt: timestamp(fetchedAt),
+                    liveCanonicalSignature: text(canonicalSignature),
+                    liveCanonicalVersionKey: text(canonicalVersionKey),
                     currentIvActiveApplied: false, currentIvSelectedApplied: false,
                     graphApplied: false, liveOverwriteAllowed: false }
             });

@@ -114,13 +114,45 @@ test("live supersede prevents a stale restore from rewinding generation", async 
         new Promise(resolve => { release = resolve; }) });
     const pending = runtime.initialize({ storage: storage() });
     const live = runtime.markLiveAcquisitionSuperseded({ requestId: "live-2",
-        acquisitionIdentity: "2026-09|signature", acquiredAt: "2026-08-24T09:00:00Z" });
+        acquisitionIdentity: "2026-09|fetched|signature|version", contract: "2026-09",
+        fetchedAt: "2026-08-24T09:00:00Z", canonicalSignature: "signature",
+        canonicalVersionKey: "version", acquiredAt: "2026-08-24T09:00:00Z" });
     release({ status: "candidate", reason: null, candidate: { origin: "cache" },
         cache: {}, canonical: {}, freshness: {}, displayEligible: true,
         calculationEligible: "undetermined", restoredAt: null, diagnostics: {} });
     const completed = await pending;
     assert.deepEqual([live.status, live.reason, completed.status,
         runtime.getState().generation], ["superseded", "replaced_by_live", "superseded", 2]);
+    assert.deepEqual([live.diagnostics.liveRequestId, live.diagnostics.liveContract,
+        live.diagnostics.liveFetchedAt, live.diagnostics.liveCanonicalSignature,
+        live.diagnostics.liveCanonicalVersionKey],
+    ["live-2", "2026-09", "2026-08-24T09:00:00Z", "signature", "version"]);
+});
+test("renderer loads dependencies and starts boot shadow before non-blocking initial refresh", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const ordered = ["qriOptionIv.js", "qriOptionIvRuntime.js",
+        "qriOptionIvLastValidCache.js", "qriOptionIvLastValidStore.js", "dataFreshness.js",
+        "qriOptionIvLastValidRestore.js", "qriOptionIvLastValidReadOnlyStore.js",
+        "qriOptionIvBootRestoreShadow.js"];
+    for (let index = 1; index < ordered.length; index += 1) {
+        assert.ok(html.indexOf(ordered[index - 1]) < html.indexOf(ordered[index]));
+    }
+    const initializeAt = html.indexOf("initializeQriOptionIvBootRestoreShadow({");
+    const initialRefreshAt = html.lastIndexOf(".finally(() => refreshAllMarketData())");
+    assert.ok(initializeAt > 0 && initializeAt < initialRefreshAt);
+    assert.match(html, /void qriOptionIvBootRestoreShadowPromise;/);
+    assert.doesNotMatch(html, /await qriOptionIvBootRestoreShadowPromise/);
+});
+test("renderer supersedes only a current adopted active live acquisition", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const adoption = html.indexOf("if (ivAdoption.adopted && ivAdoption.status === \"available\")");
+    const supersede = html.indexOf("markQriOptionIvBootRestoreShadowSuperseded", adoption);
+    const save = html.indexOf("buildAndSaveQriOptionIvLastValid", adoption);
+    assert.ok(adoption > 0 && supersede > adoption && supersede < save);
+    const wiring = html.slice(adoption, save);
+    assert.match(wiring, /isCurrentFetchRequest\(source, activeRequestId\)/);
+    for (const fact of ["requestId", "contract", "fetchedAt", "canonicalSignature",
+        "canonicalVersionKey", "acquisitionIdentity"]) assert.match(wiring, new RegExp(fact));
 });
 test("shadow never applies saved IV to runtime Graph UI storage history or calculation", () => {
     const source = fs.readFileSync(path.join(__dirname,
@@ -129,7 +161,10 @@ test("shadow never applies saved IV to runtime Graph UI storage history or calcu
     assert.doesNotMatch(source, /currentQriOptionIv|buildCurrentQriIvGraphViewModel|renderQriIvGraph/);
     assert.doesNotMatch(source, /document\.|querySelector|Chart|History|OverallV2|setTimeout|setInterval/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionIvBootRestoreShadow.js"), false);
+    const initialize = html.slice(html.indexOf("const qriOptionIvBootRestoreShadowPromise"),
+        html.indexOf("let lastValidParticipantCache"));
+    assert.doesNotMatch(initialize, /currentQriOptionIv|renderQriIvGraph|buildCurrentQriIvGraphViewModel/);
+    assert.doesNotMatch(initialize, /setItem|removeItem|clear\(|indexedDB|fetch\(|ipcRenderer|setTimeout|setInterval/);
 });
 test("read-only input storage and serialized cache are not mutated", async () => {
     const value = await serialized(); const source = storage([[KEY, value]]);

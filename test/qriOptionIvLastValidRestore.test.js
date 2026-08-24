@@ -106,6 +106,7 @@ test("restore module has no storage runtime history UI network timer or Overall 
     assert.doesNotMatch(source, /localStorage|indexedDB|setItem|removeItem|\bfetch\s*\(|ipcRenderer/);
     assert.doesNotMatch(source, /currentQriOptionIv|History|document\.|querySelector|Chart|OverallV2/);
     assert.doesNotMatch(source, /setTimeout|setInterval/);
-    assert.equal(fs.readFileSync(path.join(__dirname, "../index.html"), "utf8")
-        .includes("qriOptionIvLastValidRestore.js"), false);
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.equal(html.includes("qriOptionIvLastValidRestore.js"), true);
+    assert.doesNotMatch(html, /OptionMapQriOptionIvLastValidRestore\s*\.\s*(setItem|removeItem|clear)/);
 });
