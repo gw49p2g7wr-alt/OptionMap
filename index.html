@@ -204,6 +204,22 @@
         
         </div>
 
+        <aside
+            id="currentPriceSavedState"
+            class="current-price-saved-state"
+            aria-live="polite"
+            hidden
+        >
+            <div class="current-price-saved-heading">
+                <span id="currentPriceSavedTitle"></span>
+                <strong id="currentPriceSavedPrice"></strong>
+            </div>
+            <div id="currentPriceSavedContract" class="current-price-saved-contract"></div>
+            <div id="currentPriceSavedMetadata" class="current-price-saved-metadata"></div>
+            <p id="currentPriceSavedMessage" class="current-price-saved-message"></p>
+            <p id="currentPriceSavedNote" class="current-price-saved-note"></p>
+        </aside>
+
         <div class="market-info">
 
             <div class="market-info-item">
@@ -970,6 +986,8 @@
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
 <script src="js/currentPriceBootRestoreShadow.js"></script>
+<script src="js/currentPriceSavedUiState.js"></script>
+<script src="js/currentPriceSavedView.js"></script>
 <script src="js/mobileMorningComparison.js"></script>
 <script src="js/mobileTimeframeObservation.js"></script>
 <script src="js/multiTimeframeState.js"></script>
@@ -1001,14 +1019,38 @@ const PARTICIPANT_HISTORY_STORAGE_KEY = "optionMapParticipantHistory";
 const WEEKLY_FUTURES_HISTORY_STORAGE_KEY =
     "optionMapWeeklyFuturesHistory";
 
-void window.OptionMapCurrentPriceBootRestoreShadow
-    ?.initializeCurrentPriceBootRestoreShadow({
+function refreshCurrentPriceSavedUi() {
+    const shadowState = window.OptionMapCurrentPriceBootRestoreShadow
+        ?.getCurrentPriceBootRestoreShadowState?.() || null;
+    const qriStatus = window.dataFetchState?.qri?.status || "idle";
+    const liveStatus = shadowState?.status === "superseded" ? "success"
+        : qriStatus === window.FETCH_STATUS?.LOADING ? "pending"
+            : qriStatus === window.FETCH_STATUS?.FAILED ? "failed"
+                : [window.FETCH_STATUS?.SUCCESS, window.FETCH_STATUS?.PARTIAL,
+                    window.FETCH_STATUS?.UNAVAILABLE].includes(qriStatus) ? "failed"
+                    : "unknown";
+    const currentPriceMode = window.getMobileSummaryRendererState?.()
+        ?.currentPrice?.mode || null;
+    const activeContract = qriContractManifest?.defaultContract || null;
+    const viewState = window.OptionMapCurrentPriceSavedUiState
+        ?.buildCurrentPriceSavedUiState({ bootShadowState: shadowState,
+            liveFetchState: { status: liveStatus }, currentPriceMode, activeContract });
+    return window.OptionMapCurrentPriceSavedView
+        ?.renderCurrentPriceSavedUiState(viewState) || null;
+}
+
+window.refreshCurrentPriceSavedUi = refreshCurrentPriceSavedUi;
+
+const currentPriceBootRestoreShadowPromise =
+    window.OptionMapCurrentPriceBootRestoreShadow
+        ?.initializeCurrentPriceBootRestoreShadow({
         storage: localStorage,
         context: {
             restoredAt: new Date().toISOString(),
             requestId: "renderer-boot-current-price-shadow"
         }
     });
+void currentPriceBootRestoreShadowPromise?.then(() => refreshCurrentPriceSavedUi());
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -4240,6 +4282,7 @@ async function updateQriContractManifest(defaultPayload) {
         }
         if (manifestSequence !== qriManifestSequence) return { status: "stale_ignored" };
         qriContractManifest = partialManifest;
+        refreshCurrentPriceSavedUi();
         qriContractSelectionState = window.OptionMapQriOptionsSelection.invalidateRequest(
             qriContractSelectionState);
         renderQriContractOptions();
@@ -4415,6 +4458,7 @@ async function fetchQriData({ requestId } = {}) {
                             priceResult.fetchedAt].join("|"),
                         acquiredAt: priceResult.fetchedAt
                     });
+                refreshCurrentPriceSavedUi();
                 void window.OptionMapCurrentPriceLastValidStore?.buildAndSaveCurrentPriceLastValid(
                     localStorage,
                     {

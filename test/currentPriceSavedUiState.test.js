@@ -190,7 +190,7 @@ test("module has no storage, fetch, DOM, CSS, currentPrice, Mobile or Overall wi
     assert.equal(/localStorage|indexedDB|\bfetch\s*\(|document\.|\.style\b|classList/.test(source), false);
     assert.equal(/applyCurrentPrice|setCurrentPrice|MobileSummary|OverallV2/.test(source), false);
 });
-test("pure module is not loaded by renderer", () => {
+test("pure module is loaded as a renderer dependency without embedding logic", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("currentPriceSavedUiState.js"), false);
+    assert.equal(html.includes('<script src="js/currentPriceSavedUiState.js"></script>'), true);
 });

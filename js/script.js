@@ -602,6 +602,7 @@ function updateFetchState(source, patch) {
 
     if (source === "qri") {
         updateOpenInterestDataStatus();
+        window.refreshCurrentPriceSavedUi?.();
     }
 
     return sourceState;
@@ -3134,6 +3135,7 @@ function applyCurrentPrice({
         fetchedAt,
         mode
     };
+    window.refreshCurrentPriceSavedUi?.();
     calculateWeeklyOptionsShadowSignal();
 
     if (currentPriceInput) {
