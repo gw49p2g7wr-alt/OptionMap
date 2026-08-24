@@ -972,6 +972,8 @@
 <script src="js/weeklyOptionsHistoryComparison.js"></script>
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
 <script src="js/qriOptions.js"></script>
+<script src="js/qriOptionsLastValidCache.js"></script>
+<script src="js/storage/qriOptionsLastValidStore.js"></script>
 <script src="js/qriOptionIv.js"></script>
 <script src="js/qriIvGraphViewModel.js"></script>
 <script src="js/qriOptionIvRuntime.js"></script>
@@ -4508,6 +4510,32 @@ async function fetchQriData({ requestId } = {}) {
                 fetchedAt,
                 () => isCurrentFetchRequest(source, activeRequestId)
             );
+        }
+
+        if (payload.canonicalV2) {
+            void window.OptionMapQriOptionsLastValidStore
+                ?.buildAndSaveQriOptionsLastValid(localStorage, {
+                    canonical: payload.canonicalV2,
+                    fetchedAt,
+                    activeContract: payload.canonicalV2.contract,
+                    responseContract: payload.canonicalV2.contract,
+                    requestId: activeRequestId
+                }, {
+                    channel: "active", requestMode: "auto", acquisitionOrigin: "live",
+                    responseStatus: payload.canonicalV2.openInterestStatus === "available"
+                        ? "available" : payload.canonicalV2.openInterestStatus,
+                    sourceStatus: "acquired",
+                    isCurrent: () => isCurrentFetchRequest(source, activeRequestId)
+                })
+                .then(result => {
+                    if (!result.saved && !["open_interest_not_fully_available",
+                        "stale_response"].includes(result.reason)) {
+                        console.warn("QRI建玉last-valid cache保存をスキップしました:", result.reason);
+                    }
+                })
+                .catch(error => {
+                    console.warn("QRI建玉last-valid cache保存に失敗しました:", error);
+                });
         }
 
         if (
