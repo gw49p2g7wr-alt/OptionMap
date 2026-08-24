@@ -194,11 +194,16 @@ test("module touches no IndexedDB, history, fetch, UI, mobile or Overall system"
     assert.equal(/indexedDB|\bfetch\s*\(|document\.|OverallV2|MobileSummary|History/.test(source), false);
     assert.equal(/optionMapCurrentPrice(?!LastValidV1)|optionMapLastQriFuturesPrice/.test(source), false);
 });
-test("renderer wiring saves only after active price application and adds no boot restore", () => {
+test("renderer wiring loads restore diagnostics without adding boot restore", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.match(html, /applyQriNikkei225FuturesPrice[\s\S]+?buildAndSaveCurrentPriceLastValid/);
     assert.match(html, /pageTradingDate:\s*payload\.canonicalV2\?\.tradingDate/);
     assert.match(html, /pageUpdatedAt:\s*payload\.canonicalV2\?\.pageUpdatedAt/);
+    const scripts = ["js/currentPriceFreshnessShadow.js", "js/currentPriceLastValidCache.js",
+        "js/storage/currentPriceLastValidStore.js", "js/currentPriceLastValidRestore.js",
+        "js/storage/currentPriceLastValidReadOnlyStore.js"];
+    const positions = scripts.map(source => html.indexOf(`<script src="${source}"></script>`));
+    assert.equal(positions.every(position => position >= 0), true);
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions);
     assert.doesNotMatch(html, /readAndRestoreCurrentPriceLastValid\s*\(/);
-    assert.doesNotMatch(html, /CurrentPriceLastValidReadOnlyStore/);
 });
