@@ -201,7 +201,8 @@ test("renderer wiring loads restore diagnostics without adding boot restore", ()
     assert.match(html, /pageUpdatedAt:\s*payload\.canonicalV2\?\.pageUpdatedAt/);
     const scripts = ["js/currentPriceFreshnessShadow.js", "js/currentPriceLastValidCache.js",
         "js/storage/currentPriceLastValidStore.js", "js/currentPriceLastValidRestore.js",
-        "js/storage/currentPriceLastValidReadOnlyStore.js"];
+        "js/storage/currentPriceLastValidReadOnlyStore.js",
+        "js/currentPriceBootRestoreShadow.js"];
     const positions = scripts.map(source => html.indexOf(`<script src="${source}"></script>`));
     assert.equal(positions.every(position => position >= 0), true);
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);

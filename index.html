@@ -969,6 +969,7 @@
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
+<script src="js/currentPriceBootRestoreShadow.js"></script>
 <script src="js/mobileMorningComparison.js"></script>
 <script src="js/mobileTimeframeObservation.js"></script>
 <script src="js/multiTimeframeState.js"></script>
@@ -999,6 +1000,15 @@ const PARTICIPANT_STORAGE_KEY = "optionMapLastValidParticipantData";
 const PARTICIPANT_HISTORY_STORAGE_KEY = "optionMapParticipantHistory";
 const WEEKLY_FUTURES_HISTORY_STORAGE_KEY =
     "optionMapWeeklyFuturesHistory";
+
+void window.OptionMapCurrentPriceBootRestoreShadow
+    ?.initializeCurrentPriceBootRestoreShadow({
+        storage: localStorage,
+        context: {
+            restoredAt: new Date().toISOString(),
+            requestId: "renderer-boot-current-price-shadow"
+        }
+    });
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -4398,6 +4408,13 @@ async function fetchQriData({ requestId } = {}) {
                 priceResult
             );
             if (priceResult?.success === true && priceResult.mode === "automatic") {
+                window.OptionMapCurrentPriceBootRestoreShadow
+                    ?.markCurrentPriceBootRestoreShadowSuperseded({
+                        requestId: activeRequestId,
+                        acquisitionIdentity: [priceResult.contract, priceResult.quotedAt,
+                            priceResult.fetchedAt].join("|"),
+                        acquiredAt: priceResult.fetchedAt
+                    });
                 void window.OptionMapCurrentPriceLastValidStore?.buildAndSaveCurrentPriceLastValid(
                     localStorage,
                     {

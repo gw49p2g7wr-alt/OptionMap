@@ -181,7 +181,70 @@ test("module is read-only and has no runtime, UI, mobile, calculation or Overall
     assert.equal(/applyCurrentPrice|setCurrentPrice|document\.|MobileSummary|OverallV2|nearestStrike|PriceSnapshot|Observation/.test(source), false);
     assert.equal(/optionMapCurrentPrice(?!LastValid)/.test(source), false);
 });
-test("module is not connected to the renderer boot sequence", () => {
+test("renderer loads the shadow module without DOM UI markup", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("currentPriceBootRestoreShadow.js"), false);
+    assert.match(html, /<script src="js\/currentPriceBootRestoreShadow\.js"><\/script>/);
+});
+
+test("runtime starts once and exposes a valid frozen candidate", async () => {
+    const runtime = Shadow.createCurrentPriceBootRestoreShadowRuntime();
+    const source = storage([[KEY, await serialized()]]);
+    const first = runtime.initialize({ storage: source,
+        context: { restoredAt: "2026-08-24T09:05:00Z" } });
+    const second = runtime.initialize({ storage: source });
+    assert.equal(first, second);
+    const result = await first;
+    assert.deepEqual([source.calls.length, result.status, result.candidate.origin,
+        result.generation], [1, "candidate", "cache", 1]);
+    assert.equal(Object.isFrozen(runtime.getState()), true);
+});
+test("runtime missing and invalid states do not throw or create a candidate", async () => {
+    const missing = await Shadow.createCurrentPriceBootRestoreShadowRuntime()
+        .initialize({ storage: storage() });
+    const invalid = await Shadow.createCurrentPriceBootRestoreShadowRuntime()
+        .initialize({ storage: storage([[KEY, "{"]]) });
+    assert.deepEqual([missing.status, missing.candidate, invalid.status, invalid.candidate],
+        ["missing", null, "invalid", null]);
+});
+test("diagnostic getter is a detached deeply frozen snapshot", async () => {
+    const runtime = Shadow.createCurrentPriceBootRestoreShadowRuntime();
+    await runtime.initialize({ storage: storage([[KEY, await serialized()]]) });
+    const first = runtime.getState(); const second = runtime.getState();
+    assert.notEqual(first, second);
+    assert.notEqual(first.candidate, second.candidate);
+    assert.equal(Object.isFrozen(first.candidate), true);
+});
+test("live acquisition supersedes shadow semantics without applying a price", async () => {
+    const runtime = Shadow.createCurrentPriceBootRestoreShadowRuntime();
+    await runtime.initialize({ storage: storage([[KEY, await serialized()]]) });
+    const result = runtime.markLiveAcquisitionSuperseded({ requestId: "qri-2",
+        acquisitionIdentity: "2026-09|08/24 18:00|fetch-2",
+        acquiredAt: "2026-08-24T09:10:00Z" });
+    assert.deepEqual([result.status, result.reason, result.candidate.origin,
+        result.diagnostics.currentPriceApplied],
+    ["superseded", "replaced_by_live", "cache", false]);
+});
+test("stale async restore cannot overwrite a newer live generation", async () => {
+    let release;
+    const runtime = Shadow.createCurrentPriceBootRestoreShadowRuntime({ build: () =>
+        new Promise(resolve => { release = resolve; }) });
+    const pending = runtime.initialize({ storage: storage() });
+    const live = runtime.markLiveAcquisitionSuperseded({ requestId: "live-2" });
+    release({ status: "candidate", reason: null, candidate: { origin: "cache" },
+        cache: {}, freshness: {}, displayEligible: true,
+        calculationEligible: "undetermined", restoredAt: null, diagnostics: {} });
+    const completed = await pending;
+    assert.deepEqual([live.status, completed.status, runtime.getState().status,
+        completed.generation], ["superseded", "superseded", "superseded", 2]);
+});
+test("renderer wiring runs after legacy script and before initial refresh", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const script = html.indexOf('<script src="js/script.js"></script>');
+    const initialize = html.indexOf("initializeCurrentPriceBootRestoreShadow");
+    const refresh = html.indexOf(".finally(() => refreshAllMarketData())");
+    assert.equal(script < initialize && initialize < refresh, true);
+});
+test("live QRI path only supersedes shadow before unchanged save wiring", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.match(html, /applyQriNikkei225FuturesPrice[\s\S]+?markCurrentPriceBootRestoreShadowSuperseded[\s\S]+?buildAndSaveCurrentPriceLastValid/);
 });
