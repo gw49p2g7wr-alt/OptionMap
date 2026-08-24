@@ -181,5 +181,7 @@ test("inputs are unchanged and source has no forbidden connections", () => {
     assert.doesNotMatch(source, /input\.(currentPrice|savedPrice)/);
     assert.doesNotMatch(source, /setTimeout|setInterval|currentQriOptionIv/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriIvGraphSourceState.js"), false);
+    assert.equal(html.includes("qriIvGraphSourceState.js"), true);
+    assert.equal(html.indexOf("qriOptionIv.js") <
+        html.indexOf("qriIvGraphSourceState.js"), true);
 });

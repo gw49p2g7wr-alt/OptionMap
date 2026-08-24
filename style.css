@@ -666,6 +666,30 @@ canvas {
     padding-top: 16px;
 }
 
+.qri-iv-saved-badge {
+    margin-left: 8px;
+    border: 1px solid #c7a75a;
+    border-radius: 999px;
+    background: #fff7df;
+    color: #73581b;
+    padding: 3px 9px;
+    font-size: 0.78rem;
+}
+
+.qri-iv-source-message {
+    margin-bottom: 12px;
+    border-radius: 8px;
+    background: #f3f6fa;
+    color: #40566e;
+    padding: 9px 12px;
+}
+
+.qri-iv-source-message[data-severity="caution"] {
+    border-left: 4px solid #cf941d;
+    background: #fff8e8;
+    color: #6e5116;
+}
+
 .iv-range-switch {
     display: flex;
     flex-wrap: wrap;
@@ -687,6 +711,11 @@ canvas {
     border-color: #315f9d;
     background: #315f9d;
     color: #fff;
+}
+
+.iv-range-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .qri-iv-metadata,

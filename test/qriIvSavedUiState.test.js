@@ -139,7 +139,9 @@ test("pure module has no storage fetch DOM Chart runtime CurrentPrice or calcula
     assert.doesNotMatch(moduleSource,
         /currentQriOptionIv|CurrentPrice|OverallV2|calculationEligible|setTimeout|setInterval/);
 });
-test("module is not connected from index html", () => {
+test("pure module is renderer-loaded after source state without embedding DOM logic", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriIvSavedUiState.js"), false);
+    assert.equal(html.includes("qriIvSavedUiState.js"), true);
+    assert.equal(html.indexOf("qriIvGraphSourceState.js") <
+        html.indexOf("qriIvSavedUiState.js"), true);
 });

@@ -154,7 +154,7 @@ test("renderer supersedes only a current adopted active live acquisition", () =>
     for (const fact of ["requestId", "contract", "fetchedAt", "canonicalSignature",
         "canonicalVersionKey", "acquisitionIdentity"]) assert.match(wiring, new RegExp(fact));
 });
-test("shadow never applies saved IV to runtime Graph UI storage history or calculation", () => {
+test("shadow never applies saved IV to runtime while renderer may request graph-only redraw", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionIvBootRestoreShadow.js"), "utf8");
     assert.doesNotMatch(source, /localStorage|setItem|removeItem|indexedDB|\bfetch\s*\(|ipcRenderer/);
@@ -163,7 +163,8 @@ test("shadow never applies saved IV to runtime Graph UI storage history or calcu
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const initialize = html.slice(html.indexOf("const qriOptionIvBootRestoreShadowPromise"),
         html.indexOf("let lastValidParticipantCache"));
-    assert.doesNotMatch(initialize, /currentQriOptionIv|renderQriIvGraph|buildCurrentQriIvGraphViewModel/);
+    assert.doesNotMatch(initialize, /currentQriOptionIv|buildCurrentQriIvGraphViewModel/);
+    assert.match(initialize, /\.then\(\(\) => renderQriIvGraph\(\)\)/);
     assert.doesNotMatch(initialize, /setItem|removeItem|clear\(|indexedDB|fetch\(|ipcRenderer|setTimeout|setInterval/);
 });
 test("read-only input storage and serialized cache are not mutated", async () => {

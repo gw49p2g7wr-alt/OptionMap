@@ -721,8 +721,11 @@
                 class="qri-iv-curve-panel ui-category-panel category-options">
                 <summary class="ui-category-title">IVカーブ
                     <span class="ui-category-badge">オプション</span>
+                    <span id="qriIvSavedBadge" class="qri-iv-saved-badge" hidden>保存済みIV</span>
                 </summary>
                 <div class="qri-iv-content">
+                    <div id="qriIvSourceMessage" class="qri-iv-source-message"
+                        role="status" aria-live="polite" hidden></div>
                     <div class="iv-range-switch" role="group" aria-label="IVカーブ表示範囲">
                         <button type="button" data-range-mode="plus_minus_3000" class="iv-range-button active">±3,000円</button>
                         <button type="button" data-range-mode="plus_minus_5000" class="iv-range-button">±5,000円</button>
@@ -974,6 +977,9 @@
 <script src="js/qriOptionIvRuntime.js"></script>
 <script src="js/qriOptionIvLastValidCache.js"></script>
 <script src="js/storage/qriOptionIvLastValidStore.js"></script>
+<script src="js/qriIvGraphSourceState.js"></script>
+<script src="js/qriIvSavedUiState.js"></script>
+<script src="js/qriIvGraphRuntime.js"></script>
 <script src="js/qriIvGraphView.js"></script>
 <script src="js/qriOptionsSelection.js"></script>
 <script src="js/qriOptionsHistory.js"></script>
@@ -1067,6 +1073,7 @@ const qriOptionIvBootRestoreShadowPromise =
         }
     });
 void qriOptionIvBootRestoreShadowPromise;
+void qriOptionIvBootRestoreShadowPromise?.then(() => renderQriIvGraph());
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -3961,6 +3968,8 @@ window.buildCurrentQriIvGraphViewModel = ({ channel = "active", rangeMode,
 });
 
 const qriIvCurvePanel = document.getElementById("qriIvCurvePanel");
+const qriIvSavedBadge = document.getElementById("qriIvSavedBadge");
+const qriIvSourceMessage = document.getElementById("qriIvSourceMessage");
 const qriIvMetadata = document.getElementById("qriIvMetadata");
 const qriIvCoverage = document.getElementById("qriIvCoverage");
 const qriIvSideMessages = document.getElementById("qriIvSideMessages");
@@ -3969,6 +3978,7 @@ const qriIvChartContainer = document.getElementById("qriIvChartContainer");
 const qriIvChartCanvas = document.getElementById("qriIvChart");
 const qriIvRangeButtons = [...document.querySelectorAll(".iv-range-button")];
 let qriIvRangeMode = "plus_minus_3000";
+let qriIvRangeUserSelected = false;
 let qriIvChart = null;
 
 function replaceTextItems(container, items) {
@@ -3990,17 +4000,47 @@ function destroyQriIvChart() {
 function renderQriIvGraph() {
     if (!qriIvCurvePanel || !qriIvCurvePanel.open) return { status: "panel_closed" };
     const runtime = window.getCurrentQriOptionIv();
-    const resolved = window.OptionMapQriIvGraphView.resolveChannel(
-        qriContractSelectionState, runtime
-    );
-    const currentPrice = Number(document.getElementById("currentPriceInput")?.value);
-    const viewModel = resolved.available
-        ? window.buildCurrentQriIvGraphViewModel({ channel: resolved.channel,
-            rangeMode: qriIvRangeMode, currentPrice })
-        : { available: false, reason: resolved.reason || "data_unavailable" };
+    const currentPrice = window.getMobileSummaryRendererState?.()?.currentPrice || null;
+    const activeContract = qriContractSelectionState.mode === "auto"
+        ? qriContractManifest?.defaultContract || runtime.active?.contract || null : null;
+    const activeSourceStatus = runtime.active?.sourceStatus;
+    const qriFetchStatus = window.dataFetchState?.qri?.status;
+    const liveStatus = activeSourceStatus === "acquired" ? "success"
+        : qriFetchStatus === window.FETCH_STATUS?.LOADING ? "pending"
+            : ["unavailable", "parser_error", "canonical_invalid"].includes(activeSourceStatus)
+                || qriFetchStatus === window.FETCH_STATUS?.FAILED ? "failed" : "unknown";
+    const composed = window.OptionMapQriIvGraphRuntime.buildQriIvGraphRuntimeState({
+        selection: qriContractSelectionState, activeContract, runtimeState: runtime,
+        bootShadowState: window.OptionMapQriOptionIvBootRestoreShadow
+            ?.getQriOptionIvBootRestoreShadowState?.() || null,
+        liveStatus, requestedRange: qriIvRangeMode,
+        rangeUserSelected: qriIvRangeUserSelected, currentPrice
+    });
+    qriIvRangeMode = composed.rangePolicy.rangeMode;
+    qriIvRangeButtons.forEach(button => {
+        button.classList.toggle("active", button.dataset.rangeMode === qriIvRangeMode);
+        button.disabled = composed.source.sourceKind === "saved" &&
+            button.dataset.rangeMode !== "all" && !composed.rangePolicy.radiusEnabled;
+    });
+    if (qriIvSavedBadge) qriIvSavedBadge.hidden = !composed.uiState.showSavedBadge;
+    if (qriIvSourceMessage) {
+        const sourceMessage = composed.source.sourceKind === "saved" &&
+            composed.viewModel.chartAvailable ? composed.uiState.message : null;
+        qriIvSourceMessage.hidden = !sourceMessage;
+        qriIvSourceMessage.textContent = sourceMessage || "";
+        qriIvSourceMessage.dataset.severity = composed.uiState.severity;
+    }
+    const viewModel = composed.viewModel;
     const view = window.OptionMapQriIvGraphView.presentation(viewModel);
 
-    replaceTextItems(qriIvMetadata, view.metadata);
+    const savedMetadata = composed.source.sourceKind === "saved" ? [
+        composed.uiState.contractText,
+        composed.uiState.tradingDateText && `取引日 ${composed.uiState.tradingDateText}`,
+        composed.uiState.pageUpdatedAtText && `QRI更新 ${composed.uiState.pageUpdatedAtText}`,
+        composed.uiState.fetchedAtText && `OptionMap最終取得 ${composed.uiState.fetchedAtText}`,
+        composed.uiState.rangeText && `表示範囲 ${composed.uiState.rangeText}`
+    ].filter(Boolean) : view.metadata;
+    replaceTextItems(qriIvMetadata, savedMetadata);
     replaceTextItems(qriIvCoverage, view.coverage);
     if (qriIvSideMessages) {
         qriIvSideMessages.replaceChildren(...view.sideMessages.map(text => {
@@ -4010,7 +4050,8 @@ function renderQriIvGraph() {
         }));
     }
 
-    const stateMessage = view.systemMessage || view.emptyMessage;
+    const stateMessage = composed.source.sourceKind === "saved" && !viewModel.chartAvailable
+        ? composed.uiState.message : view.systemMessage || view.emptyMessage;
     if (qriIvSystemState) {
         qriIvSystemState.hidden = !stateMessage;
         qriIvSystemState.textContent = stateMessage || "";
@@ -4056,8 +4097,8 @@ function renderQriIvGraph() {
             }
         }
     });
-    return { status: "rendered", contract: resolved.contract,
-        rangeMode: qriIvRangeMode };
+    return { status: "rendered", contract: composed.source.contract,
+        rangeMode: qriIvRangeMode, sourceKind: composed.source.sourceKind };
 }
 
 qriIvCurvePanel?.addEventListener("toggle", () => {
@@ -4067,6 +4108,7 @@ qriIvCurvePanel?.addEventListener("toggle", () => {
 qriIvRangeButtons.forEach(button => button.addEventListener("click", () => {
     const mode = button.dataset.rangeMode;
     if (!window.OptionMapQriIvGraphView.RANGE_MODES.includes(mode)) return;
+    qriIvRangeUserSelected = true;
     qriIvRangeMode = mode;
     qriIvRangeButtons.forEach(item => item.classList.toggle("active", item === button));
     renderQriIvGraph();
