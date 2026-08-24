@@ -972,6 +972,8 @@
 <script src="js/qriOptionIv.js"></script>
 <script src="js/qriIvGraphViewModel.js"></script>
 <script src="js/qriOptionIvRuntime.js"></script>
+<script src="js/qriOptionIvLastValidCache.js"></script>
+<script src="js/storage/qriOptionIvLastValidStore.js"></script>
 <script src="js/qriIvGraphView.js"></script>
 <script src="js/qriOptionsSelection.js"></script>
 <script src="js/qriOptionsHistory.js"></script>
@@ -4402,12 +4404,33 @@ async function fetchQriData({ requestId } = {}) {
         const fetchedAt = new Date().toISOString();
         const sourceDate = payload.sourceDate.toISOString();
 
-        await adoptQriOptionIv("active", payload, fetchedAt,
+        const ivAdoption = await adoptQriOptionIv("active", payload, fetchedAt,
             { mode: "auto", requestId: activeRequestId, requestedContract: "auto",
                 sourceUrl },
             () => ({ isCurrent: isCurrentFetchRequest(source, activeRequestId),
                 activeContract: payload.canonicalV2?.contract || null,
                 responseContract: payload.ivCanonicalV1?.contract || null }));
+
+        if (ivAdoption.adopted && ivAdoption.status === "available") {
+            void window.OptionMapQriOptionIvLastValidStore
+                ?.buildAndSaveQriOptionIvLastValid(localStorage, {
+                    candidate: ivAdoption.state.active,
+                    activeContract: payload.canonicalV2?.contract || null,
+                    responseContract: payload.ivCanonicalV1?.contract || null
+                }, {
+                    channel: "active", requestMode: "auto", acquisitionOrigin: "live",
+                    responseStatus: ivAdoption.status,
+                    isCurrent: () => isCurrentFetchRequest(source, activeRequestId)
+                })
+                .then(result => {
+                    if (!result.saved && result.reason !== "stale_response") {
+                        console.warn("QRI IV last-valid cache保存をスキップしました:", result.reason);
+                    }
+                })
+                .catch(error => {
+                    console.warn("QRI IV last-valid cache保存に失敗しました:", error);
+                });
+        }
 
         if (payload.canonicalV2) {
             await persistQriOptionsHistory(

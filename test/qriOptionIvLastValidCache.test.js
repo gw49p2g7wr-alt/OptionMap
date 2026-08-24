@@ -156,7 +156,7 @@ test("invalid cache cannot become a Freshness candidate", async () => {
     assert.equal((await Cache.createFreshnessInput(cache)).success, false);
 });
 
-test("module proposes a dedicated key and has no storage, runtime, history, UI or network wiring", () => {
+test("module proposes a dedicated key and has no storage, history, UI or network logic", () => {
     assert.equal(Cache.STORAGE_KEY_CANDIDATE, "optionMapQriOptionIvLastValidV1");
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionIvLastValidCache.js"), "utf8");
@@ -164,5 +164,8 @@ test("module proposes a dedicated key and has no storage, runtime, history, UI o
     assert.doesNotMatch(source, /History|currentQriOptionIv|document\.|querySelector|Chart|OverallV2/);
     assert.doesNotMatch(source, /setTimeout|setInterval/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionIvLastValidCache.js"), false);
+    const cachePosition = html.indexOf('<script src="js/qriOptionIvLastValidCache.js"></script>');
+    const storePosition = html.indexOf(
+        '<script src="js/storage/qriOptionIvLastValidStore.js"></script>');
+    assert.equal(cachePosition >= 0 && storePosition > cachePosition, true);
 });
