@@ -121,12 +121,16 @@ test("contract context is delegated to Freshness rather than internal cache repa
     assert.equal(result.cache.requestContext.responseContract, "2026-09");
 });
 
-test("restore module is pure and not renderer-wired", () => {
+test("restore module stays pure and loads only before boot shadow", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsLastValidRestore.js"), "utf8");
     assert.doesNotMatch(source, /localStorage|indexedDB|setItem|removeItem|\bfetch\s*\(|ipcRenderer/);
     assert.doesNotMatch(source, /qriOptionsHistory|optionMapLastValidQriOpenInterest|document\.|Chart|OverallV2/);
     assert.doesNotMatch(source, /setTimeout|setInterval/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsLastValidRestore.js"), false);
+    const freshness = html.indexOf('<script src="js/dataFreshness.js"></script>');
+    const restore = html.indexOf('<script src="js/qriOptionsLastValidRestore.js"></script>');
+    const readOnly = html.indexOf(
+        '<script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>');
+    assert.equal(freshness >= 0 && freshness < restore && restore < readOnly, true);
 });

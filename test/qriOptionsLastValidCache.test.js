@@ -174,7 +174,7 @@ test("Freshness adapter preserves cache origin and calculation separation", asyn
     assert.equal((await Cache.createFreshnessInput(tampered)).success, false);
 });
 
-test("module proposes a dedicated key and is loaded only for the save wiring", () => {
+test("module proposes a dedicated key and precedes save and restore wiring", () => {
     assert.equal(Cache.STORAGE_KEY_CANDIDATE, "optionMapQriOptionsLastValidV1");
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsLastValidCache.js"), "utf8");
@@ -185,6 +185,7 @@ test("module proposes a dedicated key and is loaded only for the save wiring", (
     const qri = html.indexOf('<script src="js/qriOptions.js"></script>');
     const cache = html.indexOf('<script src="js/qriOptionsLastValidCache.js"></script>');
     const store = html.indexOf('<script src="js/storage/qriOptionsLastValidStore.js"></script>');
+    const restore = html.indexOf('<script src="js/qriOptionsLastValidRestore.js"></script>');
     assert.equal(qri >= 0 && qri < cache && cache < store, true);
-    assert.equal(html.includes("qriOptionsLastValidRestore.js"), false);
+    assert.equal(store < restore, true);
 });

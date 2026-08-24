@@ -990,6 +990,9 @@
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/dataFreshness.js"></script>
+<script src="js/qriOptionsLastValidRestore.js"></script>
+<script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>
+<script src="js/qriOptionsBootRestoreShadow.js"></script>
 <script src="js/qriOptionIvLastValidRestore.js"></script>
 <script src="js/storage/qriOptionIvLastValidReadOnlyStore.js"></script>
 <script src="js/qriOptionIvBootRestoreShadow.js"></script>
@@ -1076,6 +1079,17 @@ const qriOptionIvBootRestoreShadowPromise =
     });
 void qriOptionIvBootRestoreShadowPromise;
 void qriOptionIvBootRestoreShadowPromise?.then(() => renderQriIvGraph());
+
+const qriOptionsBootRestoreShadowPromise =
+    window.OptionMapQriOptionsBootRestoreShadow
+        ?.initializeQriOptionsBootRestoreShadow({
+        storage: localStorage,
+        context: {
+            restoredAt: new Date().toISOString(),
+            requestId: "renderer-boot-qri-options-shadow"
+        }
+    });
+void qriOptionsBootRestoreShadowPromise;
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -4510,6 +4524,47 @@ async function fetchQriData({ requestId } = {}) {
                 fetchedAt,
                 () => isCurrentFetchRequest(source, activeRequestId)
             );
+        }
+
+        if (
+            payload.canonicalV2?.openInterestStatus === "available" &&
+            window.OptionMapQriOptions.validateCanonical(
+                payload.canonicalV2,
+                { allowUnresolvedContracts: true }
+            ) &&
+            payload.canonicalV2.records.some(record =>
+                record.optionType === "call" && record.published === true
+            ) &&
+            payload.canonicalV2.records.some(record =>
+                record.optionType === "put" && record.published === true
+            ) &&
+            payload.canonicalV2.records.every(record =>
+                record.contract === payload.canonicalV2.contract
+            ) &&
+            isCurrentFetchRequest(source, activeRequestId)
+        ) {
+            const liveCanonicalCache = await window.OptionMapQriOptions.createCacheV2(
+                payload.canonicalV2,
+                fetchedAt
+            );
+            if (
+                await window.OptionMapQriOptions.validateCacheV2(liveCanonicalCache) &&
+                isCurrentFetchRequest(source, activeRequestId)
+            ) {
+                window.OptionMapQriOptionsBootRestoreShadow
+                    ?.markQriOptionsBootRestoreShadowSuperseded({
+                        requestId: activeRequestId,
+                        contract: payload.canonicalV2.contract,
+                        acquiredAt: fetchedAt,
+                        fetchedAt,
+                        canonicalSignature: liveCanonicalCache.signature,
+                        canonicalVersionKey: liveCanonicalCache.versionKey,
+                        acquisitionIdentity: [activeRequestId,
+                            payload.canonicalV2.contract, fetchedAt,
+                            liveCanonicalCache.signature,
+                            liveCanonicalCache.versionKey].join("|")
+                    });
+            }
         }
 
         if (payload.canonicalV2) {

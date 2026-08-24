@@ -162,12 +162,70 @@ test("only the dedicated key is read and the input storage remains unchanged", a
     assert.equal(JSON.stringify([...source.values]), before);
 });
 
-test("module is pure shadow-only and remains disconnected from renderer", () => {
+test("module remains pure shadow-only", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsBootRestoreShadow.js"), "utf8");
     assert.doesNotMatch(source, /localStorage|setItem|removeItem|indexedDB|\bfetch\s*\(|ipcRenderer/);
     assert.doesNotMatch(source, /optionMapLastValidQriOpenInterest|qriOptionsHistory/);
     assert.doesNotMatch(source, /document\.|querySelector|Chart|OverallV2|setTimeout|setInterval/);
+});
+
+test("renderer loads dependencies and starts boot shadow without awaiting initial fetch", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsBootRestoreShadow.js"), false);
+    const ordered = ["js/qriOptions.js", "js/qriOptionsLastValidCache.js",
+        "js/dataFreshness.js", "js/qriOptionsLastValidRestore.js",
+        "js/storage/qriOptionsLastValidReadOnlyStore.js",
+        "js/qriOptionsBootRestoreShadow.js"];
+    const positions = ordered.map(item => html.indexOf(`<script src="${item}"></script>`));
+    assert.equal(positions.every(position => position >= 0), true);
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+    const initializeAt = html.indexOf("initializeQriOptionsBootRestoreShadow({");
+    const initialRefreshAt = html.lastIndexOf(".finally(() => refreshAllMarketData())");
+    assert.ok(initializeAt > 0 && initializeAt < initialRefreshAt);
+    assert.match(html, /void qriOptionsBootRestoreShadowPromise;/);
+    assert.doesNotMatch(html, /await qriOptionsBootRestoreShadowPromise/);
+});
+
+test("active auto live success supersedes shadow before unchanged save and legacy wiring", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const active = html.slice(html.indexOf("async function fetchQriData"),
+        html.indexOf("async function fetchParticipantData"));
+    const historyAt = active.indexOf("persistQriOptionsHistory(");
+    const supersedeAt = active.indexOf("markQriOptionsBootRestoreShadowSuperseded");
+    const saveAt = active.indexOf("buildAndSaveQriOptionsLastValid(localStorage");
+    const legacyAt = active.indexOf("window.saveLastValidQriOpenInterest({");
+    assert.ok(historyAt >= 0 && historyAt < supersedeAt && supersedeAt < saveAt &&
+        saveAt < legacyAt);
+    const wiring = active.slice(historyAt, saveAt);
+    for (const fact of ["openInterestStatus", "validateCanonical", "optionType === \"call\"",
+        "optionType === \"put\"", "published === true", "isCurrentFetchRequest",
+        "validateCacheV2", "requestId", "contract", "fetchedAt", "canonicalSignature",
+        "canonicalVersionKey", "acquisitionIdentity"]) {
+        assert.equal(wiring.includes(fact), true, fact);
+    }
+});
+
+test("stale and specific paths cannot supersede active boot shadow", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const active = html.slice(html.indexOf("async function fetchQriData"),
+        html.indexOf("async function fetchParticipantData"));
+    const supersedeAt = active.indexOf("markQriOptionsBootRestoreShadowSuperseded");
+    const wiring = active.slice(active.indexOf("payload.canonicalV2?.openInterestStatus"),
+        supersedeAt);
+    assert.ok((wiring.match(/isCurrentFetchRequest\(source, activeRequestId\)/g) || [])
+        .length >= 2);
+    const specific = html.slice(html.indexOf("async function showSpecificQriContract"),
+        html.indexOf("async function updateQriContractManifest"));
+    assert.equal(specific.includes("markQriOptionsBootRestoreShadowSuperseded"), false);
+});
+
+test("runtime wiring stays shadow-only with no UI storage history or fetch additions", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const boot = html.slice(html.indexOf("const qriOptionsBootRestoreShadowPromise"),
+        html.indexOf("let lastValidParticipantCache"));
+    assert.doesNotMatch(boot, /setItem|removeItem|clear\(|indexedDB|fetch\(|ipcRenderer|Chart|OverallV2/);
+    assert.doesNotMatch(boot, /\brender\s*\(|currentQri|saveLastValidQriOpenInterest|persistQriOptionsHistory/);
+    const active = html.slice(html.indexOf("markQriOptionsBootRestoreShadowSuperseded"),
+        html.indexOf("buildAndSaveQriOptionsLastValid(localStorage"));
+    assert.doesNotMatch(active, /setItem|removeItem|clear\(|indexedDB|render|Chart|OverallV2/);
 });

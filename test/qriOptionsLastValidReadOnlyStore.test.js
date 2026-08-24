@@ -96,12 +96,16 @@ test("write capabilities are never requested and results are deeply frozen", asy
     assert.equal(Object.isFrozen(result.canonical), true);
 });
 
-test("store has no writes IndexedDB runtime history UI network timer or renderer wiring", () => {
+test("store has no writes IndexedDB history UI network or timer wiring", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/storage/qriOptionsLastValidReadOnlyStore.js"), "utf8");
     assert.doesNotMatch(source, /setItem|removeItem|\.clear\s*\(|indexedDB|\bfetch\s*\(|ipcRenderer/);
     assert.doesNotMatch(source, /qriOptionsHistory|optionMapLastValidQriOpenInterest|document\.|Chart|OverallV2/);
     assert.doesNotMatch(source, /setTimeout|setInterval/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsLastValidReadOnlyStore.js"), false);
+    const restore = html.indexOf('<script src="js/qriOptionsLastValidRestore.js"></script>');
+    const store = html.indexOf(
+        '<script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>');
+    const shadow = html.indexOf('<script src="js/qriOptionsBootRestoreShadow.js"></script>');
+    assert.equal(restore >= 0 && restore < store && store < shadow, true);
 });
