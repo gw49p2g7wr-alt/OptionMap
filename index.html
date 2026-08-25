@@ -1036,6 +1036,8 @@
 <script src="js/qriOptionIvBootRestoreShadow.js"></script>
 <script src="js/currentPriceFreshnessShadow.js"></script>
 <script src="js/currentPriceLastValidCache.js"></script>
+<script src="js/currentPriceLiveIdentityFact.js"></script>
+<script src="js/currentPriceLiveIdentityRuntime.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
@@ -4575,6 +4577,10 @@ async function fetchQriData({ requestId } = {}) {
         error: null,
         requestId: activeRequestId
     });
+    window.beginCurrentPriceLiveIdentityPublication?.({
+        requestId: activeRequestId,
+        isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+    });
     [
         "html",
         "referencePrice",
@@ -4787,6 +4793,23 @@ async function fetchQriData({ requestId } = {}) {
                 "QRI日経225先物参考価格の反映結果:",
                 priceResult
             );
+            const livePriceAcquisition = priceResult?.latestQriPrice || priceResult;
+            await window.publishCurrentPriceLiveIdentityFact?.({
+                priceResult: livePriceAcquisition?.success === false ? null : {
+                    ...livePriceAcquisition, available: true, origin: "live", mode: "automatic"
+                },
+                activeContract: payload.canonicalV2?.contract || null,
+                pageTradingDate: payload.canonicalV2?.tradingDate || null,
+                pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
+                sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl,
+                requestId: activeRequestId,
+                fetchedAt,
+                isCurrentRequest: isCurrentFetchRequest(source, activeRequestId)
+            }, {
+                isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId),
+                formalCurrentPriceMode: priceResult?.reason === "manual_mode"
+                    ? "manual" : "automatic"
+            });
             if (priceResult?.success === true && priceResult.mode === "automatic") {
                 window.OptionMapCurrentPriceBootRestoreShadow
                     ?.markCurrentPriceBootRestoreShadowSuperseded({
@@ -4960,6 +4983,11 @@ async function fetchQriData({ requestId } = {}) {
         }
 
         const fetchedAt = new Date().toISOString();
+        window.markCurrentPriceLiveIdentityUnavailable?.({
+            requestId: activeRequestId,
+            reason: "acquisition_failed",
+            isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+        });
         if (!qriHtmlAcquired) {
             await markQriOptionIvSourceUnavailable("active", fetchedAt,
                 { mode: "auto", requestId: activeRequestId,
