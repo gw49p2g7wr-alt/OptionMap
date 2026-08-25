@@ -716,6 +716,76 @@ canvas {
     font-size: 0.85rem;
 }
 
+.qri-options-saved-reference-state {
+    margin: 10px 0 14px;
+    border: 1px solid #d8e0ea;
+    border-radius: 10px;
+    background: #f7f9fc;
+    color: #475569;
+    padding: 12px 14px;
+}
+
+.qri-options-saved-reference-state h4 {
+    margin: 0;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.qri-options-saved-reference-subtitle,
+.qri-options-saved-reference-metadata,
+.qri-options-saved-reference-note {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.qri-options-saved-reference-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.qri-options-saved-reference-side {
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 9px 11px;
+}
+
+.qri-options-saved-reference-side.is-call strong {
+    color: #285f9e;
+}
+
+.qri-options-saved-reference-side.is-put strong {
+    color: #9b4058;
+}
+
+.qri-options-saved-reference-side ol {
+    margin: 7px 0 0;
+    padding-left: 1.35rem;
+}
+
+.qri-options-saved-reference-side li {
+    margin: 3px 0;
+}
+
+.qri-options-saved-reference-maximum {
+    display: inline-block;
+    margin-left: 7px;
+    border-radius: 999px;
+    background: #e8edf4;
+    color: #52657a;
+    padding: 1px 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .qri-options-saved-reference-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .iv-range-switch {
     display: flex;
     flex-wrap: wrap;

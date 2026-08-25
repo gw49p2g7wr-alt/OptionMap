@@ -36,7 +36,19 @@ function fixtures() {
                 liveRequestId: "qri-7", liveContract: "2026-09",
                 liveFetchedAt: "2026-08-25T06:20:00Z" } },
         live: { contract: "2026-09", fetchedAt: "2026-08-25T06:20:00Z",
-            sourceStatus: "acquired" }
+            sourceStatus: "acquired" },
+        reference: { status: "visible", referenceOnly: true,
+            calculationEligible: false,
+            identity: { contract: "2026-09", canonicalVersionKey: "saved-version",
+                displayGeneration: 7 },
+            analysisState: { sourceKind: "saved" },
+            uiState: { visible: true, call: { topItems: [{ text: "CALL 1" }] },
+                put: { topItems: [{ text: "PUT 1" }, { text: "PUT 2" }] } } },
+        referenceDom: { visible: true, title: "保存済み建玉からの参考情報",
+            call: { items: [{ text: "CALL 1", maximum: true }] },
+            put: { items: [{ text: "PUT 1", maximum: true },
+                { text: "PUT 2", maximum: false }] },
+            metadata: "限月：2026年9月限", note: "参考情報" }
     };
 }
 
@@ -45,7 +57,10 @@ function create(values = fixtures()) {
         getDisplayState: () => values.display, getChartState: () => values.chart,
         getChartIdentity: () => values.chartIdentity,
         getFormalState: () => values.formal, getBootShadowState: () => values.boot,
-        getLiveState: () => values.live, getSavedUiDomState: () => ({ visible: true,
+        getLiveState: () => values.live,
+        getReferenceState: () => values.reference,
+        getReferenceDomState: () => values.referenceDom,
+        getSavedUiDomState: () => ({ visible: true,
             badge: { visible: true, text: "保存済み建玉" },
             message: { visible: true, text: "保存済み建玉を表示中", severity: "neutral" },
             metadata: { visible: true, text: "2026年9月限 / 取引日 2026/08/25" } }),
@@ -84,6 +99,15 @@ test("chart identity is never inferred from saved display state", () => {
         state: null, contract: null, displayOnly: null, generation: null,
         displayGeneration: null, renderedAt: null, canvasCount: 1 });
     assert.equal(result.display.sourceKind, "saved");
+});
+
+test("getter exposes reference runtime identity counts and actual DOM", () => {
+    const result = create().diagnostics.getDiagnostics();
+    assert.deepEqual(result.referenceAnalysis, { visible: true, sourceKind: "saved",
+        state: "visible", referenceOnly: true, calculationEligible: false,
+        contract: "2026-09", canonicalVersionKey: "saved-version",
+        displayGeneration: 7, callCount: 1, putCount: 2,
+        actualDom: fixtures().referenceDom });
 });
 
 test("display data does not substitute for missing renderer identity", () => {
@@ -130,6 +154,7 @@ test("getter is detached deeply frozen and leaves every provider state unchanged
     assert.equal(JSON.stringify(values), before);
     assert.deepEqual(first, second);
     for (const value of [first, first.display, first.savedUi, first.savedUi.metadata,
+        first.referenceAnalysis, first.referenceAnalysis.actualDom,
         first.chart, first.formal, first.formal.globalsFingerprint, first.bootShadow,
         first.liveAcquisition, first.resource]) assert.equal(Object.isFrozen(value), true);
     assert.notStrictEqual(first.formal.sourceIdentity, values.formal.sourceIdentity);
@@ -138,6 +163,7 @@ test("getter is detached deeply frozen and leaves every provider state unchanged
 test("getter changes no formal wall judgment OverallV2 fetch or resource state", () => {
     const { values, diagnostics } = create();
     const watched = [values.display, values.chart, values.chartIdentity,
+        values.reference, values.referenceDom,
         values.formal.formalGlobals, values.formal.wallState,
         values.formal.judgmentState, values.formal.overallV2State, values.formal.fetchState];
     const before = watched.map(value => JSON.stringify(value));

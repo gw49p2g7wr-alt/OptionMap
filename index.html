@@ -679,6 +679,29 @@
                 <div id="qriOptionsSavedMetadata" class="qri-options-saved-metadata" hidden></div>
             </div>
 
+            <section id="qriOptionsSavedReferenceState"
+                class="qri-options-saved-reference-state" hidden>
+                <h4 id="qriOptionsSavedReferenceTitle"></h4>
+                <p id="qriOptionsSavedReferenceSubtitle"
+                    class="qri-options-saved-reference-subtitle"></p>
+                <div class="qri-options-saved-reference-grid">
+                    <div class="qri-options-saved-reference-side is-call">
+                        <strong id="qriOptionsSavedReferenceCallLabel"></strong>
+                        <ol id="qriOptionsSavedReferenceCallList"></ol>
+                        <p id="qriOptionsSavedReferenceCallEmpty" hidden></p>
+                    </div>
+                    <div class="qri-options-saved-reference-side is-put">
+                        <strong id="qriOptionsSavedReferencePutLabel"></strong>
+                        <ol id="qriOptionsSavedReferencePutList"></ol>
+                        <p id="qriOptionsSavedReferencePutEmpty" hidden></p>
+                    </div>
+                </div>
+                <p id="qriOptionsSavedReferenceMetadata"
+                    class="qri-options-saved-reference-metadata"></p>
+                <p id="qriOptionsSavedReferenceNote"
+                    class="qri-options-saved-reference-note"></p>
+            </section>
+
             <p id="qriOptionsHistoryStatus" class="open-interest-data-status"
                 role="status" aria-live="polite">
                 QRI正式history：確認中…
@@ -1003,6 +1026,9 @@
 <script src="js/qriOptionsDisplaySourceState.js"></script>
 <script src="js/qriOptionsSavedUiState.js"></script>
 <script src="js/qriOptionsDisplayPositionsAdapter.js"></script>
+<script src="js/qriOptionsSavedReferenceAnalysis.js"></script>
+<script src="js/qriOptionsSavedReferenceUiState.js"></script>
+<script src="js/qriOptionsSavedReferenceRuntime.js"></script>
 <script src="js/qriOptionsDisplayRuntime.js"></script>
 <script src="js/qriOptionsSavedDisplayDiagnostics.js"></script>
 <script src="js/qriOptionIvLastValidRestore.js"></script>
@@ -1130,6 +1156,19 @@ const qriOptionsDisplayRuntime =
         }
     });
 
+const qriOptionsSavedReferenceRuntime =
+    window.OptionMapQriOptionsSavedReferenceRuntime
+        ?.createQriOptionsSavedReferenceRuntime({
+            getDisplayState: () => qriOptionsDisplayRuntime?.getState() || null,
+            getSavedIdentity: () => window.OptionMapQriOptionsBootRestoreShadow
+                ?.getQriOptionsBootRestoreShadowState?.()?.candidate || null,
+            renderUi: uiState =>
+                window.OptionMapQriOptionsSavedReferenceRuntime
+                    ?.renderQriOptionsSavedReferenceUi(uiState, document),
+            clearUi: () => window.OptionMapQriOptionsSavedReferenceRuntime
+                ?.clearQriOptionsSavedReferenceDom(document)
+        });
+
 const qriOptionsSavedDisplayDiagnostics =
     window.OptionMapQriOptionsSavedDisplayDiagnostics
         ?.createQriOptionsSavedDisplayDiagnostics({
@@ -1142,6 +1181,11 @@ const qriOptionsSavedDisplayDiagnostics =
                 window.OptionMapQriOptionsBootRestoreShadow
                     ?.getQriOptionsBootRestoreShadowState?.() || null,
             getLiveState: () => qriOptionsDisplayLiveState,
+            getReferenceState: () =>
+                qriOptionsSavedReferenceRuntime?.getState() || null,
+            getReferenceDomState: () =>
+                window.OptionMapQriOptionsSavedReferenceRuntime
+                    ?.getQriOptionsSavedReferenceDomState(document) || null,
             getSavedUiDomState: () => {
                 const region = document.getElementById("qriOptionsSavedSourceState");
                 const badge = document.getElementById("qriOptionsSavedBadge");
@@ -1173,13 +1217,15 @@ function refreshQriOptionsDisplay({ liveState, liveStatus,
         ? "specific" : "auto";
     const activeContract = qriContractManifest?.defaultContract ||
         qriOptionsDisplayLiveState?.contract || bootShadowState?.candidate?.contract || null;
-    return qriOptionsDisplayRuntime?.render({ mode: selectionMode,
+    const result = qriOptionsDisplayRuntime?.render({ mode: selectionMode,
         activeContract,
         selectedContract: selectionMode === "specific"
             ? qriContractSelectionState?.contract || null : null,
         liveStatus: qriOptionsDisplayLiveStatus,
         liveState: qriOptionsDisplayLiveState,
         bootShadowState, legacyFallbackState }) || null;
+    void qriOptionsSavedReferenceRuntime?.refresh();
+    return result;
 }
 
 window.refreshQriOptionsDisplay = refreshQriOptionsDisplay;

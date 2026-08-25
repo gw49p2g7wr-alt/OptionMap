@@ -53,6 +53,7 @@
         getChartState = () => null, getChartIdentity = () => null,
         getFormalState = () => null,
         getBootShadowState = () => null, getLiveState = () => null,
+        getReferenceState = () => null, getReferenceDomState = () => null,
         getSavedUiDomState = () => null, getCanvasCount = () => 0 } = {}) {
         function getDiagnostics() {
             const display = clone(getDisplayState()) || null;
@@ -62,6 +63,8 @@
             const boot = clone(getBootShadowState()) || null;
             const live = clone(getLiveState()) || null;
             const uiDom = clone(getSavedUiDomState()) || null;
+            const reference = clone(getReferenceState()) || null;
+            const referenceDom = clone(getReferenceDomState()) || null;
             const source = display?.sourceState || null;
             const ui = display?.uiState || null;
             const result = { diagnosticsVersion: DIAGNOSTICS_VERSION,
@@ -78,6 +81,21 @@
                         pageUpdatedAtText: ui?.pageUpdatedAtText ?? null,
                         fetchedAtText: ui?.fetchedAtText ?? null },
                     actualDom: uiDom },
+                referenceAnalysis: { visible: reference?.status === "visible" &&
+                        reference?.uiState?.visible === true,
+                    sourceKind: reference?.analysisState?.sourceKind ?? null,
+                    state: reference?.status ?? null,
+                    referenceOnly: reference?.referenceOnly === true,
+                    calculationEligible: reference?.calculationEligible === false
+                        ? false : null,
+                    contract: reference?.identity?.contract ?? null,
+                    canonicalVersionKey:
+                        reference?.identity?.canonicalVersionKey ?? null,
+                    displayGeneration:
+                        reference?.identity?.displayGeneration ?? null,
+                    callCount: reference?.uiState?.call?.topItems?.length ?? 0,
+                    putCount: reference?.uiState?.put?.topItems?.length ?? 0,
+                    actualDom: referenceDom },
                 chart: { actualStateAvailable: chartIdentity !== null,
                     displayDataAvailable: chart !== null,
                     rendererKind: chartIdentity?.rendererKind ?? "unknown",

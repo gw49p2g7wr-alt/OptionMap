@@ -191,7 +191,7 @@ test("diagnostics report pure technical facts", () => {
         overallV2Accessed: false });
 });
 
-test("module contains no forbidden connection and index remains disconnected", () => {
+test("module contains no forbidden connection and index connects it only before saved reference runtime", () => {
     const code = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsSavedReferenceAnalysis.js"), "utf8");
     assert.doesNotMatch(code, /localStorage|sessionStorage|indexedDB|setItem|removeItem/);
@@ -201,5 +201,7 @@ test("module contains no forbidden connection and index remains disconnected", (
     assert.doesNotMatch(code, /require\([^)]*overallJudgmentV2|OptionMapOverallJudgmentV2/);
     assert.doesNotMatch(code, /setTimeout|setInterval|migration|backfill/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsSavedReferenceAnalysis.js"), false);
+    assert.ok(html.indexOf("qriOptionsSavedReferenceAnalysis.js") >= 0);
+    assert.ok(html.indexOf("qriOptionsSavedReferenceAnalysis.js") <
+        html.indexOf("qriOptionsSavedReferenceRuntime.js"));
 });
