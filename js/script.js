@@ -4509,6 +4509,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
     const result = calculateOptionMapOverallJudgmentV2();
     optionMapJudgmentStateV2.result = result;
     optionMapJudgmentStateV2.lastError = null;
+    void publishFormalIdentityEnvelopesV2(result);
 
     const directionElement = document.getElementById("optionMapV2Direction");
     const scoreElement = document.getElementById("optionMapV2DirectionScore");
@@ -4588,6 +4589,38 @@ function renderOptionMapOverallJudgmentV2Internal() {
     }
 }
 
+async function publishFormalIdentityEnvelopesV2(result) {
+    const candidate = optionMapJudgmentStateV2.weeklyCandidate;
+    const previous = candidate?.metadata?.previous;
+    const current = candidate?.metadata?.current;
+    const qriFact = window.getQriFormalIdentityFact?.()?.fact || null;
+    const requestId = qriFact?.requestId || candidate?.metadata?.requestId || null;
+    if (candidate?.available === true && result?.components?.weekly?.available === true) {
+        await window.publishWeeklyFormalIdentityFact?.({ sourceClass: "formal_history",
+            previous, current, activeVersionKey: candidate.metadata.activeVersionKey,
+            activeVersionMatched: candidate.metadata.activeVersionMatched,
+            candidateComplete: true, requestId,
+            requestContext: { requestId, marketRefreshRequestId: requestId },
+            component: result.components.weekly
+        }, { isCurrentRequest: () =>
+            optionMapJudgmentStateV2.weeklyCandidate?.metadata?.current?.versionKey ===
+                current?.versionKey });
+    } else {
+        window.markWeeklyFormalIdentityUnavailable?.("formal_component_unavailable");
+    }
+    const weeklyFact = window.getWeeklyFormalIdentityFact?.()?.fact || null;
+    await window.publishOverallV2FormalEnvelope?.({
+        logicVersion: window.OptionMapOverallV2FormalEnvelopeRuntime
+            ?.OVERALL_V2_LOGIC_VERSION,
+        requestId, result, qriFact, weeklyFact
+    }, { isCurrentRequest: () => {
+        const latestQri = window.getQriFormalIdentityFact?.()?.fact || null;
+        const latestWeekly = window.getWeeklyFormalIdentityFact?.()?.fact || null;
+        return latestQri?.canonicalVersionKey === qriFact?.canonicalVersionKey &&
+            latestWeekly?.currentVersionKey === weeklyFact?.currentVersionKey;
+    } });
+}
+
 function safeRenderOptionMapOverallJudgmentV2() {
     if (!OPTION_MAP_V2_ENABLED) return;
 
@@ -4631,17 +4664,20 @@ function updateWeeklyCandidateV2(selection) {
         metadata: {
             previous: {
                 sourceDate: previous.sourceDate,
-                versionKey: previous.versionKey
+                versionKey: previous.versionKey,
+                signature: previous.signature
             },
             current: {
                 sourceDate: current.sourceDate,
-                versionKey: current.versionKey
+                versionKey: current.versionKey,
+                signature: current.signature
             },
             activeVersionKey: current.versionKey,
             activeVersionMatched: true,
             origin: "weekly_futures_history",
             dataStatus: "formal_history",
-            remoteCheckStatus: null
+            remoteCheckStatus: null,
+            requestId: window.dataFetchState?.weeklyFutures?.requestId || null
         }
     };
     safeRenderOptionMapOverallJudgmentV2();

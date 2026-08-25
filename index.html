@@ -1017,6 +1017,7 @@
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
+<script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/dataFreshness.js"></script>
@@ -1038,6 +1039,8 @@
 <script src="js/currentPriceLastValidCache.js"></script>
 <script src="js/currentPriceLiveIdentityFact.js"></script>
 <script src="js/currentPriceLiveIdentityRuntime.js"></script>
+<script src="js/weeklyFormalIdentityRuntime.js"></script>
+<script src="js/overallV2FormalEnvelopeRuntime.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
@@ -4581,6 +4584,10 @@ async function fetchQriData({ requestId } = {}) {
         requestId: activeRequestId,
         isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
     });
+    window.beginQriFormalIdentityPublication?.({
+        requestId: activeRequestId,
+        isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+    });
     [
         "html",
         "referencePrice",
@@ -4686,11 +4693,28 @@ async function fetchQriData({ requestId } = {}) {
         }
 
         if (payload.canonicalV2) {
-            await persistQriOptionsHistory(
+            const qriPersistenceResult = await persistQriOptionsHistory(
                 payload.canonicalV2,
                 fetchedAt,
                 () => isCurrentFetchRequest(source, activeRequestId)
             );
+            const qriIdentityCache = await window.OptionMapQriOptions.createCacheV2(
+                payload.canonicalV2, fetchedAt
+            );
+            await window.publishQriFormalIdentityFact?.({
+                canonical: payload.canonicalV2,
+                canonicalValid: window.OptionMapQriOptions.validateCanonical(
+                    payload.canonicalV2, { allowUnresolvedContracts: true }
+                ),
+                canonicalSignature: qriIdentityCache?.signature || null,
+                canonicalVersionKey: qriIdentityCache?.versionKey || null,
+                persistenceResult: qriPersistenceResult,
+                sourceKind: "formal_live", origin: "live", mode: "auto",
+                usingFallback: false, referenceOnly: false,
+                requestId: activeRequestId, fetchedAt
+            }, {
+                isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+            });
         }
 
         if (
@@ -4984,6 +5008,11 @@ async function fetchQriData({ requestId } = {}) {
 
         const fetchedAt = new Date().toISOString();
         window.markCurrentPriceLiveIdentityUnavailable?.({
+            requestId: activeRequestId,
+            reason: "acquisition_failed",
+            isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+        });
+        window.markQriFormalIdentityUnavailable?.({
             requestId: activeRequestId,
             reason: "acquisition_failed",
             isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
