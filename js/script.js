@@ -6658,6 +6658,33 @@ window.getQriContractDisplayState = function () {
     return qriContractDisplayData ? JSON.parse(JSON.stringify(qriContractDisplayData)) : null;
 };
 
+window.getQriOptionsFormalDiagnosticsSnapshot = function () {
+    const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+    const wallText = id => document.getElementById(id)?.textContent || null;
+    return clone({
+        sourceIdentity: {
+            available: jpxOpenInterestAvailable === true,
+            origin: qriOpenInterestDataState.origin || null,
+            status: qriOpenInterestDataState.status || null,
+            sourceDate: qriOpenInterestDataState.sourceDate || null,
+            sourceDateKind: qriOpenInterestDataState.sourceDateKind || null,
+            fetchedAt: qriOpenInterestDataState.fetchedAt || null,
+            usingFallback: qriOpenInterestDataState.usingFallback === true,
+            pageFetchedAt: lastJpxFetchedAt instanceof Date &&
+                !Number.isNaN(lastJpxFetchedAt.getTime())
+                ? lastJpxFetchedAt.toISOString() : null
+        },
+        formalGlobals: { openInterestLabels: allJpxOpenInterestLabels,
+            callValues: allJpxCallValues, putValues: allJpxPutValues,
+            openInterestAvailable: jpxOpenInterestAvailable },
+        wallState: { call: wallText("callWallResult"),
+            put: wallText("putWallResult") },
+        judgmentState: optionMapJudgmentState,
+        overallV2State: optionMapJudgmentStateV2,
+        fetchState: window.dataFetchState?.qri || null
+    });
+};
+
 window.drawJpxPriceChart = function (
     labels,
     callValues,

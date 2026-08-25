@@ -1004,6 +1004,7 @@
 <script src="js/qriOptionsSavedUiState.js"></script>
 <script src="js/qriOptionsDisplayPositionsAdapter.js"></script>
 <script src="js/qriOptionsDisplayRuntime.js"></script>
+<script src="js/qriOptionsSavedDisplayDiagnostics.js"></script>
 <script src="js/qriOptionIvLastValidRestore.js"></script>
 <script src="js/storage/qriOptionIvLastValidReadOnlyStore.js"></script>
 <script src="js/qriOptionIvBootRestoreShadow.js"></script>
@@ -1127,6 +1128,38 @@ const qriOptionsDisplayRuntime =
                 ?.renderSavedUiState(uiState, document) || null;
         }
     });
+
+const qriOptionsSavedDisplayDiagnostics =
+    window.OptionMapQriOptionsSavedDisplayDiagnostics
+        ?.createQriOptionsSavedDisplayDiagnostics({
+            getDisplayState: () => qriOptionsDisplayRuntime?.getState() || null,
+            getChartState: () => window.getQriContractDisplayState?.() || null,
+            getFormalState: () =>
+                window.getQriOptionsFormalDiagnosticsSnapshot?.() || null,
+            getBootShadowState: () =>
+                window.OptionMapQriOptionsBootRestoreShadow
+                    ?.getQriOptionsBootRestoreShadowState?.() || null,
+            getLiveState: () => qriOptionsDisplayLiveState,
+            getSavedUiDomState: () => {
+                const region = document.getElementById("qriOptionsSavedSourceState");
+                const badge = document.getElementById("qriOptionsSavedBadge");
+                const message = document.getElementById("qriOptionsSavedMessage");
+                const metadata = document.getElementById("qriOptionsSavedMetadata");
+                return { visible: region?.hidden === false,
+                    badge: { visible: badge?.hidden === false,
+                        text: badge?.textContent || null },
+                    message: { visible: message?.hidden === false,
+                        text: message?.textContent || null,
+                        severity: message?.dataset?.severity || null },
+                    metadata: { visible: metadata?.hidden === false,
+                        text: metadata?.textContent || null } };
+            },
+            getCanvasCount: () =>
+                document.querySelectorAll("#combinedPriceChart").length
+        });
+
+window.getQriOptionsSavedDisplayDiagnostics = () =>
+    qriOptionsSavedDisplayDiagnostics?.getDiagnostics() || null;
 
 function refreshQriOptionsDisplay({ liveState, liveStatus,
     legacyFallbackState } = {}) {
