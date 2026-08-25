@@ -219,12 +219,12 @@ test("stale and specific paths cannot supersede active boot shadow", () => {
     assert.equal(specific.includes("markQriOptionsBootRestoreShadowSuperseded"), false);
 });
 
-test("runtime wiring stays shadow-only with no UI storage history or fetch additions", () => {
+test("display runtime wiring adds no storage history fetch or analysis connection", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const boot = html.slice(html.indexOf("const qriOptionsBootRestoreShadowPromise"),
         html.indexOf("let lastValidParticipantCache"));
-    assert.doesNotMatch(boot, /setItem|removeItem|clear\(|indexedDB|fetch\(|ipcRenderer|Chart|OverallV2/);
-    assert.doesNotMatch(boot, /\brender\s*\(|currentQri|saveLastValidQriOpenInterest|persistQriOptionsHistory/);
+    assert.doesNotMatch(boot, /setItem|removeItem|indexedDB|fetch\(|ipcRenderer|\bChart\b|OverallV2/);
+    assert.doesNotMatch(boot, /currentQri|saveLastValidQriOpenInterest|persistQriOptionsHistory/);
     const active = html.slice(html.indexOf("markQriOptionsBootRestoreShadowSuperseded"),
         html.indexOf("buildAndSaveQriOptionsLastValid(localStorage"));
     assert.doesNotMatch(active, /setItem|removeItem|clear\(|indexedDB|render|Chart|OverallV2/);

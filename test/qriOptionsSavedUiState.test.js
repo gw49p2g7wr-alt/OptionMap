@@ -124,11 +124,11 @@ test("badge title and labels never describe saved data as current or latest", ()
     }
 });
 
-test("module is pure and remains disconnected from runtime UI", () => {
+test("pure module stays isolated after renderer dependency wiring", () => {
     const code = fs.readFileSync(path.join(__dirname, "../js/qriOptionsSavedUiState.js"), "utf8");
     assert.doesNotMatch(code, /localStorage|sessionStorage|indexedDB|\bfetch\s*\(/);
     assert.doesNotMatch(code, /document\.|querySelector|drawJpxPriceChart|OverallV2/);
     assert.doesNotMatch(code, /setTimeout|setInterval|allJpx|optionMapJudgmentState/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsSavedUiState.js"), false);
+    assert.equal(html.includes("qriOptionsSavedUiState.js"), true);
 });

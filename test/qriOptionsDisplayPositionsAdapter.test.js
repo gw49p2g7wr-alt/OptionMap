@@ -141,7 +141,7 @@ test("diagnostics contain technical transformation facts only", () => {
         orderingPreserved: true, transformationVersion: 1 });
 });
 
-test("module is pure and disconnected from UI analysis storage and network", () => {
+test("module remains pure after display-only runtime wiring", () => {
     const code = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsDisplayPositionsAdapter.js"), "utf8");
     assert.doesNotMatch(code, /localStorage|sessionStorage|indexedDB|\bfetch\s*\(/);
@@ -149,5 +149,5 @@ test("module is pure and disconnected from UI analysis storage and network", () 
     assert.doesNotMatch(code, /allJpx|wallCandidates|optionJudgment|OverallV2/);
     assert.doesNotMatch(code, /setTimeout|setInterval|migration|backfill/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsDisplayPositionsAdapter.js"), false);
+    assert.equal(html.includes("qriOptionsDisplayPositionsAdapter.js"), true);
 });

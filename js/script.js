@@ -6635,8 +6635,9 @@ window.setQriContractDisplayData = function (data) {
     return renderQriContractDisplayChart();
 };
 
-window.clearQriContractDisplayData = function () {
+window.clearQriContractDisplayData = function ({ redraw = true } = {}) {
     qriContractDisplayData = null;
+    if (!redraw) return true;
     if (allJpxLabels.length === 0) return false;
     window.drawJpxPriceChart(allJpxLabels, allJpxCallValues, allJpxPutValues,
         allJpxCallVolumes, allJpxPutVolumes, { openInterestAvailable: jpxOpenInterestAvailable === true,

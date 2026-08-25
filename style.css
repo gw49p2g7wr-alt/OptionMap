@@ -690,6 +690,32 @@ canvas {
     color: #6e5116;
 }
 
+.qri-options-saved-source-state {
+    margin: 8px 0;
+    color: #475569;
+    font-size: 0.9rem;
+}
+
+.qri-options-saved-badge {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-weight: 700;
+}
+
+.qri-options-saved-message[data-severity="caution"] {
+    color: #9a6700;
+}
+
+.qri-options-saved-metadata {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 0.85rem;
+}
+
 .iv-range-switch {
     display: flex;
     flex-wrap: wrap;

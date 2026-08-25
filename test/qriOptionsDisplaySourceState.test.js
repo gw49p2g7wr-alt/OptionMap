@@ -209,5 +209,5 @@ test("input is unchanged and module has no forbidden connection", () => {
     assert.doesNotMatch(source, /drawJpxPriceChart|allJpx|OverallV2|optionMapJudgmentState/);
     assert.doesNotMatch(source, /setTimeout|setInterval|migration|backfill/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("qriOptionsDisplaySourceState.js"), false);
+    assert.equal(html.includes("qriOptionsDisplaySourceState.js"), true);
 });

@@ -672,6 +672,13 @@
                 </span>
             </div>
 
+            <div id="qriOptionsSavedSourceState" class="qri-options-saved-source-state"
+                role="status" aria-live="polite" hidden>
+                <span id="qriOptionsSavedBadge" class="qri-options-saved-badge" hidden></span>
+                <span id="qriOptionsSavedMessage" class="qri-options-saved-message" hidden></span>
+                <div id="qriOptionsSavedMetadata" class="qri-options-saved-metadata" hidden></div>
+            </div>
+
             <p id="qriOptionsHistoryStatus" class="open-interest-data-status"
                 role="status" aria-live="polite">
                 QRI正式history：確認中…
@@ -993,6 +1000,10 @@
 <script src="js/qriOptionsLastValidRestore.js"></script>
 <script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>
 <script src="js/qriOptionsBootRestoreShadow.js"></script>
+<script src="js/qriOptionsDisplaySourceState.js"></script>
+<script src="js/qriOptionsSavedUiState.js"></script>
+<script src="js/qriOptionsDisplayPositionsAdapter.js"></script>
+<script src="js/qriOptionsDisplayRuntime.js"></script>
 <script src="js/qriOptionIvLastValidRestore.js"></script>
 <script src="js/storage/qriOptionIvLastValidReadOnlyStore.js"></script>
 <script src="js/qriOptionIvBootRestoreShadow.js"></script>
@@ -1090,6 +1101,55 @@ const qriOptionsBootRestoreShadowPromise =
         }
     });
 void qriOptionsBootRestoreShadowPromise;
+
+let qriOptionsDisplayLiveState = null;
+let qriOptionsDisplayLiveStatus = "unknown";
+const qriOptionsDisplayRuntime =
+    window.OptionMapQriOptionsDisplayRuntime?.createQriOptionsDisplayRuntime({
+        renderPositions(display) {
+            return window.setQriContractDisplayData?.({ displayOnly: true,
+                sourceKind: display.sourceKind, state: display.state,
+                contract: display.contract, labels: display.labels,
+                callOpenInterest: display.callValues,
+                putOpenInterest: display.putValues,
+                callVolumes: display.labels.map(() => 0),
+                putVolumes: display.labels.map(() => 0), rows: display.rows }) || false;
+        },
+        clearPositions({ reason } = {}) {
+            if (reason === "live_source") {
+                return window.clearQriContractDisplayData?.({ redraw: false }) || false;
+            }
+            return window.setQriContractDisplayUnavailable?.(
+                qriContractSelectionState?.contract || null) || false;
+        },
+        renderUi(uiState) {
+            return window.OptionMapQriOptionsDisplayRuntime
+                ?.renderSavedUiState(uiState, document) || null;
+        }
+    });
+
+function refreshQriOptionsDisplay({ liveState, liveStatus,
+    legacyFallbackState } = {}) {
+    if (liveState !== undefined) qriOptionsDisplayLiveState = liveState;
+    if (liveStatus !== undefined) qriOptionsDisplayLiveStatus = liveStatus;
+    const bootShadowState = window.OptionMapQriOptionsBootRestoreShadow
+        ?.getQriOptionsBootRestoreShadowState?.() || null;
+    const selectionMode = qriContractSelectionState?.mode === "specific"
+        ? "specific" : "auto";
+    const activeContract = qriContractManifest?.defaultContract ||
+        qriOptionsDisplayLiveState?.contract || bootShadowState?.candidate?.contract || null;
+    return qriOptionsDisplayRuntime?.render({ mode: selectionMode,
+        activeContract,
+        selectedContract: selectionMode === "specific"
+            ? qriContractSelectionState?.contract || null : null,
+        liveStatus: qriOptionsDisplayLiveStatus,
+        liveState: qriOptionsDisplayLiveState,
+        bootShadowState, legacyFallbackState }) || null;
+}
+
+window.refreshQriOptionsDisplay = refreshQriOptionsDisplay;
+void qriOptionsBootRestoreShadowPromise?.then(() =>
+    refreshQriOptionsDisplay({ liveStatus: "pending" }));
 
 let lastValidParticipantCache = null;
 let activeParticipantCache = null;
@@ -4389,6 +4449,10 @@ qriContractSelect?.addEventListener("change", () => {
         qriContractSelectionState);
     qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
         qriContractSelectionState, value, qriContractManifest);
+    window.OptionMapQriOptionsDisplayRuntime?.renderSavedUiState({
+        visible: false, sourceKind: value === "auto" ? "live" : "unavailable",
+        showSavedBadge: false
+    }, document);
     renderQriIvGraph();
     void renderQriOptionsHistoryComparison();
     if (value === "auto") {
@@ -4440,6 +4504,7 @@ async function fetchQriData({ requestId } = {}) {
             error: null
         });
     });
+    refreshQriOptionsDisplay({ liveState: null, liveStatus: "pending" });
 
     try {
         const result = await ipcRenderer.invoke(
@@ -4475,6 +4540,16 @@ async function fetchQriData({ requestId } = {}) {
 
         const fetchedAt = new Date().toISOString();
         const sourceDate = payload.sourceDate.toISOString();
+        qriOptionsDisplayLiveState = payload.canonicalV2 ? {
+            available: payload.openInterestAvailable === true,
+            sourceStatus: payload.openInterestAvailable === true
+                ? "acquired" : "unavailable",
+            isCurrent: true, canonical: payload.canonicalV2,
+            contract: payload.canonicalV2.contract, fetchedAt,
+            calculationEligible: "existing_policy"
+        } : null;
+        qriOptionsDisplayLiveStatus = payload.openInterestAvailable === true
+            ? "success" : "source_error";
 
         const ivAdoption = await adoptQriOptionIv("active", payload, fetchedAt,
             { mode: "auto", requestId: activeRequestId, requestedContract: "auto",
@@ -4668,7 +4743,14 @@ async function fetchQriData({ requestId } = {}) {
             }
         }
 
-        if (typeof window.drawJpxPriceChart === "function") {
+        const displayRuntimeResult = refreshQriOptionsDisplay();
+        const displaySource = displayRuntimeResult?.runtimeState?.sourceState;
+        const existingFallbackBlocked = displaySource?.sourceKind === "saved" ||
+            displaySource?.state === "contract_mismatch" ||
+            ["saved_integrity_invalid", "saved_superseded", "active_contract_unknown"]
+                .includes(displaySource?.reason);
+
+        if (!existingFallbackBlocked && typeof window.drawJpxPriceChart === "function") {
             let fallbackResult = null;
 
             if (
@@ -4681,6 +4763,12 @@ async function fetchQriData({ requestId } = {}) {
                     callVolumes: payload.callVolume,
                     putVolumes: payload.putVolume
                 });
+                if (fallbackResult?.applied) {
+                    window.clearQriContractDisplayData?.({ redraw: false });
+                    window.OptionMapQriOptionsDisplayRuntime?.renderSavedUiState({
+                        visible: false, sourceKind: "legacy", showSavedBadge: false
+                    }, document);
+                }
             }
 
             if (!fallbackResult?.applied) {
@@ -4716,7 +4804,7 @@ async function fetchQriData({ requestId } = {}) {
             ) {
                 window.autoSelectComparisonSnapshot();
             }
-        } else {
+        } else if (!existingFallbackBlocked) {
             console.error("drawJpxPriceChart が見つかりません");
         }
 
@@ -4813,6 +4901,8 @@ async function fetchQriData({ requestId } = {}) {
             "オプションデータの自動取得・解析に失敗:",
             error
         );
+
+        refreshQriOptionsDisplay({ liveState: null, liveStatus: "failed" });
 
         return {
             source,
