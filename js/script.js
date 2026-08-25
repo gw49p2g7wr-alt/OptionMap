@@ -1094,6 +1094,21 @@ let allJpxOpenInterestLabels = [];
 let jpxOpenInterestAvailable = null;
 let currentChartMode = "openInterest";
 let qriContractDisplayData = null;
+let qriChartRendererIdentity = null;
+let qriChartRendererGeneration = 0;
+
+function setQriChartRendererIdentity({ rendererKind, sourceKind, displayOnly,
+    displayGeneration = null } = {}) {
+    qriChartRendererIdentity = Object.freeze({ rendererKind, sourceKind,
+        displayOnly, generation: ++qriChartRendererGeneration,
+        displayGeneration: Number.isSafeInteger(displayGeneration)
+            ? displayGeneration : null,
+        renderedAt: new Date().toISOString() });
+}
+
+function clearQriChartRendererIdentity() {
+    qriChartRendererIdentity = null;
+}
 let lastJpxFetchedAt = null;
 let currentPrice = 70000;
 let currentPriceState = {
@@ -6594,7 +6609,10 @@ function renderQriContractDisplayChart() {
     const maxPut = Math.max(...numericPutValues, 1);
     const canvas = document.getElementById("combinedPriceChart");
     if (!canvas) return false;
-    if (combinedPriceChart) combinedPriceChart.destroy();
+    if (combinedPriceChart) {
+        combinedPriceChart.destroy();
+        clearQriChartRendererIdentity();
+    }
     const title = document.getElementById("combinedChartTitleText");
     if (title) title.textContent = isVolumeMode ? "CALL・PUT 本日の取引高" : "CALL・PUT建玉残";
     combinedPriceChart = new Chart(canvas, {
@@ -6624,6 +6642,9 @@ function renderQriContractDisplayChart() {
                     return `${type}${isVolumeMode ? "取引高" : "建玉残"}：${values[context.dataIndex].toLocaleString()}枚`; } } } }
         }
     });
+    setQriChartRendererIdentity({ rendererKind: "display_only",
+        sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
+        displayOnly: true, displayGeneration: source.displayGeneration });
     return true;
 }
 
@@ -6650,12 +6671,18 @@ window.setQriContractDisplayUnavailable = function (contract) {
     if (combinedPriceChart) {
         combinedPriceChart.destroy();
         combinedPriceChart = null;
+        clearQriChartRendererIdentity();
     }
     return true;
 };
 
 window.getQriContractDisplayState = function () {
     return qriContractDisplayData ? JSON.parse(JSON.stringify(qriContractDisplayData)) : null;
+};
+
+window.getQriChartRendererIdentity = function () {
+    return qriChartRendererIdentity
+        ? JSON.parse(JSON.stringify(qriChartRendererIdentity)) : null;
 };
 
 window.getQriOptionsFormalDiagnosticsSnapshot = function () {
@@ -6909,6 +6936,7 @@ console.log(
 
     if (combinedPriceChart) {
         combinedPriceChart.destroy();
+        clearQriChartRendererIdentity();
     }
 
     const numericCallValues =
@@ -7111,6 +7139,9 @@ console.log(
             }
         }
     });
+    setQriChartRendererIdentity({ rendererKind: "formal",
+        sourceKind: sourceAvailability.rendererSourceKind || "formal",
+        displayOnly: false });
 
     updateWallCandidates(
         labels,

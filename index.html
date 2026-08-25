@@ -1107,14 +1107,15 @@ let qriOptionsDisplayLiveState = null;
 let qriOptionsDisplayLiveStatus = "unknown";
 const qriOptionsDisplayRuntime =
     window.OptionMapQriOptionsDisplayRuntime?.createQriOptionsDisplayRuntime({
-        renderPositions(display) {
+        renderPositions(display, { generation } = {}) {
             return window.setQriContractDisplayData?.({ displayOnly: true,
                 sourceKind: display.sourceKind, state: display.state,
                 contract: display.contract, labels: display.labels,
                 callOpenInterest: display.callValues,
                 putOpenInterest: display.putValues,
                 callVolumes: display.labels.map(() => 0),
-                putVolumes: display.labels.map(() => 0), rows: display.rows }) || false;
+                putVolumes: display.labels.map(() => 0), rows: display.rows,
+                displayGeneration: generation }) || false;
         },
         clearPositions({ reason } = {}) {
             if (reason === "live_source") {
@@ -1134,6 +1135,7 @@ const qriOptionsSavedDisplayDiagnostics =
         ?.createQriOptionsSavedDisplayDiagnostics({
             getDisplayState: () => qriOptionsDisplayRuntime?.getState() || null,
             getChartState: () => window.getQriContractDisplayState?.() || null,
+            getChartIdentity: () => window.getQriChartRendererIdentity?.() || null,
             getFormalState: () =>
                 window.getQriOptionsFormalDiagnosticsSnapshot?.() || null,
             getBootShadowState: () =>
@@ -4463,7 +4465,12 @@ async function updateQriContractManifest(defaultPayload) {
         qriContractSelectionState = window.OptionMapQriOptionsSelection.selectMode(
             qriContractSelectionState, "auto", qriContractManifest);
         renderQriIvGraph();
-        window.clearQriContractDisplayData?.();
+        const latestDisplayState = qriOptionsDisplayRuntime?.getState() || null;
+        const preserveSavedChart = window.OptionMapQriOptionsDisplayRuntime
+            ?.shouldPreserveSavedChartOnManifestUpdate(latestDisplayState) === true;
+        if (!preserveSavedChart) {
+            window.clearQriContractDisplayData?.();
+        }
         setQriContractSelectionNote(
             `表示・判定基準：QRI既定 ${qriContractManifest.defaultContract}限`, "ready");
         void renderQriOptionsHistoryComparison();
@@ -4822,6 +4829,7 @@ async function fetchQriData({ requestId } = {}) {
                     {
                         openInterestAvailable:
                             payload.openInterestAvailable,
+                        rendererSourceKind: "live",
                         openInterestLabels: payload.labels,
                         callOpenInterestAvailable:
                             payload.callOpenInterestAvailable,

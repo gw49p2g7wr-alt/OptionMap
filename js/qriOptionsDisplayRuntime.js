@@ -80,7 +80,7 @@ function (sourceApi, positionsApi, uiApi) {
                     return Object.freeze({ applied: false,
                         reason: "saved_analysis_policy_mismatch", generation });
                 }
-                displayResult = renderPositions(built.positionsState);
+                displayResult = renderPositions(built.positionsState, { generation });
             } else if (source.sourceKind === "live") {
                 displayResult = clearPositions({ preserveCanvas: true,
                     redrawFormal: false, reason: "live_source" });
@@ -99,6 +99,11 @@ function (sourceApi, positionsApi, uiApi) {
         return Object.freeze({ nextGeneration, render, getState });
     }
 
+    function shouldPreserveSavedChartOnManifestUpdate(runtimeState) {
+        return runtimeState?.sourceState?.sourceKind === "saved";
+    }
+
     return Object.freeze({ RUNTIME_VERSION, buildQriOptionsDisplayRuntimeState,
-        renderSavedUiState, createQriOptionsDisplayRuntime });
+        renderSavedUiState, createQriOptionsDisplayRuntime,
+        shouldPreserveSavedChartOnManifestUpdate });
 });

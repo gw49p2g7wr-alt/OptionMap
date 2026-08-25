@@ -125,6 +125,30 @@ test("stale delayed render cannot overwrite a newer generation", () => {
         [false, "stale_generation", before]);
 });
 
+test("manifest completion preserves only the latest saved source", () => {
+    const { runtime } = harness();
+    const savedResult = runtime.render(input({ liveStatus: "failed",
+        bootShadowState: saved() }));
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate(
+        savedResult.runtimeState), true);
+    const liveResult = runtime.render(input({ liveStatus: "success", liveState: live(),
+        bootShadowState: saved() }));
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate(
+        liveResult.runtimeState), false);
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate({
+        sourceState: { sourceKind: "legacy" } }), false);
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate(null), false);
+});
+
+test("delayed manifest guard observes newer generation instead of old saved state", () => {
+    const { runtime } = harness();
+    const oldSaved = runtime.render(input({ bootShadowState: saved() })).runtimeState;
+    runtime.render(input({ liveStatus: "success", liveState: live(),
+        bootShadowState: saved() }));
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate(oldSaved), true);
+    assert.equal(Runtime.shouldPreserveSavedChartOnManifestUpdate(runtime.getState()), false);
+});
+
 test("unavailable clears an old saved display", () => {
     const { runtime, calls } = harness();
     runtime.render(input({ bootShadowState: saved() }));
@@ -166,12 +190,38 @@ test("renderer wiring uses safe display chart and keeps formal draw behind guard
         .map(name => html.indexOf(`js/${name}`));
     assert.equal(ordered.every(value => value >= 0), true);
     assert.deepEqual([...ordered].sort((a, b) => a - b), ordered);
-    assert.match(html, /renderPositions\(display\)[\s\S]+?setQriContractDisplayData/);
+    assert.match(html, /renderPositions\(display,[\s\S]+?setQriContractDisplayData/);
     assert.match(html, /existingFallbackBlocked[\s\S]+?!existingFallbackBlocked && typeof window\.drawJpxPriceChart/);
     assert.match(html, /fallbackResult\?\.applied[\s\S]+?clearQriContractDisplayData\?\.\(\{ redraw: false \}\)/);
+    const manifest = html.slice(html.indexOf("async function updateQriContractManifest"),
+        html.indexOf("qriContractSelect?.addEventListener"));
+    assert.match(manifest, /latestDisplayState[\s\S]+?shouldPreserveSavedChartOnManifestUpdate[\s\S]+?if \(!preserveSavedChart\)[\s\S]+?clearQriContractDisplayData/);
     const runtime = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsDisplayRuntime.js"), "utf8");
     assert.doesNotMatch(runtime, /drawJpxPriceChart/);
+});
+
+test("chart renderer identity distinguishes display-only and formal paths", () => {
+    const script = fs.readFileSync(path.join(__dirname, "../js/script.js"), "utf8");
+    const displayRenderer = script.slice(script.indexOf("function renderQriContractDisplayChart"),
+        script.indexOf("window.setQriContractDisplayData"));
+    assert.match(displayRenderer, /rendererKind: "display_only"/);
+    assert.match(displayRenderer, /sourceKind: source\.sourceKind/);
+    assert.match(displayRenderer, /displayOnly: true/);
+    const formalRenderer = script.slice(script.indexOf("window.drawJpxPriceChart = function"));
+    assert.match(formalRenderer, /rendererKind: "formal"/);
+    assert.match(formalRenderer, /displayOnly: false/);
+    assert.match(script, /getQriChartRendererIdentity/);
+});
+
+test("chart destroy clears renderer identity without adding listeners or timers", () => {
+    const script = fs.readFileSync(path.join(__dirname, "../js/script.js"), "utf8");
+    const unavailable = script.slice(script.indexOf("window.setQriContractDisplayUnavailable"),
+        script.indexOf("window.getQriContractDisplayState"));
+    assert.match(unavailable, /combinedPriceChart\.destroy\(\)[\s\S]+?clearQriChartRendererIdentity\(\)/);
+    const identity = script.slice(script.indexOf("let qriChartRendererIdentity"),
+        script.indexOf("let lastJpxFetchedAt"));
+    assert.doesNotMatch(identity, /addEventListener|setTimeout|setInterval|localStorage|indexedDB|fetch\(/);
 });
 
 test("saved chart wiring uses adapter facts and never formal globals", () => {

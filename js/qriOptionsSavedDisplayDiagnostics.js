@@ -5,7 +5,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
 
-    const DIAGNOSTICS_VERSION = 1;
+    const DIAGNOSTICS_VERSION = 2;
 
     function clone(value) {
         if (value == null) return value;
@@ -50,19 +50,20 @@
     }
 
     function createQriOptionsSavedDisplayDiagnostics({ getDisplayState = () => null,
-        getChartState = () => null, getFormalState = () => null,
+        getChartState = () => null, getChartIdentity = () => null,
+        getFormalState = () => null,
         getBootShadowState = () => null, getLiveState = () => null,
         getSavedUiDomState = () => null, getCanvasCount = () => 0 } = {}) {
         function getDiagnostics() {
             const display = clone(getDisplayState()) || null;
             const chart = clone(getChartState()) || null;
+            const chartIdentity = clone(getChartIdentity()) || null;
             const formal = clone(getFormalState()) || {};
             const boot = clone(getBootShadowState()) || null;
             const live = clone(getLiveState()) || null;
             const uiDom = clone(getSavedUiDomState()) || null;
             const source = display?.sourceState || null;
             const ui = display?.uiState || null;
-            const chartSourceKind = chart?.sourceKind || source?.sourceKind || "unavailable";
             const result = { diagnosticsVersion: DIAGNOSTICS_VERSION,
                 display: { sourceKind: source?.sourceKind || "unavailable",
                     state: source?.state || "unavailable",
@@ -77,11 +78,17 @@
                         pageUpdatedAtText: ui?.pageUpdatedAtText ?? null,
                         fetchedAtText: ui?.fetchedAtText ?? null },
                     actualDom: uiDom },
-                chart: { sourceKind: chartSourceKind,
-                    state: chart?.state || source?.state || null,
-                    contract: chart?.contract || source?.contract || null,
-                    displayOnly: chart?.displayOnly === true,
-                    generation: display?.generation ?? 0,
+                chart: { actualStateAvailable: chartIdentity !== null,
+                    displayDataAvailable: chart !== null,
+                    rendererKind: chartIdentity?.rendererKind ?? "unknown",
+                    sourceKind: chartIdentity?.sourceKind ?? "unknown",
+                    state: chart?.state ?? null,
+                    contract: chart?.contract ?? null,
+                    displayOnly: typeof chartIdentity?.displayOnly === "boolean"
+                        ? chartIdentity.displayOnly : null,
+                    generation: chartIdentity?.generation ?? null,
+                    displayGeneration: chartIdentity?.displayGeneration ?? null,
+                    renderedAt: chartIdentity?.renderedAt ?? null,
                     canvasCount: Number(getCanvasCount()) || 0 },
                 formal: { sourceIdentity: formal.sourceIdentity ? {
                     ...clone(formal.sourceIdentity),

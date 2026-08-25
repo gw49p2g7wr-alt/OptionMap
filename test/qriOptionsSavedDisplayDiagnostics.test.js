@@ -18,6 +18,9 @@ function fixtures() {
                 fetchedAtText: "8/25 15:10" } },
         chart: { displayOnly: true, sourceKind: "saved", state: "saved_fallback",
             contract: "2026-09", labels: ["65,000"] },
+        chartIdentity: { rendererKind: "display_only", sourceKind: "saved",
+            displayOnly: true, generation: 4, displayGeneration: 7,
+            renderedAt: "2026-08-25T06:15:00Z" },
         formal: { sourceIdentity: { origin: "live", contract: "2026-09" },
             formalGlobals: { labels: ["65,000"], call: [100], put: [200] },
             wallState: { call: "CALL 65,000", put: "PUT 64,000" },
@@ -40,6 +43,7 @@ function fixtures() {
 function create(values = fixtures()) {
     const diagnostics = Diagnostics.createQriOptionsSavedDisplayDiagnostics({
         getDisplayState: () => values.display, getChartState: () => values.chart,
+        getChartIdentity: () => values.chartIdentity,
         getFormalState: () => values.formal, getBootShadowState: () => values.boot,
         getLiveState: () => values.live, getSavedUiDomState: () => ({ visible: true,
             badge: { visible: true, text: "保存済み建玉" },
@@ -63,8 +67,34 @@ test("getter exposes display saved UI chart and generation facts", () => {
             badge: { visible: true, text: "保存済み建玉" },
             message: { visible: true, text: "保存済み建玉を表示中", severity: "neutral" },
             metadata: { visible: true, text: "2026年9月限 / 取引日 2026/08/25" } } });
-    assert.deepEqual(result.chart, { sourceKind: "saved", state: "saved_fallback",
-        contract: "2026-09", displayOnly: true, generation: 7, canvasCount: 1 });
+    assert.deepEqual(result.chart, { actualStateAvailable: true,
+        displayDataAvailable: true, rendererKind: "display_only", sourceKind: "saved",
+        state: "saved_fallback", contract: "2026-09", displayOnly: true,
+        generation: 4, displayGeneration: 7, renderedAt: "2026-08-25T06:15:00Z",
+        canvasCount: 1 });
+});
+
+test("chart identity is never inferred from saved display state", () => {
+    const values = fixtures();
+    values.chart = null;
+    values.chartIdentity = null;
+    const result = create(values).diagnostics.getDiagnostics();
+    assert.deepEqual(result.chart, { actualStateAvailable: false,
+        displayDataAvailable: false, rendererKind: "unknown", sourceKind: "unknown",
+        state: null, contract: null, displayOnly: null, generation: null,
+        displayGeneration: null, renderedAt: null, canvasCount: 1 });
+    assert.equal(result.display.sourceKind, "saved");
+});
+
+test("display data does not substitute for missing renderer identity", () => {
+    const values = fixtures();
+    values.chartIdentity = null;
+    const result = create(values).diagnostics.getDiagnostics();
+    assert.deepEqual([result.chart.actualStateAvailable,
+        result.chart.displayDataAvailable, result.chart.rendererKind,
+        result.chart.sourceKind, result.chart.displayOnly],
+    [false, true, "unknown", "unknown", null]);
+    assert.equal(result.chart.state, "saved_fallback");
 });
 
 test("getter exposes formal wall judgment and OverallV2 fingerprints", () => {
@@ -107,7 +137,8 @@ test("getter is detached deeply frozen and leaves every provider state unchanged
 
 test("getter changes no formal wall judgment OverallV2 fetch or resource state", () => {
     const { values, diagnostics } = create();
-    const watched = [values.display, values.formal.formalGlobals, values.formal.wallState,
+    const watched = [values.display, values.chart, values.chartIdentity,
+        values.formal.formalGlobals, values.formal.wallState,
         values.formal.judgmentState, values.formal.overallV2State, values.formal.fetchState];
     const before = watched.map(value => JSON.stringify(value));
     diagnostics.getDiagnostics();
