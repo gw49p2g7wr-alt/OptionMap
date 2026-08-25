@@ -82,5 +82,6 @@ test("Baseline and Comparison session identity fields are compatible", () => { c
 test("pure policy has no storage runtime DOM fetch calendar or timer", () => { const source = fs.readFileSync(path.join(__dirname,
     "../js/morningV4FormalSessionScope.js"), "utf8"); assert.doesNotMatch(source,
         /localStorage|sessionStorage|indexedDB|document\.|\bfetch\s*\(|setTimeout|setInterval|holidayApi|calendarService/); });
-test("index remains disconnected", () => { const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("morningV4FormalSessionScope.js"), false); });
+test("session policy loads only as collector dependency", () => { const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.ok(html.indexOf("morningV4FormalSessionScope.js") <
+        html.indexOf("morningBaselineV4RuntimeCollector.js")); });

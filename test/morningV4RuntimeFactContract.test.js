@@ -202,7 +202,8 @@ test("pure contract has no storage runtime DOM or network", () => {
         "../js/morningV4RuntimeFactContract.js"), "utf8");
     assert.equal(/localStorage|indexedDB|setItem\s*\(|document\.|getElementById|\bfetch\s*\(|setTimeout|setInterval/.test(source), false);
 });
-test("index remains disconnected", () => {
-    assert.equal(fs.readFileSync(path.join(__dirname, "../index.html"), "utf8")
-        .includes("morningV4RuntimeFactContract.js"), false);
+test("contract loads only as collector dependency", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.ok(html.indexOf("morningV4RuntimeFactContract.js") <
+        html.indexOf("morningBaselineV4RuntimeCollector.js"));
 });
