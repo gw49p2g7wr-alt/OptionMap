@@ -156,6 +156,42 @@ test("nearestLevels formal snapshot is retained", async () => {
     assert.deepEqual([levels.upper.price, levels.lower.price, levels.generatedFromFormalOnly],
         [42500, 41500, true]);
 });
+test("nearestLevels explicit null builds a schema-valid Phase 1 snapshot", async () => {
+    const result = await build({ nearestLevelsContext: null });
+    assert.equal(result.success, true);
+    assert.equal(Object.hasOwn(result.baseline, "nearestLevels"), true);
+    assert.equal(result.baseline.nearestLevels, null);
+    assert.equal(await V4.validateMorningBaselineV4(result.baseline), true);
+});
+test("nearestLevels input omission is not treated as explicit null", async () => {
+    const input = fixture(); delete input.nearestLevelsContext;
+    assert.equal((await V4.buildMorningBaselineV4(input)).reason, "qri_identity_invalid");
+});
+test("nearestLevels field omission from a final baseline is rejected", async () => {
+    const baseline = structuredClone((await build({ nearestLevelsContext: null })).baseline);
+    delete baseline.nearestLevels;
+    assert.equal(await V4.validateMorningBaselineV4(baseline), false);
+});
+for (const [name, mutate] of [
+    ["malformed", value => { value.upper.price = NaN; }],
+    ["unknown context field", value => { value.unexpected = true; }],
+    ["unknown level field", value => { value.upper.unexpected = true; }],
+    ["invalid contract", value => { value.contract = "2026-12"; }],
+    ["invalid sourceVersionKey", value => { value.sourceVersionKey = "qri-v0"; }],
+    ["not formal-only", value => { value.generatedFromFormalOnly = false; }],
+    ["reference-only", value => { value.referenceOnly = true; }],
+    ["fallback", value => { value.usingFallback = true; }],
+    ["saved-like", value => { value.origin = "saved"; }]
+]) test(`nearestLevels ${name} non-null input is rejected instead of becoming null`, async () => {
+    const input = fixture(); mutate(input.nearestLevelsContext);
+    const result = await V4.buildMorningBaselineV4(input);
+    assert.equal(result.success, false); assert.equal(result.baseline, null);
+});
+test("nearestLevels unknown final field is rejected", async () => {
+    const baseline = structuredClone((await build()).baseline);
+    baseline.nearestLevels.upper.unexpected = true;
+    assert.equal(await V4.validateMorningBaselineV4(baseline), false);
+});
 test("DataQuality facts are retained", async () => {
     const quality = (await build()).baseline.dataQuality;
     assert.deepEqual([quality.status, quality.sourceAvailability.qri,
@@ -170,6 +206,31 @@ test("schema contains no optionChanges result", async () => {
 
 test("signature is deterministic", async () => {
     assert.equal((await build()).baseline.signature, (await build()).baseline.signature);
+});
+test("null nearestLevels content signature and versionKey are deterministic", async () => {
+    const first = (await build({ nearestLevelsContext: null })).baseline;
+    const second = (await build({ nearestLevelsContext: null })).baseline;
+    assert.deepEqual([first.contentSignature, first.versionKey],
+        [second.contentSignature, second.versionKey]);
+});
+test("null to actual nearestLevels changes content identity", async () => {
+    const absent = (await build({ nearestLevelsContext: null })).baseline;
+    const actual = (await build()).baseline;
+    assert.notEqual(absent.contentSignature, actual.contentSignature);
+    assert.notEqual(absent.versionKey, actual.versionKey);
+});
+test("capturedAt-only change keeps null nearestLevels content identity", async () => {
+    const first = (await build({ nearestLevelsContext: null })).baseline;
+    const second = (await build({ nearestLevelsContext: null,
+        capturedAt: "2026-08-26T09:00:00+09:00" })).baseline;
+    assert.equal(first.contentSignature, second.contentSignature);
+    assert.equal(first.versionKey, second.versionKey);
+    assert.notEqual(first.signature, second.signature);
+});
+test("null nearestLevels does not alter DataQuality", async () => {
+    const actual = (await build()).baseline.dataQuality;
+    const absent = (await build({ nearestLevelsContext: null })).baseline.dataQuality;
+    assert.deepEqual(absent, actual);
 });
 test("signature tampering is rejected", async () => {
     const baseline = structuredClone((await build()).baseline); baseline.currentPrice.value += 1;
@@ -224,6 +285,10 @@ test("top-level schema uses exact fields", async () => {
     const baseline = structuredClone((await build()).baseline); baseline.unexpected = true;
     assert.equal(await V4.validateMorningBaselineV4(baseline), false);
     assert.deepEqual(Object.keys((await build()).baseline).sort(), [...V4.TOP_LEVEL_FIELDS].sort());
+});
+test("schema version remains v4 schema 1 with null nearestLevels", async () => {
+    const baseline = (await build({ nearestLevelsContext: null })).baseline;
+    assert.deepEqual([baseline.baselineVersion, baseline.schemaVersion], [4, 1]);
 });
 
 test("module has no storage dependency", () => {

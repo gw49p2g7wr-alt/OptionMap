@@ -180,7 +180,7 @@
                     startFingerprint, endFingerprint, fingerprintMatched: !generationChanged,
                     mixedAcquisitionDetected: reasons.includes("mixed_acquisition"),
                     builderInvoked: false, baselineCandidateValid: false,
-                    builderDeferredReason: "nearest_levels_optional_collector_not_builder_compatible",
+                    builderDeferredReason: "builder_not_connected",
                     storageAccessed: false, databaseAccessed: false, fetchTriggered: false,
                     formalRecalculationTriggered: false, domMutated: false } };
             lastState = freeze(clone(state)); return freeze(clone(state));

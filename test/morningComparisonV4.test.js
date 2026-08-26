@@ -76,10 +76,12 @@ function input(options = {}) {
             effectiveWeight: weekly.effectiveWeight,
             weightedContribution: weekly.weightedContribution,
             metadata: { previousVersionKey: "weekly-v0", currentVersionKey: weeklyVersion } },
-        nearestLevelsContext: { generatedFromFormalOnly: true, referenceOnly: false,
+        nearestLevelsContext: options.nearestLevelsContext === undefined ? {
+            generatedFromFormalOnly: true, referenceOnly: false,
             usingFallback: false, contract, sourceVersionKey: qriVersion,
             upper: { available: true, price: 66500, distance: 500, optionType: "CALL" },
-            lower: { available: true, price: 65500, distance: 500, optionType: "PUT" } },
+            lower: { available: true, price: 65500, distance: 500, optionType: "PUT" } }
+            : options.nearestLevelsContext,
         dataQualityContext: { status: options.qualityStatus || "complete",
             warnings: options.warnings || [],
             sourceAvailability: { overallV2: true, currentPrice: true, qri: true, weekly: true },
@@ -231,6 +233,19 @@ test("DataQuality changed warnings remain unclassified", async () => {
 });
 test("nearestLevels are not part of comparison output", async () => {
     assert.equal(Object.hasOwn(await compare(), "nearestLevels"), false);
+});
+test("all Phase 1 comparisons work when baseline and current nearestLevels are null", async () => {
+    const result = await compare({ nearestLevelsContext: null, score: 66,
+        optionDirection: 0.6, weeklyDirection: -0.1, price: 65620 },
+    { nearestLevelsContext: null });
+    assert.equal(result.available, true);
+    assert.equal(result.overallV2.delta, 21);
+    assert.ok(Math.abs(result.optionComponent.normalizedDirectionDelta - 0.2) < 1e-12);
+    assert.ok(Math.abs(result.weeklyComponent.directionDelta + 30) < 1e-12);
+    assert.equal(result.price.delta, -380);
+    assert.equal(result.dataQuality.transition, "unchanged");
+    assert.equal(result.divergence.relation, "opposite_direction");
+    assert.equal(Object.hasOwn(result, "nearestLevels"), false);
 });
 test("optionChanges are excluded", async () => {
     assert.equal(Object.hasOwn(await compare(), "optionChanges"), false);

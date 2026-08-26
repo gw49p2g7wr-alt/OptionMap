@@ -12,6 +12,11 @@
         "capturedAt", "marketContext", "overallV2", "currentPrice", "qri", "weekly",
         "nearestLevels", "dataQuality", "comparability", "signatureAlgorithm",
         "contentSignature", "signature", "versionKey"]);
+    const LEVEL_CONTEXT_FIELDS = Object.freeze(["generatedFromFormalOnly", "referenceOnly",
+        "usingFallback", "contract", "sourceVersionKey", "upper", "lower"]);
+    const LEVELS_FIELDS = Object.freeze(["upper", "lower", "contract", "sourceVersionKey",
+        "generatedFromFormalOnly"]);
+    const LEVEL_FIELDS = Object.freeze(["available", "price", "distance", "optionType"]);
 
     const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -163,14 +168,20 @@
     }
 
     function buildLevels(context, contract, qriVersionKey) {
-        if (!object(context) || context.generatedFromFormalOnly !== true ||
+        if (context === null) return { value: null };
+        if (!exact(context, LEVEL_CONTEXT_FIELDS) || context.generatedFromFormalOnly !== true ||
             context.referenceOnly === true || context.usingFallback === true ||
-            context.contract !== contract || context.sourceVersionKey !== qriVersionKey) return null;
-        const level = value => object(value) && typeof value.available === "boolean" &&
-            (!value.available || finite(value.price) && finite(value.distance)) ? clone(value) : null;
-        const upper = level(context.upper); const lower = level(context.lower);
-        return upper && lower ? { upper, lower, contract, sourceVersionKey: qriVersionKey,
-            generatedFromFormalOnly: true } : null;
+            context.contract !== contract || context.sourceVersionKey !== qriVersionKey)
+            return { error: "qri_identity_invalid" };
+        const level = (value, optionType) => exact(value, LEVEL_FIELDS) &&
+            typeof value.available === "boolean" && (value.available === true ?
+                finite(value.price) && value.price > 0 && finite(value.distance) &&
+                    value.distance >= 0 && value.optionType === optionType :
+                value.price === null && value.distance === null && value.optionType === null)
+            ? clone(value) : null;
+        const upper = level(context.upper, "CALL"); const lower = level(context.lower, "PUT");
+        return upper && lower ? { value: { upper, lower, contract, sourceVersionKey: qriVersionKey,
+            generatedFromFormalOnly: true } } : { error: "qri_identity_invalid" };
     }
 
     function buildQuality(context) {
@@ -247,9 +258,13 @@
             text(weekly.versionKey) && (weekly.signature === null || text(weekly.signature)) &&
             [weekly.normalizedDirection, weekly.qualityFactor, weekly.effectiveWeight,
                 weekly.weightedContribution].every(finite);
-        const levelValid = value => object(value) && typeof value.available === "boolean" &&
-            (!value.available || finite(value.price) && finite(value.distance));
-        const levelsValid = object(levels) && levelValid(levels.upper) && levelValid(levels.lower) &&
+        const levelValid = (value, optionType) => exact(value, LEVEL_FIELDS) &&
+            typeof value.available === "boolean" && (value.available === true ?
+                finite(value.price) && value.price > 0 && finite(value.distance) &&
+                    value.distance >= 0 && value.optionType === optionType :
+                value.price === null && value.distance === null && value.optionType === null);
+        const levelsValid = levels === null || exact(levels, LEVELS_FIELDS) &&
+            levelValid(levels.upper, "CALL") && levelValid(levels.lower, "PUT") &&
             levels.contract === qri?.contract && levels.sourceVersionKey === qri?.canonicalVersionKey &&
             levels.generatedFromFormalOnly === true;
         const qualityValid = object(quality) && ["complete", "partial"].includes(quality.status) &&
@@ -302,7 +317,7 @@
             qri.value.tradingDate !== market.formalTradingDate) return failure("contract_mismatch");
         const levels = buildLevels(input.nearestLevelsContext, qri.value.contract,
             qri.value.canonicalVersionKey);
-        if (!levels) return failure("qri_identity_invalid");
+        if (levels.error) return failure(levels.error);
         const quality = buildQuality(input.dataQualityContext);
         if (!quality) return failure("data_quality_invalid");
         const sessionVerified = market.sessionMappingStatus === "verified";
@@ -312,7 +327,7 @@
                 sessionIdentity: text(market.sessionIdentity),
                 sessionMappingStatus: market.sessionMappingStatus },
             overallV2: overall.value, currentPrice: price.value, qri: qri.value,
-            weekly: weekly.value, nearestLevels: levels, dataQuality: quality,
+            weekly: weekly.value, nearestLevels: levels.value, dataQuality: quality,
             comparability: { formalLive: true, sessionVerified, currentPriceVerified: true,
                 qriVerified: true, weeklyVerified: true,
                 logicVersion: overall.value.logicVersion,

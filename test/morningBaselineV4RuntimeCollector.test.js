@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const Collector = require("../js/morningBaselineV4RuntimeCollector.js");
+const Baseline = require("../js/morningBaselineV4.js");
 
 const generation = (source, fingerprint) => ({ source, sequence: 1, fingerprint, current: true });
 function fixture() {
@@ -118,12 +119,19 @@ test("mixed acquisition", async () => assert.ok((await collect(x => { x.weekly.f
 test("deterministic fingerprint", async () => { const states = fixture(); const r = runtime(states);
     assert.equal((await r.collect()).formalSnapshotInputFingerprint, (await r.collect()).formalSnapshotInputFingerprint); });
 test("nearestLevels absent still ready", async () => { const result = await collect(); assert.equal(result.ready, true); assert.equal(result.builderInput.nearestLevelsContext, null); });
+test("collector builderInput is accepted by the pure v4 builder with null nearestLevels", async () => {
+    const collected = await collect();
+    const built = await Baseline.buildMorningBaselineV4(collected.builderInput);
+    assert.equal(built.success, true); assert.equal(built.baseline.nearestLevels, null);
+    assert.equal(collected.diagnostics.builderInvoked, false);
+});
 test("DataQuality formal fact", async () => { const result = await collect(); assert.deepEqual(result.factContract.facts.dataQuality.fallbackFlags,
     { currentPrice: false, qri: false, weekly: false, overallV2: false }); });
 test("builder input maps formal identities", async () => { const input = (await collect()).builderInput;
     assert.deepEqual([input.qriContext.identity.canonicalVersionKey, input.weeklyContext.versionKey], ["qri-v1", "weekly-v1"]); });
 test("builder is deliberately not invoked", async () => { const result = await collect(); assert.deepEqual([result.baselineCandidate,
-    result.diagnostics.builderInvoked], [null, false]); });
+    result.diagnostics.builderInvoked, result.diagnostics.builderDeferredReason],
+    [null, false, "builder_not_connected"]); });
 test("manual rejects despite live identity fact", async () => { const result = await collect(x => { x.currentPrice.diagnostics.formalCurrentPriceMode = "manual"; });
     assert.equal(result.currentPriceReady, undefined); assert.equal(result.ready, false); });
 test("formal states are not mutated", async () => { const states = fixture(); const before = structuredClone(states); await runtime(states).collect(); assert.deepEqual(states, before); });
