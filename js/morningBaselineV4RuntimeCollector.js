@@ -40,6 +40,16 @@
             qri: clone(getters.getQri?.() || null), weekly: clone(getters.getWeekly?.() || null),
             overall: clone(getters.getOverall?.() || null) };
     }
+    function currentPriceFormalFact(state) {
+        const fact = clone(state?.fact || null);
+        const sequence = state?.publicationGeneration;
+        if (!object(fact)) return null;
+        fact.generation = Number.isSafeInteger(sequence) && sequence >= 0 &&
+            state?.status === "available" && text(fact.versionKey) ? {
+                source: "currentPrice", sequence, fingerprint: fact.versionKey, current: true
+            } : null;
+        return fact;
+    }
     function sourceIdentity(sources) {
         return { currentPriceGeneration: sources.currentPrice?.publicationGeneration ?? null,
             currentPriceVersionKey: sources.currentPrice?.fact?.versionKey || null,
@@ -64,7 +74,7 @@
             const startFingerprint = await fingerprint(start);
             const priceState = start.currentPrice; const qriState = start.qri;
             const weeklyState = start.weekly; const overallState = start.overall;
-            const price = priceState?.fact; const qri = qriState?.fact;
+            const price = currentPriceFormalFact(priceState); const qri = qriState?.fact;
             const weekly = weeklyState?.fact; const overall = overallState?.envelope;
             const requestId = qri?.requestId || null;
             const sessionScope = sessionApi?.evaluateFormalSessionScope?.({ capturedAt: collectedAt,
@@ -178,5 +188,6 @@
         const getState = () => freeze(clone(lastState));
         return Object.freeze({ collect, getState });
     }
-    return Object.freeze({ COLLECTOR_VERSION, sourceIdentity, fingerprint, createRuntimeCollector });
+    return Object.freeze({ COLLECTOR_VERSION, sourceIdentity, fingerprint,
+        currentPriceFormalFact, createRuntimeCollector });
 });

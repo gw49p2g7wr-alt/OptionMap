@@ -21,6 +21,29 @@
         weeklySourceIdentity: input.weeklySourceIdentity || null,
         optionComponent: input.result?.components?.option || null,
         weeklyComponent: input.result?.components?.weekly || null }); }
+    const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
+    function timestampInstant(value) {
+        const candidate = text(value);
+        const match = candidate?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(?:Z|([+-])(\d{2}):(\d{2}))$/);
+        if (!match) return null;
+        const [, year, month, day, hour, minute, second, , offsetHour = "00", offsetMinute = "00"] = match;
+        const parts = [year, month, day, hour, minute, second, offsetHour, offsetMinute].map(Number);
+        if (parts[1] < 1 || parts[1] > 12 || parts[3] > 23 || parts[4] > 59 ||
+            parts[5] > 59 || parts[6] > 23 || parts[7] > 59) return null;
+        const calendar = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+        if (calendar.getUTCFullYear() !== parts[0] || calendar.getUTCMonth() !== parts[1] - 1 ||
+            calendar.getUTCDate() !== parts[2]) return null;
+        const instant = Date.parse(candidate);
+        return Number.isFinite(instant) ? instant : null;
+    }
+    function sameTimestampInstant(left, right) {
+        const leftInstant = timestampInstant(left); const rightInstant = timestampInstant(right);
+        return leftInstant !== null && rightInstant !== null && leftInstant === rightInstant;
+    }
+    function currentGeneration(value, source) {
+        return value?.source === source && Number.isSafeInteger(value.sequence) &&
+            value.sequence >= 0 && text(value.fingerprint) && value.current === true;
+    }
     function createRuntime({ now = () => new Date().toISOString() } = {}) {
         let generation = 0; let attempt = 0; let state = freeze({ envelopeVersion: ENVELOPE_VERSION,
             status: "empty", reason: "not_published", publicationGeneration: 0, envelope: null });
@@ -30,7 +53,12 @@
             const result = input.result; const option = result?.components?.option;
             const weekly = result?.components?.weekly; const qri = input.qriFact; const weeklyFact = input.weeklyFact;
             const optionBound = option?.available !== true || qri && option.metadata?.usingFallback === false &&
-                option.metadata?.sourceDate === qri.tradingDate;
+                qri.sourceClass === "formal_live" && qri.origin === "live" && qri.usingFallback === false &&
+                qri.referenceOnly === false && qri.superseded === false && qri.identityVerified === true &&
+                qri.acquisitionVerified === true && text(qri.canonicalVersionKey) &&
+                text(qri.canonicalSignature) && text(qri.tradingDate) &&
+                input.requestId === qri.requestId && currentGeneration(qri.generation, "qri") &&
+                sameTimestampInstant(option.metadata?.sourceDate, qri.pageUpdatedAt);
             const weeklyBound = weekly?.available !== true || weeklyFact &&
                 weekly.metadata?.current?.versionKey === weeklyFact.currentVersionKey &&
                 weekly.normalizedDirection === weeklyFact.normalizedDirection &&
@@ -72,5 +100,5 @@
         return Object.freeze({ publish, markUnavailable, getState });
     }
     return Object.freeze({ ENVELOPE_VERSION, OVERALL_V2_LOGIC_VERSION, canonical,
-        createInputFingerprint, createRuntime });
+        createInputFingerprint, timestampInstant, sameTimestampInstant, createRuntime });
 });

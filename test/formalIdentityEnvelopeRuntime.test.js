@@ -24,7 +24,7 @@ const overallResult = { status: "complete", direction: 30, confidence: 80,
     effectiveWeightTotal: 100, components: {
         option: { available: true, normalizedDirection: 0.2, qualityFactor: 1,
             evidenceFactor: 0.2, effectiveWeight: 55, weightedContribution: 11,
-            metadata: { usingFallback: false, sourceDate: "2026-08-26" } },
+            metadata: { usingFallback: false, sourceDate: "2026-08-25T23:00:00.000Z" } },
         weekly: { available: true, normalizedDirection: 0.4, qualityFactor: 1,
             evidenceFactor: 0.4, effectiveWeight: 45, weightedContribution: 18,
             metadata: { current: { versionKey: "weekly-v1" } } }
@@ -90,6 +90,35 @@ test("Overall QRI option binding", async () => { const f = await facts(); const 
     await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION, requestId: "request-1", result: overallResult,
         qriFact: f.qri, weeklyFact: f.weekly }, { isCurrentRequest: current });
     assert.equal(r.getState().envelope.optionSourceIdentity.canonicalVersionKey, "qri-v1"); });
+test("Overall option source binds by equal instant across timezone offsets", async () => {
+    assert.equal(Overall.sameTimestampInstant("2026-08-25T23:00:00.000Z",
+        "2026-08-26T08:00:00+09:00"), true); });
+test("Overall option source instant mismatch rejected", async () => { const f = await facts();
+    const changed = structuredClone(overallResult);
+    changed.components.option.metadata.sourceDate = "2026-08-25T23:00:01.000Z";
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+        requestId: "request-1", result: changed, qriFact: f.qri, weeklyFact: f.weekly },
+    { isCurrentRequest: current }); assert.equal(r.getState().status, "unavailable"); });
+test("Overall invalid option source timestamp rejected", async () => { const f = await facts();
+    const changed = structuredClone(overallResult); changed.components.option.metadata.sourceDate = "2026-08-26";
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+        requestId: "request-1", result: changed, qriFact: f.qri, weeklyFact: f.weekly },
+    { isCurrentRequest: current }); assert.equal(r.getState().status, "unavailable"); });
+test("Overall impossible option source calendar timestamp rejected", async () => { const f = await facts();
+    const changed = structuredClone(overallResult);
+    changed.components.option.metadata.sourceDate = "2026-02-30T23:00:00.000Z";
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+        requestId: "request-1", result: changed, qriFact: f.qri, weeklyFact: f.weekly },
+    { isCurrentRequest: current }); assert.equal(r.getState().status, "unavailable"); });
+test("Overall QRI tradingDate remains independent from source instant", async () => { const f = await facts();
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+        requestId: "request-1", result: overallResult, qriFact: f.qri, weeklyFact: f.weekly },
+    { isCurrentRequest: current }); assert.equal(f.qri.tradingDate, "2026-08-26");
+    assert.equal(r.getState().status, "available"); });
+test("Overall QRI request binding mismatch rejected", async () => { const f = await facts();
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+        requestId: "other", result: overallResult, qriFact: f.qri, weeklyFact: f.weekly },
+    { isCurrentRequest: current }); assert.equal(r.getState().status, "unavailable"); });
 test("Overall Weekly binding", async () => { const f = await facts(); const r = Overall.createRuntime();
     await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION, requestId: "request-1", result: overallResult,
         qriFact: f.qri, weeklyFact: f.weekly }, { isCurrentRequest: current });
@@ -114,10 +143,10 @@ test("Overall unknown logic version rejected", async () => { const f = await fac
         weeklyFact: f.weekly }, { isCurrentRequest: current }); assert.equal(r.getState().status, "unavailable"); });
 test("Overall partial formal envelope policy", async () => { const f = await facts(); const result = structuredClone(overallResult);
     result.status = "partial"; result.components.weekly = { available: false }; const r = Overall.createRuntime();
-    await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION, result, qriFact: f.qri,
+    await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION, requestId: "request-1", result, qriFact: f.qri,
         weeklyFact: null }, { isCurrentRequest: current }); assert.equal(r.getState().status, "available"); });
 test("Overall score weights and quality unchanged", async () => { const f = await facts(); const before = structuredClone(overallResult);
-    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION,
+    const r = Overall.createRuntime(); await r.publish({ logicVersion: Overall.OVERALL_V2_LOGIC_VERSION, requestId: "request-1",
         result: overallResult, qriFact: f.qri, weeklyFact: f.weekly }, { isCurrentRequest: current });
     assert.deepEqual(r.getState().envelope.result, before); });
 test("Overall invalidation clears prior envelope", async () => { const f = await facts(); const r = Overall.createRuntime();

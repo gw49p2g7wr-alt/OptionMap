@@ -24,7 +24,7 @@ function fixture() {
         identityVerified: true, acquisitionVerified: true, currentRequestVerified: true,
         qriTradingDateMapping: { status: "verified", quoteDate: "2026-08-26",
             qriTradingDate: "2026-08-26", relation: "same_date", mappingVerified: true,
-            mappingSource: "same_date_explicit" }, generation: generation("currentPrice", "price-gen") };
+            mappingSource: "same_date_explicit" } };
     const weekly = { sourceClass: "formal_history", sourceDate: "2026-08-26",
         previousVersionKey: "weekly-v0", currentVersionKey: "weekly-v1",
         currentSignature: "weekly-signature", activeVersionMatched: true,
@@ -76,6 +76,24 @@ const collect = async mutate => { const states = fixture(); mutate?.(states);
 
 test("all formal facts ready", async () => assert.equal((await collect()).ready, true));
 test("valid same-date collector ready", async () => assert.equal((await collect()).status, "ready"));
+test("CurrentPrice publication generation is adapted for the Fact Contract", async () => {
+    const result = await collect(); assert.deepEqual(result.factContract.facts.currentPrice.generation,
+        { source: "currentPrice", sequence: 1, fingerprint: "price-v1", current: true }); });
+test("CurrentPrice pure fact schema is not mutated", async () => { const states = fixture();
+    assert.equal(states.currentPrice.fact.generation, undefined); await runtime(states).collect();
+    assert.equal(states.currentPrice.fact.generation, undefined); });
+test("CurrentPrice missing publication generation rejected", async () => assert.ok(
+    (await collect(x => { delete x.currentPrice.publicationGeneration; })).reasons
+        .includes("current_price_identity_missing")));
+test("CurrentPrice invalid publication generation rejected", async () => assert.ok(
+    (await collect(x => { x.currentPrice.publicationGeneration = -1; })).reasons
+        .includes("current_price_identity_missing")));
+test("CurrentPrice unavailable publication is not marked current", async () => assert.ok(
+    (await collect(x => { x.currentPrice.status = "unavailable"; })).reasons
+        .includes("current_price_identity_missing")));
+test("CurrentPrice source fingerprint semantics remain wrapper based", async () => {
+    const states = fixture(); const before = Collector.sourceIdentity(states);
+    await runtime(states).collect(); assert.deepEqual(Collector.sourceIdentity(states), before); });
 test("CurrentPrice unavailable", async () => assert.equal((await collect(x => { x.currentPrice.status = "unavailable"; x.currentPrice.fact = null; })).ready, false));
 test("CurrentPrice manual", async () => assert.ok((await collect(x => { x.currentPrice.diagnostics.formalCurrentPriceMode = "manual"; })).reasons.includes("current_price_manual")));
 test("CurrentPrice cross-date unresolved", async () => assert.equal((await collect(x => { x.currentPrice.fact.quoteDate = "2026-08-25"; x.currentPrice.fact.qriTradingDateMapping.mappingVerified = false; x.currentPrice.fact.qriTradingDateMapping.mappingSource = null; })).ready, false));
