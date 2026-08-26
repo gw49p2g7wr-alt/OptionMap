@@ -12,7 +12,9 @@
         root.OptionMapMorningBaselineV4CaptureRuntime = api.createRuntime({
             storage: root.localStorage,
             collect: options => root.collectMorningBaselineV4ReadOnly?.(options),
-            isRefreshInProgress: () => root.isMarketRefreshInProgress?.() === true
+            isRefreshInProgress: () => root.isMarketRefreshInProgress?.() === true,
+            notifyCaptureSuccess: result =>
+                root.OptionMapMorningBaselineV4RestoreRuntime?.reloadAfterCapture?.(result)
         });
         root.getMorningBaselineV4CaptureRuntimeState =
             root.OptionMapMorningBaselineV4CaptureRuntime.getState;
@@ -47,6 +49,7 @@ function (storageApi, policyApi, storeApi) {
         const now = configuration.now || (() => new Date().toISOString());
         const policy = configuration.evaluatePolicy || policyApi?.evaluateMorningBaselineV4CapturePolicy;
         const store = configuration.store || storeApi?.createStore?.(storage);
+        const notifyCaptureSuccess = configuration.notifyCaptureSuccess;
         let sequence = 0; let lastState = null; let inProgress = false;
         function finish(state, overrides = {}) { lastState = freeze(clone({ ...state, ...overrides,
             diagnostics: { ...state.diagnostics, ...(overrides.diagnostics || {}) } }));
@@ -146,10 +149,13 @@ function (storageApi, policyApi, storeApi) {
                 state.diagnostics.savedBaselineActive = readBackValid;
                 if (!readBackValid) return finish(state, { reason: "storage_readback_failed",
                     storageAfterFingerprint: readBack.fingerprint });
-                return finish(state, { status: "saved", reason: null, action: policyResult.action,
+                const saved = finish(state, { status: "saved", reason: null, action: policyResult.action,
                     saved: true, storageAfterFingerprint: readBack.fingerprint,
                     activeBaselineId: active.baselineId, contentSignature: active.contentSignature,
                     versionKey: active.versionKey });
+                try { await notifyCaptureSuccess?.(saved); }
+                catch (_error) { /* restore notification must not change a completed save */ }
+                return saved;
             } catch (_error) { return finish(state, { reason: "storage_write_failed" }); }
             finally { inProgress = false; }
         }

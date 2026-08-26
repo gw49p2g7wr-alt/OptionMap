@@ -4619,6 +4619,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
         return latestQri?.canonicalVersionKey === qriFact?.canonicalVersionKey &&
             latestWeekly?.currentVersionKey === weeklyFact?.currentVersionKey;
     } });
+    await window.evaluateMorningBaselineV4Applicability?.();
 }
 
 function safeRenderOptionMapOverallJudgmentV2() {

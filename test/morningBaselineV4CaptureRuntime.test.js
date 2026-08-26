@@ -157,3 +157,18 @@ test("existing save button keeps legacy save first and adds isolated v4 capture"
     const v4 = source.indexOf("OptionMapMorningBaselineV4CaptureRuntime?.captureManual");
     assert.ok(legacy >= 0 && v4 > legacy); assert.match(source, /legacyMessage/);
 });
+test("successful capture notifies restore runtime without changing save semantics", async () => {
+    let notified = null; const value = runtime(); value.instance = Runtime.createRuntime({
+        storage: value.storage, collect: async () => collector(), isRefreshInProgress: () => false,
+        notifyCaptureSuccess: result => { notified = result; }, now: () => "2026-08-27T08:04:00+09:00" });
+    const result = await capture(value.instance); assert.equal(result.status, "saved");
+    assert.equal(notified.activeBaselineId, result.activeBaselineId);
+});
+test("restore notification failure cannot roll back or relabel a completed save", async () => {
+    const value = runtime(); const instance = Runtime.createRuntime({ storage: value.storage,
+        collect: async () => collector(), isRefreshInProgress: () => false,
+        notifyCaptureSuccess: async () => { throw new Error("restore failed"); },
+        now: () => "2026-08-27T08:04:00+09:00" });
+    const result = await capture(instance); assert.deepEqual([result.status, result.saved,
+        value.storage.writes.length], ["saved", true, 1]);
+});
