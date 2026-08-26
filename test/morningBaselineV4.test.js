@@ -311,10 +311,10 @@ test("module has no network or scheduling", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/morningBaselineV4.js"), "utf8");
     assert.equal(/\bfetch\s*\(|setTimeout|setInterval|polling/.test(source), false);
 });
-test("existing Morning v1-v3 files are not connected or modified", () => {
+test("v4 runtime wiring does not modify the existing Morning v1-v3 foundation", () => {
     const index = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const legacy = fs.readFileSync(path.join(__dirname, "../js/morningBaseline.js"), "utf8");
-    assert.equal(index.includes("morningBaselineV4.js"), false);
+    assert.equal(index.includes("morningBaselineV4.js"), true);
     assert.match(legacy, /const BASELINE_VERSION = 3;/);
     assert.doesNotMatch(legacy, /OptionMapMorningBaselineV4/);
 });

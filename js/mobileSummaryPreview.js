@@ -411,10 +411,22 @@
             const saved = await window.OptionMapMorningBaseline.saveCandidate(
                 existingResult.baseline, candidate, summary.marketDate, { allowUpdate });
             await window.OptionMapMorningBaselineStorage.save(saved.baseline);
+            let v4Result = null;
+            try {
+                v4Result = await window.OptionMapMorningBaselineV4CaptureRuntime?.captureManual({
+                    mode: "manual", userInitiated: true, requestedAt: new Date().toISOString()
+                }) || null;
+            } catch (v4Error) {
+                console.warn("Morning v4の保存に失敗しました。従来の朝基準保存は維持します:", v4Error);
+            }
             await update();
-            text("morningBaselineSaveMessage", saved.status === "unchanged"
-                ? "同じ内容のためrevisionは追加しませんでした。" : "今日の朝基準を保存しました。");
-            return { success: true, status: saved.status };
+            const legacyMessage = saved.status === "unchanged"
+                ? "同じ内容のためrevisionは追加しませんでした。" : "今日の朝基準を保存しました。";
+            const v4Message = v4Result?.status === "saved" ? " Morning v4も保存しました。"
+                : v4Result?.status === "duplicate" ? " Morning v4は同一内容のため保存不要です。"
+                    : v4Result ? " Morning v4は現在保存できません。" : "";
+            text("morningBaselineSaveMessage", legacyMessage + v4Message);
+            return { success: true, status: saved.status, morningV4: clone(v4Result) };
         } catch (error) {
             text("morningBaselineSaveMessage", error.message);
             return { success: false, reason: error.message };

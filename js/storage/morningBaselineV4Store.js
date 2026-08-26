@@ -11,6 +11,18 @@
     const result = overrides => freeze({ saved: false, status: "unavailable", reason: null,
         changed: false, duplicate: false, writeCount: 0, ...overrides });
     function createStore(storage, configuration = {}) {
+        async function saveContainer(container) {
+            if (!storage || typeof storage.setItem !== "function")
+                return result({ reason: "storage_unavailable" });
+            const serialized = await storageApi.serializeMorningBaselineV4Storage(container,
+                { stringify: configuration.stringify });
+            if (!serialized.success) return result({ reason: serialized.reason });
+            try { storage.setItem(storageApi.STORAGE_KEY, serialized.serialized); }
+            catch (error) { return result({ reason: error?.name === "QuotaExceededError"
+                ? "quota_exceeded" : "storage_write_failed" }); }
+            return result({ saved: true, status: "saved", reason: null, changed: true,
+                writeCount: 1, serialized: serialized.serialized });
+        }
         async function save(baseline) {
             if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function")
                 return result({ reason: "storage_unavailable" });
@@ -27,15 +39,9 @@
             if (!built.success) return result({ reason: built.reason });
             if (!built.changed) return result({ saved: false, status: "unchanged", reason: null,
                 duplicate: true });
-            const serialized = await storageApi.serializeMorningBaselineV4Storage(built.container,
-                { stringify: configuration.stringify });
-            if (!serialized.success) return result({ reason: serialized.reason });
-            try { storage.setItem(storageApi.STORAGE_KEY, serialized.serialized); }
-            catch (error) { return result({ reason: error?.name === "QuotaExceededError"
-                ? "quota_exceeded" : "storage_write_failed" }); }
-            return result({ saved: true, status: "saved", reason: null, changed: true, writeCount: 1 });
+            return saveContainer(built.container);
         }
-        return Object.freeze({ save });
+        return Object.freeze({ save, saveContainer });
     }
     return Object.freeze({ STORAGE_KEY: storageApi.STORAGE_KEY, createStore });
 });

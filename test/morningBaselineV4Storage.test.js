@@ -243,9 +243,10 @@ test("adapters have no runtime builder UI Mobile fetch timer migration or legacy
         fs.readFileSync(path.join(__dirname, "../js/storage", file), "utf8")).join("\n");
     assert.doesNotMatch(source, /buildMorningBaselineV4\(|collector|saveMorning|document\.|MobileSummary|\bfetch\s*\(|setTimeout|setInterval|migration|backfill|optionMapMobileMorningBaselinesV1/);
 });
-test("v4 storage foundation is not runtime-wired", () => {
+test("v4 capture runtime is explicitly wired without read-only or boot restore adapters", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.equal(html.includes("morningBaselineV4Storage.js"), false);
+    assert.equal(html.includes("morningBaselineV4Storage.js"), true);
     assert.equal(html.includes("morningBaselineV4ReadOnlyStore.js"), false);
-    assert.equal(html.includes("morningBaselineV4Store.js"), false);
+    assert.equal(html.includes("morningBaselineV4Store.js"), true);
+    assert.equal(html.includes("morningBaselineV4CaptureRuntime.js"), true);
 });
