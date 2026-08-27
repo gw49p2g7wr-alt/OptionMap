@@ -123,6 +123,51 @@ test("valid same-pairでMajor5 formalと12-group shadowを公開する", async (
     assert.equal(state.diagnostics.samePairVerified, true);
 });
 
+test("adapterの12 group factsをconfig順・同一identityでclone公開する", async () => {
+    const runtime = Runtime.createRuntime();
+    const input = publication({ current: data({
+        SG: 125, SBI: 110, RAKUTEN: 130
+    }, ["MITSUBISHI_UFJ"]) });
+    await runtime.publish(input, { isCurrentPublication: current });
+    const state = runtime.getState();
+    assert.deepEqual(Object.keys(state.groups12.groups), [
+        "JPM", "GS", "NOMURA", "BNP", "ABN", "SG", "MORGAN_MUFG",
+        "SBI_RAKUTEN", "MITSUBISHI_UFJ", "DAIWA", "CITI", "BARCLAYS"
+    ]);
+    assert.equal(state.groups12.groups.SG.status, "estimatedBuy");
+    assert.ok(state.groups12.groups.SG.contribution > 0);
+    assert.equal(state.groups12.groups.JPM.contribution, 0);
+    assert.equal(state.groups12.groups.MITSUBISHI_UFJ.availability, false);
+    assert.equal(state.groups12.groups.MITSUBISHI_UFJ.contribution, null);
+    assert.equal(state.groups12.groups.MITSUBISHI_UFJ.reason,
+        "unpublished_expiry");
+    assert.equal(state.groups12.groups.SBI_RAKUTEN.composite, true);
+    assert.equal(state.groups12.groups.SBI_RAKUTEN.members.length, 2);
+    assert.equal(state.groups12.groups.SBI_RAKUTEN.contribution, 0.2);
+    assert.deepEqual(state.pairIdentity, Runtime.pairIdentity(input.formalPair));
+    assert.equal(state.requestId, input.major5.requestId);
+    assert.equal(state.weeklyPublicationGeneration,
+        input.weeklyFormalIdentity.publicationGeneration);
+    assert.equal(state.sourceFingerprint, input.major5.sourceFingerprint);
+    assert.equal(state.configIdentity.configVersion,
+        adapter.CONFIG_VERSION);
+});
+
+test("negative contributionをruntime taxonomyのまま保持する", async () => {
+    const runtime = Runtime.createRuntime({
+        adaptFormalPair: async pair => {
+            const adapted = structuredClone(await adapter.adaptFormalPair(pair));
+            adapted.result.groups.SG.status = "estimatedSell";
+            adapted.result.groups.SG.contribution = -0.25;
+            return adapted;
+        }
+    });
+    await runtime.publish(publication(), { isCurrentPublication: current });
+    const group = runtime.getState().groups12.groups.SG;
+    assert.equal(group.status, "estimatedSell");
+    assert.equal(group.contribution, -0.25);
+});
+
 for (const [name, mutate, reason] of [
     ["previous version mismatch", value => {
         value.major5.pairIdentity.previous.versionKey = "different";
@@ -227,6 +272,7 @@ test("new request invalidationは旧stateをcurrentとして残さない", async
     assert.equal(state.status, "unavailable");
     assert.equal(state.reason, "new_weekly_request");
     assert.equal(state.major5, null);
+    assert.equal(state.groups12, null);
     assert.equal(state.publicationGeneration, 2);
 });
 
@@ -272,6 +318,8 @@ test("gettersはdetachedかつdeep frozenで再計算しない", async () => {
     assert.notEqual(first, second);
     assert.equal(calls, 1);
     assert.equal(Object.isFrozen(first.groups12.missingGroups), true);
+    assert.equal(Object.isFrozen(first.groups12.groups.SBI_RAKUTEN.members), true);
+    assert.notEqual(first.groups12.groups, second.groups12.groups);
     assert.equal(Object.isFrozen(diagnostics), true);
     assert.notEqual(diagnostics, first.diagnostics);
 });

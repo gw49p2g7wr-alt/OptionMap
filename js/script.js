@@ -4754,8 +4754,33 @@ function renderWeeklyTwelveGroupReference() {
 
     const facts = document.getElementById("weeklyTwelveGroupReferenceFacts");
     const reason = document.getElementById("weeklyTwelveGroupUnavailableReason");
+    const details = document.getElementById("weeklyTwelveGroupDetails");
+    const detailRows = document.getElementById("weeklyTwelveGroupDetailRows");
     if (facts) facts.hidden = model.available !== true;
     if (reason) reason.hidden = model.available === true;
+    if (detailRows) {
+        detailRows.replaceChildren(...model.detailRows.map(row => {
+            const tableRow = document.createElement("tr");
+            const group = document.createElement("td");
+            const classification = document.createElement("td");
+            const direction = document.createElement("td");
+            group.textContent = row.group;
+            if (row.dominant) {
+                const dominant = document.createElement("small");
+                dominant.className = "weekly-twelve-group-dominant";
+                dominant.textContent = "最大寄与";
+                group.append(" ", dominant);
+            }
+            classification.textContent = row.classification;
+            direction.textContent = row.contributionDirection;
+            tableRow.append(group, classification, direction);
+            return tableRow;
+        }));
+    }
+    if (details) {
+        details.hidden = model.available !== true || model.detailRows.length === 0;
+        if (details.hidden) details.open = false;
+    }
     container.dataset.state = model.available ? "available" : "unavailable";
 }
 

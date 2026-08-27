@@ -274,7 +274,8 @@ function (adapter) {
                 requiredGroupCount: source.requiredGroupCount,
                 missingGroups: clone(source.missingGroups),
                 dominantGroup: source.dominantGroup,
-                dominanceRatio: source.dominanceRatio
+                dominanceRatio: source.dominanceRatio,
+                groups: clone(source.groups)
             };
             const agreement = classifyAgreement(major5, groups12);
             const comparisonAvailable = groups12.available === true;

@@ -32,6 +32,17 @@
         partial_two_missing: "2 group欠損",
         unavailable: "利用不可"
     });
+    const GROUP_ORDER = Object.freeze([
+        "JPM", "GS", "NOMURA", "BNP", "ABN", "SG", "MORGAN_MUFG",
+        "SBI_RAKUTEN", "MITSUBISHI_UFJ", "DAIWA", "CITI", "BARCLAYS"
+    ]);
+    const CLASSIFICATION_LABELS = Object.freeze({
+        estimatedBuy: "買い寄与",
+        estimatedSell: "売り寄与",
+        reducedBuy: "買い縮小",
+        reducedSell: "売り縮小",
+        unconfirmed: "未確定"
+    });
 
     function freeze(value) {
         if (!value || typeof value !== "object" || Object.isFrozen(value)) {
@@ -46,6 +57,30 @@
     const fixed = value => finite(value) ? value.toFixed(3) : "—";
     const signed = value => finite(value)
         ? `${value >= 0 ? "+" : ""}${value.toFixed(3)}` : "—";
+
+    function contributionDirection(group) {
+        if (group?.availability !== true || group.contribution === null) {
+            return "—";
+        }
+        if (!finite(group.contribution) || group.contribution === 0) {
+            return "寄与なし";
+        }
+        return group.contribution > 0 ? "買い" : "売り";
+    }
+
+    function createDetailRows(groups, dominantGroup) {
+        if (!groups || typeof groups !== "object") return [];
+        return GROUP_ORDER.map(id => groups[id]).filter(Boolean).map(group => ({
+            id: group.id,
+            group: groupLabel(group.id),
+            available: group.availability === true,
+            classification: group.availability === true
+                ? CLASSIFICATION_LABELS[group.status] || "未確定"
+                : "利用不可",
+            contributionDirection: contributionDirection(group),
+            dominant: group.availability === true && group.id === dominantGroup
+        }));
+    }
 
     function guardsPass(state) {
         return state?.groups12?.shadowOnly === true &&
@@ -95,7 +130,8 @@
             coverage: Number.isInteger(groups?.availableGroupCount)
                 ? `${groups.availableGroupCount} / 12` : "— / 12",
             quality: QUALITY_LABELS[groups?.qualityState] || "利用不可",
-            missing: missing.length ? missing.join("・") : "—"
+            missing: missing.length ? missing.join("・") : "—",
+            detailRows: []
         });
     }
 
@@ -145,14 +181,19 @@
             coverage: `${Number.isInteger(groups.availableGroupCount)
                 ? groups.availableGroupCount : "—"} / 12`,
             quality: QUALITY_LABELS[groups.qualityState] || "—",
-            missing: missing.length ? missing.join("・") : "なし"
+            missing: missing.length ? missing.join("・") : "なし",
+            detailRows: createDetailRows(groups.groups, groups.dominantGroup)
         });
     }
 
     return freeze({
         AGREEMENT_LABELS,
         GROUP_LABELS,
+        GROUP_ORDER,
+        CLASSIFICATION_LABELS,
         guardsPass,
+        contributionDirection,
+        createDetailRows,
         explainDelta,
         createViewModel
     });

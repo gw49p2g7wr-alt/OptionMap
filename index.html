@@ -566,6 +566,28 @@
                         <p id="weeklyTwelveGroupUnavailableReason">
                             dual-run結果を利用できません
                         </p>
+                        <details
+                            id="weeklyTwelveGroupDetails"
+                            class="weekly-twelve-group-details"
+                            hidden
+                        >
+                            <summary>12-group内訳を見る</summary>
+                            <div class="weekly-twelve-group-detail-table-wrap">
+                                <table class="weekly-twelve-group-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Group</th>
+                                            <th scope="col">判定</th>
+                                            <th scope="col">寄与方向</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="weeklyTwelveGroupDetailRows"></tbody>
+                                </table>
+                            </div>
+                            <p class="weekly-twelve-group-detail-warning">
+                                参考分析・OverallV2には未使用
+                            </p>
+                        </details>
                         <p class="weekly-twelve-group-reference-warning">
                             参考分析・OverallV2には未使用
                         </p>

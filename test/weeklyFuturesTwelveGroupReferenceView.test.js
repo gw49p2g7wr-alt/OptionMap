@@ -3,6 +3,18 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const View = require("../js/weeklyFuturesTwelveGroupReferenceView.js");
 
+function groups() {
+    const statuses = [
+        ["estimatedBuy", 0.2], ["estimatedSell", -0.1],
+        ["reducedBuy", 0], ["reducedSell", 0], ["unconfirmed", 0]
+    ];
+    return Object.fromEntries(View.GROUP_ORDER.map((id, index) => {
+        const [status, contribution] = statuses[index % statuses.length];
+        return [id, { id, availability: true, status, contribution,
+            composite: id === "SBI_RAKUTEN" }];
+    }));
+}
+
 function state(overrides = {}) {
     return {
         status: "available",
@@ -24,7 +36,8 @@ function state(overrides = {}) {
             availableGroupCount: 12,
             missingGroups: [],
             dominantGroup: "MORGAN_MUFG",
-            dominanceRatio: 0.2639519817718731
+            dominanceRatio: 0.2639519817718731,
+            groups: groups()
         },
         comparison: {
             available: true,
@@ -101,6 +114,46 @@ test("group表示名・dominanceRatio・coverageをformatする", () => {
     assert.equal(View.GROUP_LABELS.SBI_RAKUTEN, "SBI＋楽天");
 });
 
+test("detail rowsをconfig順で12件生成しSBI＋楽天を1行にする", () => {
+    const model = View.createViewModel(state());
+    assert.equal(model.detailRows.length, 12);
+    assert.deepEqual(model.detailRows.map(row => row.id), View.GROUP_ORDER);
+    assert.equal(model.detailRows.filter(row => row.id === "SBI_RAKUTEN").length,
+        1);
+    assert.equal(model.detailRows.find(row => row.id === "SBI_RAKUTEN").group,
+        "SBI＋楽天");
+});
+
+test("classification taxonomyを日本語presentationへ変換する", () => {
+    const rows = View.createViewModel(state()).detailRows;
+    assert.equal(rows.find(row => row.id === "JPM").classification, "買い寄与");
+    assert.equal(rows.find(row => row.id === "GS").classification, "売り寄与");
+    assert.equal(rows.find(row => row.id === "NOMURA").classification,
+        "買い縮小");
+    assert.equal(rows.find(row => row.id === "BNP").classification, "売り縮小");
+    assert.equal(rows.find(row => row.id === "ABN").classification, "未確定");
+});
+
+test("contributionの正負・zero・nullを区別する", () => {
+    const value = state();
+    value.groups12.groups.CITI = { id: "CITI", availability: false,
+        status: "unconfirmed", contribution: null, reason: "unpublished" };
+    const rows = View.createViewModel(value).detailRows;
+    assert.equal(rows.find(row => row.id === "JPM").contributionDirection, "買い");
+    assert.equal(rows.find(row => row.id === "GS").contributionDirection, "売り");
+    assert.equal(rows.find(row => row.id === "NOMURA").contributionDirection,
+        "寄与なし");
+    const missing = rows.find(row => row.id === "CITI");
+    assert.equal(missing.classification, "利用不可");
+    assert.equal(missing.contributionDirection, "—");
+});
+
+test("dominantGroupだけ最大寄与label対象にする", () => {
+    const rows = View.createViewModel(state()).detailRows;
+    assert.deepEqual(rows.filter(row => row.dominant).map(row => row.id),
+        ["MORGAN_MUFG"]);
+});
+
 test("11/12 coverageとmissing groupを表示する", () => {
     const value = state();
     value.groups12.availableGroupCount = 11;
@@ -139,6 +192,7 @@ for (const [name, mutate] of [
         assert.equal(model.available, false);
         assert.equal(model.guardRejected, true);
         assert.equal(model.direction, "—");
+        assert.deepEqual(model.detailRows, []);
     });
 }
 
@@ -158,6 +212,7 @@ test("delta説明は符号だけからdeterministicに生成する", () => {
 test("outputはdeep frozen", () => {
     const model = View.createViewModel(state());
     assert.equal(Object.isFrozen(model), true);
+    assert.equal(Object.isFrozen(model.detailRows), true);
 });
 
 test("UI wiringはgetterのみを使い独立計算・副作用を追加しない", () => {
@@ -168,6 +223,7 @@ test("UI wiringはgetterのみを使い独立計算・副作用を追加しな�
     const wiring = source.slice(start, end);
     assert.match(wiring, /getWeeklyFuturesTwelveGroupDualRun/);
     assert.doesNotMatch(wiring, /calculateWeeklyBrokerJudgment|adaptFormalPair/);
+    assert.doesNotMatch(wiring, /calculateGroup|calculatePair/);
     assert.doesNotMatch(wiring, /localStorage|indexedDB|fetch\s*\(|setTimeout|setInterval/);
 });
 
@@ -210,4 +266,18 @@ test("indexは主要5社card内へ最小表示と依存順を追加する", () =
     assert.ok(major < reference);
     assert.ok(runtime < view && view < script);
     assert.match(html, /参考分析・OverallV2には未使用/);
+    assert.match(html,
+        /<details[\s\S]*id="weeklyTwelveGroupDetails"[\s\S]*12-group内訳を見る/);
+    assert.doesNotMatch(html,
+        /<details[^>]*id="weeklyTwelveGroupDetails"[^>]*\sopen(?:\s|>|=)/);
+});
+
+test("details wiringはrowsを再構築しstale時に閉じて隠す", () => {
+    const source = fs.readFileSync("js/script.js", "utf8");
+    const start = source.indexOf("function renderWeeklyTwelveGroupReference()");
+    const end = source.indexOf("renderWeeklyTwelveGroupReference();", start);
+    const wiring = source.slice(start, end);
+    assert.match(wiring, /detailRows\.replaceChildren/);
+    assert.match(wiring, /details\.hidden = model\.available !== true/);
+    assert.match(wiring, /if \(details\.hidden\) details\.open = false/);
 });

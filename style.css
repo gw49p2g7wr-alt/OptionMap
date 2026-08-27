@@ -170,6 +170,50 @@ h1{
     color: #68745b;
 }
 
+.weekly-twelve-group-details {
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.weekly-twelve-group-details > summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.weekly-twelve-group-detail-table-wrap {
+    margin-top: 8px;
+    overflow-x: auto;
+}
+
+.weekly-twelve-group-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.weekly-twelve-group-detail-table th,
+.weekly-twelve-group-detail-table td {
+    padding: 6px 7px;
+    border-bottom: 1px solid #dde3da;
+    text-align: left;
+}
+
+.weekly-twelve-group-detail-table th {
+    color: #475467;
+}
+
+.weekly-twelve-group-dominant {
+    color: #68745b;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.weekly-twelve-group-detail-warning {
+    margin-top: 8px !important;
+    color: #68745b;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 @media (max-width: 550px) {
     .weekly-twelve-group-reference-grid {
         grid-template-columns: 1fr;
