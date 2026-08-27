@@ -33,7 +33,7 @@ test("formal runtime becomes a detached immutable user-facing model", () => {
     assert.deepEqual(model.score, { baseline: "-37", current: "-30", baselineLabel: "売り優勢",
         currentLabel: "売り優勢", delta: "+7", movement: "買い方向へ +7",
         scale: "-100（売り最大）／0（中立）／+100（買い最大）／確率ではありません" });
-    assert.deepEqual(model.price, { baseline: "65,950円", current: "66,120円",
+    assert.deepEqual(model.price, { baseline: "65,950\u2060円", current: "66,120\u2060円",
         delta: "+170円", percent: "+0.26%" });
     assert.equal(model.relation, "需給変化と価格変化：同方向");
 });

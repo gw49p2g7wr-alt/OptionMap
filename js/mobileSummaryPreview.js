@@ -16,6 +16,13 @@
     const price = value => Number.isFinite(value) ? `${value.toLocaleString("ja-JP")}円` : "利用不可";
     const time = value => value ? new Date(value).toLocaleString("ja-JP") : "時刻なし";
     const signed = value => Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value}` : "--";
+    const roundedPercent = value => Number.isFinite(value) ? `${Math.round(value)}%` : "--%";
+    const generatedAtJst = value => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "生成時刻：不明";
+        return `生成時刻：${new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo",
+            hour: "2-digit", minute: "2-digit", hour12: false }).format(date)}（JST）`;
+    };
     const qualityLabel = value => ({ complete: "データ良好", partial: "一部データ不足",
         unavailable: "データ利用不可" })[value] || "状態不明";
     const freshnessLabel = key => ({ currentPriceAt: "現在値", qriAt: "QRIオプション",
@@ -50,7 +57,7 @@
         container.dataset.inputFingerprint = model.identity.formalSnapshotInputFingerprint || "";
         container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
         text("morningComparisonV4Status", model.status);
-        text("morningComparisonV4Reason", model.reason || "同一正式sessionのMorning v4比較です");
+        text("morningComparisonV4Reason", model.reason || "同じ取引日の朝基準と現在を比較しています");
         text("morningComparisonV4CapturedAt", model.capturedAt);
         text("morningComparisonV4Score", model.score ?
             `朝 ${model.score.baselineLabel} ${model.score.baseline} → 現在 ${model.score.currentLabel} ${model.score.current}` : "—");
@@ -148,11 +155,12 @@
         text("mobileSummaryPreviewOverall", payload.overallV2.available
             ? `${payload.overallV2.directionLabel} (${payload.overallV2.direction > 0 ? "+" : ""}${payload.overallV2.direction})`
             : "総合判定v2：利用不可");
+        text("mobileSummaryPreviewOverallGeneratedAt", generatedAtJst(summary.generatedAt));
         const overallState = !payload.overallV2.available ? "neutral" : payload.overallV2.direction > 0
             ? "buy" : payload.overallV2.direction < 0 ? "sell" : "neutral";
         setCardState("mobileSummaryPreviewOverallCard", overallState, ["buy", "sell", "neutral"]);
         text("mobileSummaryPreviewMetrics", `信頼度 ${payload.overallV2.confidence ?? "--"}% ・ ` +
-            `網羅率 ${payload.overallV2.coverage ?? "--"}% ・ 一致度 ${payload.overallV2.agreement ?? "--"}%`);
+            `網羅率 ${payload.overallV2.coverage ?? "--"}% ・ 一致度 ${roundedPercent(payload.overallV2.agreement)}`);
         text("mobileSummaryPreviewPrice", price(payload.currentPrice.value));
         text("mobileSummaryPreviewPriceMeta", `${payload.currentPrice.source || "取得元不明"} ・ ` +
             `${payload.currentPrice.mode || "方式不明"} ・ ${payload.currentPrice.contract || "限月不明"}`);

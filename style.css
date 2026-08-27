@@ -1579,6 +1579,10 @@ canvas {
     font-size: 19px;
 }
 
+.optionmap-v2-score-scale {
+    line-height: 1.45;
+}
+
 .optionmap-v2-details {
     margin-top: 14px;
     color: #475467;

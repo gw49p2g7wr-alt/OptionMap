@@ -4508,6 +4508,11 @@ function formatOptionMapV2Date(value) {
     });
 }
 
+function formatOptionMapV2Status(value) {
+    return ({ complete: "完全", partial: "一部データ不足",
+        unavailable: "利用不可", invalid_input: "入力不正" })[value] || "状態不明";
+}
+
 function renderOptionMapOverallJudgmentV2Internal() {
     const summaryElement = document.getElementById("optionMapOverallSummaryV2");
     if (!summaryElement) return;
@@ -4543,7 +4548,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
     confidenceElement.textContent = `${result.confidence}%`;
     statusElement.textContent =
         `材料 ${result.metadata.availableComponentCount} / ` +
-        `${result.metadata.plannedComponentCount}（${result.status}）`;
+        `${result.metadata.plannedComponentCount}（${formatOptionMapV2Status(result.status)}）`;
 
     const formatComponent = (component, label) => {
         if (!component?.available) return `${label}：未利用`;

@@ -428,6 +428,9 @@
                             <span>総合方向</span>
                             <strong id="optionMapV2Direction">判定材料不足</strong>
                             <b id="optionMapV2DirectionScore">算出不可</b>
+                            <small class="optionmap-v2-score-scale">
+                                -100 = 売り最大 ／ 0 = 中立 ／ +100 = 買い最大（確率ではありません）
+                            </small>
                         </div>
                         <div>
                             <span>信頼度</span>
@@ -447,8 +450,8 @@
                         </ul>
 
                         <p class="optionmap-v2-future-components">
-                            チャート：未接続 ／ 参加者別：未接続 ／
-                            世界市場：未接続 ／ IV：未接続
+                            OverallV2判定には未使用：チャート ／ 参加者別 ／
+                            世界市場 ／ IV
                         </p>
                         <p><strong>想定時間軸：</strong>1日～数日</p>
                         <p class="optionmap-v2-disclaimer">
@@ -498,7 +501,8 @@
                     <h5 class="morning-v4-reference-title">参考情報</h5>
                     <p class="morning-v4-reference-note">以下は正式Morning v4比較とは別系統の観測情報です。</p>
                     <div class="mobile-summary-preview-grid">
-                        <div id="mobileSummaryPreviewOverallCard" class="mobile-summary-card mobile-summary-card-overall"><span>総合判定 v2</span><strong id="mobileSummaryPreviewOverall">--</strong>
+                        <div id="mobileSummaryPreviewOverallCard" class="mobile-summary-card mobile-summary-card-overall"><span>参考情報生成時の総合判定</span><strong id="mobileSummaryPreviewOverall">--</strong>
+                            <small id="mobileSummaryPreviewOverallGeneratedAt">生成時刻：--</small>
                             <small id="mobileSummaryPreviewMetrics">--</small></div>
                         <div class="mobile-summary-card mobile-summary-card-price"><span>現在値</span>
                             <strong id="mobileSummaryPreviewPrice">--</strong><small id="mobileSummaryPreviewPriceMeta">--</small></div>
@@ -613,9 +617,6 @@
                                     <tbody id="weeklyTwelveGroupDetailRows"></tbody>
                                 </table>
                             </div>
-                            <p class="weekly-twelve-group-detail-warning">
-                                参考分析・OverallV2には未使用
-                            </p>
                         </details>
                         <p class="weekly-twelve-group-reference-warning">
                             参考分析・OverallV2には未使用

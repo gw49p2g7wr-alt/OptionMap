@@ -46,7 +46,7 @@
             month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
             second: "2-digit", hour12: false }).format(new Date(value));
     };
-    const price = value => finite(value) ? `${value.toLocaleString("ja-JP")}円` : "—";
+    const price = value => finite(value) ? `${value.toLocaleString("ja-JP")}\u2060円` : "—";
     const component = (label, value) => value?.available === true ? { label, available: true,
         baseline: signed(value.baselineDirection), current: signed(value.currentDirection),
         delta: signed(value.directionDelta), movement: scoreMovement(value.directionDelta) } :
