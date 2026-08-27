@@ -115,6 +115,67 @@ h1{
     color: #746139;
 }
 
+.weekly-twelve-group-reference {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border: 1px solid #dde3da;
+    border-radius: 10px;
+    background: #f7f9f5;
+    color: #4f5c45;
+}
+
+.weekly-twelve-group-reference-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.weekly-twelve-group-reference-heading h5,
+.weekly-twelve-group-reference p {
+    margin: 0;
+}
+
+.weekly-twelve-group-reference-heading span,
+.weekly-twelve-group-formal-label,
+.weekly-twelve-group-reference-warning {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.weekly-twelve-group-formal-label {
+    margin-top: 6px !important;
+}
+
+.weekly-twelve-group-reference-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 14px;
+    margin-top: 12px;
+    color: #4b5563;
+    font-size: 13px;
+}
+
+#weeklyTwelveGroupDeltaExplanation,
+#weeklyTwelveGroupUnavailableReason {
+    margin-top: 9px;
+    color: #667085;
+    font-size: 12px;
+}
+
+.weekly-twelve-group-reference-warning {
+    margin-top: 10px !important;
+    padding-top: 8px;
+    border-top: 1px solid #dde3da;
+    color: #68745b;
+}
+
+@media (max-width: 550px) {
+    .weekly-twelve-group-reference-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* 売買方向を示す既存のCALL/PUT壁色は維持し、カテゴリは文字バッジだけにする */
 .ui-category-heading-only {
     --ui-category-accent: #75647d;

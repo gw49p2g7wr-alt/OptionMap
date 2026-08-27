@@ -4611,6 +4611,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
         window.invalidateWeeklyFuturesTwelveGroupDualRun?.(
             "weekly_formal_identity_unavailable"
         );
+        renderWeeklyTwelveGroupReference();
     }
     const weeklyFormalIdentity = window.getWeeklyFormalIdentityFact?.() || null;
     const weeklyFact = weeklyFormalIdentity?.fact || null;
@@ -4623,6 +4624,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
         window.invalidateWeeklyFuturesTwelveGroupDualRun?.(
             "weekly_formal_identity_changed"
         );
+        renderWeeklyTwelveGroupReference();
         const formalPair = {
             previous: {
                 ...pairContext.previous,
@@ -4660,7 +4662,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
             currentVersionKey: candidate.metadata.current.versionKey,
             currentSignature: candidate.metadata.current.signature
         };
-        void window.publishWeeklyFuturesTwelveGroupDualRun?.({
+        await window.publishWeeklyFuturesTwelveGroupDualRun?.({
             formalPair,
             major5: {
                 formalApplied: true,
@@ -4698,6 +4700,13 @@ async function publishFormalIdentityEnvelopesV2(result) {
                 weeklyTwelveGroupFormalPairContext?.current?.signature ===
                     expected.currentSignature;
         } });
+        renderWeeklyTwelveGroupReference();
+    } else if (candidate?.available === true &&
+        result?.components?.weekly?.available === true) {
+        window.invalidateWeeklyFuturesTwelveGroupDualRun?.(
+            "weekly_formal_pair_unavailable"
+        );
+        renderWeeklyTwelveGroupReference();
     }
     await window.publishOverallV2FormalEnvelope?.({
         logicVersion: window.OptionMapOverallV2FormalEnvelopeRuntime
@@ -4711,6 +4720,38 @@ async function publishFormalIdentityEnvelopesV2(result) {
     } });
     await window.evaluateMorningBaselineV4Applicability?.();
 }
+
+function renderWeeklyTwelveGroupReference() {
+    const adapter = window.OptionMapWeeklyFuturesTwelveGroupReferenceView;
+    const container = document.getElementById("weeklyTwelveGroupReference");
+    if (!adapter?.createViewModel || !container) return;
+
+    const state = window.getWeeklyFuturesTwelveGroupDualRun?.() || null;
+    const model = adapter.createViewModel(state);
+    const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    };
+    setText("weeklyTwelveGroupReferenceStatus", model.status);
+    setText("weeklyTwelveGroupDirection", model.direction);
+    setText("weeklyTwelveGroupStrength", model.normalizedDirection);
+    setText("weeklyTwelveGroupDelta", model.delta);
+    setText("weeklyTwelveGroupAgreement", model.agreement);
+    setText("weeklyTwelveGroupDominant", model.dominant);
+    setText("weeklyTwelveGroupCoverage", model.coverage);
+    setText("weeklyTwelveGroupMissing", model.missing);
+    setText("weeklyTwelveGroupQuality", model.quality);
+    setText("weeklyTwelveGroupDeltaExplanation", model.deltaExplanation);
+    setText("weeklyTwelveGroupUnavailableReason", model.reason || "");
+
+    const facts = document.getElementById("weeklyTwelveGroupReferenceFacts");
+    const reason = document.getElementById("weeklyTwelveGroupUnavailableReason");
+    if (facts) facts.hidden = model.available !== true;
+    if (reason) reason.hidden = model.available === true;
+    container.dataset.state = model.available ? "available" : "unavailable";
+}
+
+renderWeeklyTwelveGroupReference();
 
 function safeRenderOptionMapOverallJudgmentV2() {
     if (!OPTION_MAP_V2_ENABLED) return;

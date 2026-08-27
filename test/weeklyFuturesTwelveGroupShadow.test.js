@@ -222,7 +222,7 @@ test("正式historyをread-onlyでpair reportへ再現する", async () => {
     assert.deepEqual(history, before);
 });
 
-test("正式5社・overallV2・storage・UIから隔離する", () => {
+test("正式5社・overallV2・storage・独立UI計算から隔離する", () => {
     const formalBefore = weekly.calculateWeeklyBrokerJudgment(data(), data());
     pair(data({ SG: 124 }));
     const formalAfter = weekly.calculateWeeklyBrokerJudgment(data(), data());
@@ -238,5 +238,8 @@ test("正式5社・overallV2・storage・UIから隔離する", () => {
     assert.doesNotMatch(source, /localStorage|indexedDB|setItem|\.put\(/);
     assert.match(html,
         /<script src="js\/weeklyFuturesTwelveGroupShadow\.js"><\/script>/);
-    assert.doesNotMatch(html, /id="[^"]*TwelveGroup/);
+    assert.doesNotMatch(source, /document\.|querySelector|createElement/);
+    assert.doesNotMatch(html, /TwelveGroup.*(?:Toggle|Weight|History)/);
+    assert.match(html,
+        /weeklyFuturesTwelveGroupDualRunRuntime\.js[\s\S]*weeklyFuturesTwelveGroupReferenceView\.js/);
 });

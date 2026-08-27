@@ -322,7 +322,9 @@ test("rendererは依存順にloadし既存formal publication後だけ接続す�
     assert.ok(adapterIndex < runtimeIndex);
     assert.match(script, /await window\.publishWeeklyFormalIdentityFact/);
     assert.match(script,
-        /void window\.publishWeeklyFuturesTwelveGroupDualRun/);
+        /await window\.publishWeeklyFuturesTwelveGroupDualRun/);
+    assert.match(script,
+        /await window\.publishWeeklyFuturesTwelveGroupDualRun[\s\S]*renderWeeklyTwelveGroupReference\(\)/);
     assert.match(html,
         /invalidateWeeklyFuturesTwelveGroupDualRun\?\.\("new_weekly_request"\)/);
 });
