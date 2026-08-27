@@ -4729,6 +4729,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
     await window.evaluateMorningBaselineV4Applicability?.();
     if (!window.isMarketRefreshInProgress?.()) {
         await window.publishMorningComparisonV4Runtime?.();
+        window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     }
 }
 

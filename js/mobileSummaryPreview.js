@@ -33,6 +33,58 @@
         states.forEach(item => element.classList.toggle(`is-${item}`, item === state));
     };
 
+    function renderFormalComparisonV4() {
+        const adapter = window.OptionMapMorningComparisonV4View;
+        if (!adapter?.createViewModel) return null;
+        const model = adapter.createViewModel(window.getMorningComparisonV4RuntimeState?.() || null);
+        const container = document.getElementById("morningComparisonV4Formal");
+        if (!container) return model;
+        container.classList.toggle("is-available", model.available);
+        container.classList.toggle("is-unavailable", !model.available);
+        container.dataset.baselineId = model.identity.selectedBaselineId || "";
+        container.dataset.comparisonBaselineId = model.identity.comparisonBaselineId || "";
+        container.dataset.publicationGeneration = String(model.identity.publicationGeneration || 0);
+        container.dataset.scopeId = model.identity.scopeId || "";
+        container.dataset.formalTradingDate = model.identity.formalTradingDate || "";
+        container.dataset.contract = model.identity.contract || "";
+        container.dataset.inputFingerprint = model.identity.formalSnapshotInputFingerprint || "";
+        container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
+        text("morningComparisonV4Status", model.status);
+        text("morningComparisonV4Reason", model.reason || "同一正式sessionのMorning v4比較です");
+        text("morningComparisonV4CapturedAt", model.capturedAt);
+        text("morningComparisonV4Score", model.score ?
+            `朝 ${model.score.baselineLabel} ${model.score.baseline} → 現在 ${model.score.currentLabel} ${model.score.current}` : "—");
+        text("morningComparisonV4ScoreDelta", model.score ?
+            `変化：${model.score.movement}` : "—");
+        text("morningComparisonV4ScoreScale", model.score?.scale ||
+            "-100（売り最大）／0（中立）／+100（買い最大）／確率ではありません");
+        text("morningComparisonV4Price", model.price ?
+            `朝 ${model.price.baseline} → 現在 ${model.price.current}` : "—");
+        text("morningComparisonV4PriceDelta", model.price ?
+            `朝基準比 ${model.price.delta}（${model.price.percent}）` : "—");
+        text("morningComparisonV4Relation", model.relation);
+        text("morningComparisonV4Quality", model.dataQuality?.current || "利用不可");
+        text("morningComparisonV4QualityTransition", model.dataQuality ?
+            `朝 ${model.dataQuality.baseline} → 現在 ${model.dataQuality.current}：${model.dataQuality.transition}` : "—");
+        const components = document.getElementById("morningComparisonV4Components");
+        if (components) components.replaceChildren(...model.components.map(item => {
+            const row = document.createElement("p");
+            row.textContent = item.available ?
+                `${item.label}：朝 ${item.baseline} → 現在 ${item.current}（${item.movement}）` :
+                `${item.label}：利用不可`;
+            return row;
+        }), ...(model.dataQuality ? [(() => {
+            const row = document.createElement("p");
+            const warnings = model.dataQuality.warnings.length
+                ? `／注意：${model.dataQuality.warnings.join("、")}` : "";
+            row.textContent = `データ品質：朝 ${model.dataQuality.baseline} → 現在 ${model.dataQuality.current}` +
+                `（${model.dataQuality.transition}）${warnings}`;
+            return row;
+        })()] : []));
+        if (!model.available) document.getElementById("morningComparisonV4Details")?.removeAttribute("open");
+        return model;
+    }
+
     const elapsedLabel = milliseconds => {
         const minutes = Math.floor(milliseconds / 60000);
         if (minutes < 60) return `${minutes}分`;
@@ -437,11 +489,12 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
+        renderFormalComparisonV4();
         document.getElementById("saveMorningBaselineButton")?.addEventListener("click", () => {
             void saveMorningBaseline();
         });
     });
 
-    return Object.freeze({ update, saveMorningBaseline,
+    return Object.freeze({ update, saveMorningBaseline, renderFormalComparisonV4,
         getLatestSummary: () => clone(latestSummary) });
 });
