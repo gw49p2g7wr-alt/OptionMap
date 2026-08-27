@@ -4036,7 +4036,15 @@ const weeklyBrokerMap = weeklyBrokerConfig.BROKER_MAP;
 function initializeWeeklyBrokerConfigUi() {
     const selector = document.getElementById("cumulativeBrokerSelect");
     if (selector) {
-        selector.replaceChildren(...weeklyBrokerParticipants.map(participant => {
+        const chartGroups =
+            window.OptionMapParticipantTwelveGroupChartAdapter
+                ?.SELECTOR_DEFINITIONS || weeklyBrokerParticipants.map(
+                    participant => ({
+                        key: participant.key,
+                        displayName: participant.displayName
+                    })
+                );
+        selector.replaceChildren(...chartGroups.map(participant => {
             const option = document.createElement("option");
             option.value = participant.key;
             option.textContent = participant.displayName;
@@ -5970,8 +5978,14 @@ console.log("snapshotの中身", testSnapshot);
 const cumulativeCompanySelect =
   document.getElementById("cumulativeBrokerSelect");
 
+const participantChartAdapter =
+  window.OptionMapParticipantTwelveGroupChartAdapter;
+
+const selectedBrokerKey =
+    cumulativeCompanySelect?.value || "JPM";
+
   const companyName =
-    weeklyBrokerMap[cumulativeCompanySelect.value] ||
+    weeklyBrokerMap[selectedBrokerKey] ||
     weeklyBrokerParticipants[0].brokerName;
 
 const dayAuctionRecords =
@@ -6075,9 +6089,6 @@ console.log(
     )
 );
 
-const selectedBrokerKey =
-    cumulativeCompanySelect?.value || "JPM";
-
 const selectedWeeklyStatus =
     weeklyBrokerDiffs[selectedBrokerKey]?.status || "unconfirmed";
 
@@ -6103,7 +6114,7 @@ const getStatusForDate = date => {
     );
 };
 
-const companyDailySeries = displaySnapshots
+const createExistingMajor5Series = () => displaySnapshots
   .filter(snapshot => snapshot?.parsedDayData)
   .map(snapshot => {
     const dayAuctionRecords =
@@ -6139,6 +6150,26 @@ const companyDailySeries = displaySnapshots
     status
 };
   });
+
+const additionalClassificationHistory =
+  participantChartAdapter?.isAdditionalGroup?.(selectedBrokerKey)
+    ? participantChartAdapter.createAdditionalClassificationHistory(
+        allConfirmedWeeklySnapshots,
+        selectedBrokerKey
+      )
+    : [];
+
+const additionalSeries =
+  participantChartAdapter?.isAdditionalGroup?.(selectedBrokerKey)
+    ? participantChartAdapter.createAdditionalSeries(
+        displaySnapshots,
+        selectedBrokerKey,
+        additionalClassificationHistory
+      )
+    : null;
+
+const companyDailySeries = additionalSeries?.points ||
+  createExistingMajor5Series();
 
 console.log("📈 JPM日付別シリーズ =", companyDailySeries);
 
