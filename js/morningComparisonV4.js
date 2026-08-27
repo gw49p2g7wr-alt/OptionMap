@@ -96,9 +96,14 @@
             !["complete", "partial"].includes(current.status)) return null;
         const before = [...new Set(baseline.warnings || [])].sort();
         const after = [...new Set(current.warnings || [])].sort();
+        const sameFallbackFlags = object(baseline.fallbackFlags) && object(current.fallbackFlags) &&
+            Object.keys(baseline.fallbackFlags).sort().join("\0") ===
+                Object.keys(current.fallbackFlags).sort().join("\0") &&
+            Object.keys(baseline.fallbackFlags).every(key =>
+                baseline.fallbackFlags[key] === current.fallbackFlags[key]);
         const changed = baseline.status !== current.status || before.join("\0") !== after.join("\0") ||
             JSON.stringify(baseline.componentAvailability) !== JSON.stringify(current.componentAvailability) ||
-            JSON.stringify(baseline.fallbackFlags) !== JSON.stringify(current.fallbackFlags);
+            !sameFallbackFlags;
         const transition = baseline.status === current.status ? changed ? "changed_unclassified" : "unchanged" :
             baseline.status === "partial" && current.status === "complete" ? "improved" :
                 baseline.status === "complete" && current.status === "partial" ? "degraded" :
@@ -109,8 +114,7 @@
             resolvedWarnings: before.filter(item => !after.includes(item)),
             componentAvailabilityChanged: JSON.stringify(baseline.componentAvailability) !==
                 JSON.stringify(current.componentAvailability),
-            fallbackFlagsChanged: JSON.stringify(baseline.fallbackFlags) !==
-                JSON.stringify(current.fallbackFlags) };
+            fallbackFlagsChanged: !sameFallbackFlags };
     }
 
     function relation(supplyDemandDelta, priceDelta) {

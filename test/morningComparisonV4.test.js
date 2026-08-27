@@ -231,6 +231,54 @@ test("DataQuality changed warnings remain unclassified", async () => {
     assert.deepEqual([result.dataQuality.changed, result.dataQuality.transition],
         [true, "changed_unclassified"]);
 });
+const quality = ({ status = "complete", warnings = [], componentAvailability =
+    { option: true, weekly: true }, fallbackFlags =
+        { currentPrice: false, qri: false, weekly: false, overallV2: false } } = {}) =>
+    ({ status, warnings, componentAvailability, fallbackFlags });
+test("identical fallback flags with the same key order are unchanged", () => {
+    const result = Comparison.compareQuality(quality(), quality());
+    assert.deepEqual([result.fallbackFlagsChanged, result.changed, result.transition],
+        [false, false, "unchanged"]);
+});
+test("identical fallback flags with a different key order are semantically unchanged", () => {
+    const baseline = quality(); const current = quality({ fallbackFlags: {
+        overallV2: false, weekly: false, qri: false, currentPrice: false } });
+    const result = Comparison.compareQuality(baseline, current);
+    assert.deepEqual([result.fallbackFlagsChanged, result.changed, result.transition],
+        [false, false, "unchanged"]);
+});
+for (const field of ["currentPrice", "qri", "weekly", "overallV2"]) {
+    test(`${field} fallback false to true remains a real change`, () => {
+        const flags = { currentPrice: false, qri: false, weekly: false, overallV2: false,
+            [field]: true };
+        const result = Comparison.compareQuality(quality(), quality({ fallbackFlags: flags }));
+        assert.deepEqual([result.fallbackFlagsChanged, result.changed, result.transition],
+            [true, true, "changed_unclassified"]);
+    });
+}
+test("multiple fallback changes remain a real change", () => {
+    const result = Comparison.compareQuality(quality(), quality({ fallbackFlags: {
+        currentPrice: true, qri: false, weekly: true, overallV2: false } }));
+    assert.equal(result.fallbackFlagsChanged, true);
+});
+test("unknown fallback fields are not ignored", () => {
+    const result = Comparison.compareQuality(quality(), quality({ fallbackFlags: {
+        currentPrice: false, qri: false, weekly: false, overallV2: false, unknown: false } }));
+    assert.equal(result.fallbackFlagsChanged, true);
+});
+test("warning addition and resolution semantics are preserved", () => {
+    const added = Comparison.compareQuality(quality(), quality({ warnings: ["warning"] }));
+    const resolved = Comparison.compareQuality(quality({ warnings: ["warning"] }), quality());
+    assert.deepEqual([added.addedWarnings, added.resolvedWarnings], [["warning"], []]);
+    assert.deepEqual([resolved.addedWarnings, resolved.resolvedWarnings], [[], ["warning"]]);
+});
+test("component availability unchanged and changed semantics are preserved", () => {
+    const unchanged = Comparison.compareQuality(quality(), quality());
+    const changed = Comparison.compareQuality(quality(), quality({
+        componentAvailability: { option: false, weekly: true } }));
+    assert.equal(unchanged.componentAvailabilityChanged, false);
+    assert.equal(changed.componentAvailabilityChanged, true);
+});
 test("nearestLevels are not part of comparison output", async () => {
     assert.equal(Object.hasOwn(await compare(), "nearestLevels"), false);
 });
