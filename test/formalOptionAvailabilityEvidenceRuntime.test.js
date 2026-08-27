@@ -132,7 +132,10 @@ test("runtime does not mutate Option judgment or Overall", () => { const source 
 test("index has no Session Scope or Morning evidence wiring", () => { const html = fs.readFileSync(path.join(
     __dirname, "../index.html"), "utf8"); const block = html.slice(html.indexOf(
         "beginFormalOptionAvailabilityEvidencePublication"), html.indexOf("if (payload.canonicalV2?.openInterestStatus"));
-    assert.doesNotMatch(block, /SessionScope|Morning|DataQuality/); });
+    const withoutComparisonLifecycle = block
+        .replaceAll("invalidateMorningComparisonV4Runtime", "")
+        .replaceAll("publishMorningComparisonV4Runtime", "");
+    assert.doesNotMatch(withoutComparisonLifecycle, /SessionScope|Morning|DataQuality/); });
 test("index loads foundations before runtime", () => { const html = fs.readFileSync(path.join(
     __dirname, "../index.html"), "utf8"); assert.ok(html.indexOf("formalOptionAvailabilityEvidence.js") <
         html.indexOf("qriOptionsFormalComparisonEvidence.js"));

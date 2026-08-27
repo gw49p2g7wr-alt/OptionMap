@@ -4727,6 +4727,9 @@ async function publishFormalIdentityEnvelopesV2(result) {
             latestWeekly?.currentVersionKey === weeklyFact?.currentVersionKey;
     } });
     await window.evaluateMorningBaselineV4Applicability?.();
+    if (!window.isMarketRefreshInProgress?.()) {
+        await window.publishMorningComparisonV4Runtime?.();
+    }
 }
 
 function renderWeeklyTwelveGroupReference() {

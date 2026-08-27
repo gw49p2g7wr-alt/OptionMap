@@ -279,7 +279,9 @@ test("no runtime", () => assert.equal(/currentPriceState|getMobileSummaryRendere
 test("no DOM", () => assert.equal(/document\.|querySelector|getElementById/.test(source()), false));
 test("no Mobile", () => assert.equal(/MobileSummary|mobileMorning|mobileSummary/.test(source()), false));
 test("no fetch timer or polling", () => assert.equal(/\bfetch\s*\(|setTimeout|setInterval|polling/.test(source()), false));
-test("index remains disconnected", () => {
-    assert.equal(fs.readFileSync(path.join(__dirname, "../index.html"), "utf8")
-        .includes("morningComparisonV4.js"), false);
+test("index loads pure comparison before its runtime", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.ok(html.indexOf("morningComparisonV4.js") >= 0);
+    assert.ok(html.indexOf("morningComparisonV4.js") <
+        html.indexOf("morningComparisonV4Runtime.js"));
 });

@@ -1116,6 +1116,8 @@
 <script src="js/storage/morningBaselineV4Store.js"></script>
 <script src="js/morningBaselineV4CaptureRuntime.js"></script>
 <script src="js/morningBaselineV4RestoreRuntime.js"></script>
+<script src="js/morningComparisonV4.js"></script>
+<script src="js/morningComparisonV4Runtime.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
@@ -5673,6 +5675,7 @@ function refreshAllMarketData() {
     }
 
     const requestId = window.createFetchRequestId("marketRefresh");
+    window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
     const startedAt = new Date().toISOString();
 
     const runRefresh = async () => {
@@ -5718,8 +5721,9 @@ function refreshAllMarketData() {
         };
     };
 
-    marketRefreshPromise = runRefresh().finally(() => {
+    marketRefreshPromise = runRefresh().finally(async () => {
         marketRefreshPromise = null;
+        await window.publishMorningComparisonV4Runtime?.();
     });
 
     return marketRefreshPromise;
