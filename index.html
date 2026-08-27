@@ -1068,6 +1068,9 @@
 <script src="js/weeklyFuturesHistoryReadOnlyDiagnostic.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
 <script src="js/weeklyFuturesExpansionShadow.js"></script>
+<script src="js/weeklyFuturesTwelveGroupShadow.js"></script>
+<script src="js/weeklyFuturesTwelveGroupFormalPairAdapter.js"></script>
+<script src="js/weeklyFuturesTwelveGroupDualRunRuntime.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/script.js"></script>
 
@@ -3886,6 +3889,7 @@ async function fetchWeeklyData({ requestId } = {}) {
         error: null,
         requestId: futuresRequestId
     });
+    window.invalidateWeeklyFuturesTwelveGroupDualRun?.("new_weekly_request");
     window.updateFetchState("weeklyOptions", {
         status: window.FETCH_STATUS.LOADING,
         startedAt,

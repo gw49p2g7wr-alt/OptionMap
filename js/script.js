@@ -4297,6 +4297,7 @@ const optionMapJudgmentStateV2 = {
     weeklyCandidate: null,
     lastError: null
 };
+let weeklyTwelveGroupFormalPairContext = null;
 
 window.optionMapJudgmentStateV2 = optionMapJudgmentStateV2;
 
@@ -4607,8 +4608,97 @@ async function publishFormalIdentityEnvelopesV2(result) {
                 current?.versionKey });
     } else {
         window.markWeeklyFormalIdentityUnavailable?.("formal_component_unavailable");
+        window.invalidateWeeklyFuturesTwelveGroupDualRun?.(
+            "weekly_formal_identity_unavailable"
+        );
     }
-    const weeklyFact = window.getWeeklyFormalIdentityFact?.()?.fact || null;
+    const weeklyFormalIdentity = window.getWeeklyFormalIdentityFact?.() || null;
+    const weeklyFact = weeklyFormalIdentity?.fact || null;
+    const pairContext = weeklyTwelveGroupFormalPairContext;
+    if (
+        weeklyFormalIdentity?.status === "available" && weeklyFact &&
+        pairContext && candidate?.available === true &&
+        result?.components?.weekly?.available === true
+    ) {
+        window.invalidateWeeklyFuturesTwelveGroupDualRun?.(
+            "weekly_formal_identity_changed"
+        );
+        const formalPair = {
+            previous: {
+                ...pairContext.previous,
+                activeVersionKey: pairContext.previous.versionKey
+            },
+            current: {
+                ...pairContext.current,
+                activeVersionKey: pairContext.current.versionKey
+            },
+            formalContext: {
+                sourceClass: "formal_history",
+                activeVersionMatched: candidate.metadata.activeVersionMatched,
+                requestId: weeklyFact.requestId,
+                generation: weeklyFormalIdentity.publicationGeneration,
+                generationFingerprint: weeklyFact.sourceFingerprint
+            }
+        };
+        const major5PairIdentity = {
+            previous: {
+                ...candidate.metadata.previous,
+                activeVersionKey: candidate.metadata.previous.versionKey
+            },
+            current: {
+                ...candidate.metadata.current,
+                activeVersionKey: candidate.metadata.current.versionKey
+            },
+            activeVersionMatched: candidate.metadata.activeVersionMatched
+        };
+        const expected = {
+            requestId: weeklyFact.requestId,
+            generation: weeklyFormalIdentity.publicationGeneration,
+            sourceFingerprint: weeklyFact.sourceFingerprint,
+            previousVersionKey: candidate.metadata.previous.versionKey,
+            previousSignature: candidate.metadata.previous.signature,
+            currentVersionKey: candidate.metadata.current.versionKey,
+            currentSignature: candidate.metadata.current.signature
+        };
+        void window.publishWeeklyFuturesTwelveGroupDualRun?.({
+            formalPair,
+            major5: {
+                formalApplied: true,
+                available: true,
+                direction: candidate.judgment.direction,
+                normalizedDirection: result.components.weekly.normalizedDirection,
+                qualityFactor: result.components.weekly.qualityFactor,
+                eligibleBrokerCount: candidate.judgment.eligibleBrokerCount,
+                requiredBrokerCount: candidate.judgment.requiredBrokerCount,
+                pairIdentity: major5PairIdentity,
+                requestId: weeklyFact.requestId,
+                sourceFingerprint: weeklyFact.sourceFingerprint
+            },
+            weeklyFormalIdentity
+        }, { isCurrentPublication: () => {
+            const latest = window.getWeeklyFormalIdentityFact?.() || null;
+            return latest.status === "available" &&
+                latest.publicationGeneration === expected.generation &&
+                latest.fact?.requestId === expected.requestId &&
+                latest.fact?.sourceFingerprint === expected.sourceFingerprint &&
+                optionMapJudgmentStateV2.weeklyCandidate?.metadata?.previous
+                    ?.versionKey === expected.previousVersionKey &&
+                optionMapJudgmentStateV2.weeklyCandidate?.metadata?.previous
+                    ?.signature === expected.previousSignature &&
+                optionMapJudgmentStateV2.weeklyCandidate?.metadata?.current
+                    ?.versionKey === expected.currentVersionKey &&
+                optionMapJudgmentStateV2.weeklyCandidate?.metadata?.current
+                    ?.signature === expected.currentSignature &&
+                weeklyTwelveGroupFormalPairContext?.previous?.versionKey ===
+                    expected.previousVersionKey &&
+                weeklyTwelveGroupFormalPairContext?.previous?.signature ===
+                    expected.previousSignature &&
+                weeklyTwelveGroupFormalPairContext?.current?.versionKey ===
+                    expected.currentVersionKey &&
+                weeklyTwelveGroupFormalPairContext?.current?.signature ===
+                    expected.currentSignature;
+        } });
+    }
     await window.publishOverallV2FormalEnvelope?.({
         logicVersion: window.OptionMapOverallV2FormalEnvelopeRuntime
             ?.OVERALL_V2_LOGIC_VERSION,
@@ -4641,6 +4731,7 @@ function updateWeeklyCandidateV2(selection) {
         !previous?.sourceDate || !previous?.versionKey ||
         !current?.sourceDate || !current?.versionKey
     ) {
+        weeklyTwelveGroupFormalPairContext = null;
         optionMapJudgmentStateV2.weeklyCandidate = {
             available: false,
             reason: "検証済みの正式週次2版を利用できません"
@@ -4651,6 +4742,7 @@ function updateWeeklyCandidateV2(selection) {
 
     const judgment = calculateWeeklyBrokerJudgment(previous, current);
     if (!judgment.available) {
+        weeklyTwelveGroupFormalPairContext = null;
         optionMapJudgmentStateV2.weeklyCandidate = {
             available: false,
             reason: "主要5社の公表比較データが不足しています"
@@ -4659,6 +4751,20 @@ function updateWeeklyCandidateV2(selection) {
         return;
     }
 
+    weeklyTwelveGroupFormalPairContext = {
+        previous: {
+            sourceDate: previous.sourceDate,
+            versionKey: previous.versionKey,
+            signature: previous.signature,
+            canonicalData: previous.futureOpenInterest || previous.data
+        },
+        current: {
+            sourceDate: current.sourceDate,
+            versionKey: current.versionKey,
+            signature: current.signature,
+            canonicalData: current.futureOpenInterest || current.data
+        }
+    };
     optionMapJudgmentStateV2.weeklyCandidate = {
         available: true,
         judgment,

@@ -236,5 +236,7 @@ test("正式5社・overallV2・storage・UIから隔離する", () => {
     assert.equal(weekly.SCORING_VERSION, 2);
     assert.equal(overallV2.CONFIG.weeklyNormalizationBase, 0.10);
     assert.doesNotMatch(source, /localStorage|indexedDB|setItem|\.put\(/);
-    assert.doesNotMatch(html, /weeklyFuturesTwelveGroupShadow/);
+    assert.match(html,
+        /<script src="js\/weeklyFuturesTwelveGroupShadow\.js"><\/script>/);
+    assert.doesNotMatch(html, /id="[^"]*TwelveGroup/);
 });
