@@ -47,9 +47,18 @@
             second: "2-digit", hour12: false }).format(new Date(value));
     };
     const price = value => finite(value) ? `${value.toLocaleString("ja-JP")}\u2060円` : "—";
+    const componentNumber = value => {
+        if (!finite(value)) return "—";
+        const rounded = Number(value.toFixed(1));
+        return `${rounded > 0 ? "+" : ""}${rounded}`;
+    };
+    const warning = value => ({
+        "週次データは検証済み正式historyを使用中": "週次データ：検証済みの正式履歴を使用"
+    })[value] || value;
     const component = (label, value) => value?.available === true ? { label, available: true,
-        baseline: signed(value.baselineDirection), current: signed(value.currentDirection),
-        delta: signed(value.directionDelta), movement: scoreMovement(value.directionDelta) } :
+        baseline: componentNumber(value.baselineDirection), current: componentNumber(value.currentDirection),
+        delta: componentNumber(value.directionDelta), movement: finite(value.directionDelta)
+            ? scoreMovement(Number(value.directionDelta.toFixed(1))) : "比較不可" } :
         { label, available: false, baseline: "—", current: "—", delta: "—", movement: "利用不可" };
 
     function unavailable(value = null) {
@@ -100,10 +109,11 @@
                 percent: `${signed(Number(priceComparison.percentDelta.toFixed(2)))}%` },
             relation: relation(comparison.divergence?.relation), dataQuality: {
                 current: quality(dataQuality.currentStatus), baseline: quality(dataQuality.baselineStatus),
-                transition: transition(dataQuality.transition), warnings: [...(dataQuality.currentWarnings || [])] },
+                transition: transition(dataQuality.transition),
+                warnings: [...(dataQuality.currentWarnings || [])].map(warning) },
             components: [component("オプション需給寄与", comparison.optionComponent),
                 component("週次先物需給", comparison.weeklyComponent)] });
     }
 
-    return deepFreeze({ createViewModel, scoreMovement, relation, reason });
+    return deepFreeze({ createViewModel, scoreMovement, componentNumber, relation, reason });
 });

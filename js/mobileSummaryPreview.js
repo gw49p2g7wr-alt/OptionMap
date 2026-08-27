@@ -82,8 +82,10 @@
             return row;
         }), ...(model.dataQuality ? [(() => {
             const row = document.createElement("p");
+            const informational = model.dataQuality.warnings.length > 0 &&
+                model.dataQuality.warnings.every(item => item === "週次データ：検証済みの正式履歴を使用");
             const warnings = model.dataQuality.warnings.length
-                ? `／注意：${model.dataQuality.warnings.join("、")}` : "";
+                ? `／${informational ? "" : "注意："}${model.dataQuality.warnings.join("、")}` : "";
             row.textContent = `データ品質：朝 ${model.dataQuality.baseline} → 現在 ${model.dataQuality.current}` +
                 `（${model.dataQuality.transition}）${warnings}`;
             return row;
@@ -431,8 +433,8 @@
         const format = value => new Date(value).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / 比較時間内 / 市場日 ${marketDate}` : "";
         text("morningBaselineSaveStatus", baseline.revisions.length > 1
-            ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${active.dataQuality.status}`
-            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${active.dataQuality.status}${session}`);
+            ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${qualityLabel(active.dataQuality.status)}`
+            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${qualityLabel(active.dataQuality.status)}${session}`);
     }
 
     async function saveMorningBaseline() {
