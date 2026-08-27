@@ -25,6 +25,8 @@
     };
     const qualityLabel = value => ({ complete: "データ良好", partial: "一部データ不足",
         unavailable: "データ利用不可" })[value] || "状態不明";
+    const morningQualityLabel = value => ({ complete: "良好", partial: "一部データ不足",
+        unavailable: "利用不可" })[value] || "状態不明";
     const freshnessLabel = key => ({ currentPriceAt: "現在値", qriAt: "QRIオプション",
         weeklyFuturesAt: "週次先物", weeklyOptionsAt: "週次オプション",
         participantAt: "参加者別" })[key] || key;
@@ -433,8 +435,8 @@
         const format = value => new Date(value).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / 比較時間内 / 市場日 ${marketDate}` : "";
         text("morningBaselineSaveStatus", baseline.revisions.length > 1
-            ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${qualityLabel(active.dataQuality.status)}`
-            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${qualityLabel(active.dataQuality.status)}${session}`);
+            ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${morningQualityLabel(active.dataQuality.status)}`
+            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${morningQualityLabel(active.dataQuality.status)}${session}`);
     }
 
     async function saveMorningBaseline() {

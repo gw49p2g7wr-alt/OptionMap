@@ -4513,6 +4513,12 @@ function formatOptionMapV2Status(value) {
         unavailable: "利用不可", invalid_input: "入力不正" })[value] || "状態不明";
 }
 
+function formatOptionMapV2Warning(value) {
+    return ({
+        "週次データは検証済み正式historyを使用中": "週次データ：検証済みの正式履歴を使用"
+    })[value] || value;
+}
+
 function renderOptionMapOverallJudgmentV2Internal() {
     const summaryElement = document.getElementById("optionMapOverallSummaryV2");
     if (!summaryElement) return;
@@ -4582,7 +4588,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
     } else {
         [...new Set(warnings)].forEach(warning => {
             const item = document.createElement("li");
-            item.textContent = warning;
+            item.textContent = formatOptionMapV2Warning(warning);
             warningsElement.appendChild(item);
         });
     }
