@@ -115,11 +115,13 @@ test("non-zero envelope does not become normal_no_change", async () => { const e
     const input = Envelope.toAvailabilityEvidenceInput(envelope);
     assert.equal(input.classification, "judgment_unavailable");
     assert.equal((await Availability.createEvidence(input)).safeForPartialApplicability, false); });
-test("module has no protected connections or runtime wiring", () => { const source = fs.readFileSync(
+test("foundation stays pure and is loaded only for the evidence runtime", () => { const source = fs.readFileSync(
     path.join(__dirname, "../js/qriOptionsFormalComparisonEvidence.js"), "utf8");
     for (const token of ["localStorage", "indexedDB", "fetch(", "setTimeout",
         "setInterval", "OptionJudgment", "OverallV2", "SessionScope", "MorningBaseline"])
         assert.doesNotMatch(source, new RegExp(token.replace("(", "\\(")));
     assert.doesNotMatch(source, /(^|[^.\w])document\./);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.doesNotMatch(html, /qriOptionsFormalComparisonEvidence\.js/); });
+    assert.match(html, /qriOptionsFormalComparisonEvidence\.js/);
+    assert.ok(html.indexOf("qriOptionsFormalComparisonEvidence.js") <
+        html.indexOf("formalOptionAvailabilityEvidenceRuntime.js")); });

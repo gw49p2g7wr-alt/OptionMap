@@ -1020,6 +1020,9 @@
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
+<script src="js/formalOptionAvailabilityEvidence.js"></script>
+<script src="js/qriOptionsFormalComparisonEvidence.js"></script>
+<script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
 <script src="js/dataFreshness.js"></script>
 <script src="js/qriOptionsLastValidRestore.js"></script>
 <script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>
@@ -1261,6 +1264,7 @@ let weeklyOptionsBackfillCancelled = false;
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
 let qriOptionsHistoryComparisonSequence = 0;
+let qriOptionsFormalComparisonPublication = null;
 
 function selectedQriHistoryContract() {
     if (qriContractSelectionState?.mode === "specific") return qriContractSelectionState.contract;
@@ -1298,11 +1302,12 @@ function appendQriComparisonType(parent, label, data) {
     parent.appendChild(section);
 }
 
-async function renderQriOptionsHistoryComparison() {
+async function renderQriOptionsHistoryComparison(executionContext = null,
+    { contract: explicitContract = null } = {}) {
     const container = document.getElementById("qriOptionsHistoryComparisonContent");
     if (!container) return { status: "missing_container" };
     const sequence = ++qriOptionsHistoryComparisonSequence;
-    const contract = selectedQriHistoryContract();
+    const contract = explicitContract ?? selectedQriHistoryContract();
     container.textContent = contract ? `${contract}の正式historyを確認中…`
         : "対象限月を確認中…";
     try {
@@ -1310,9 +1315,28 @@ async function renderQriOptionsHistoryComparison() {
         const result = await window.OptionMapQriOptionsHistoryComparison
             .compareLatestSavedDates(loaded.history, contract);
         if (!window.OptionMapQriOptionsHistoryComparison.isCurrentResult({
-            requestedContract: contract, currentContract: selectedQriHistoryContract(),
+            requestedContract: contract,
+            currentContract: explicitContract ?? selectedQriHistoryContract(),
             sequence, currentSequence: qriOptionsHistoryComparisonSequence, result
         })) return { status: "stale_ignored" };
+        const previousEntry = loaded.history.entries.find(entry =>
+            entry.contract === result.contract && entry.sourceDateKey === result.previousSourceDate);
+        const currentEntry = loaded.history.entries.find(entry =>
+            entry.contract === result.contract && entry.sourceDateKey === result.currentSourceDate);
+        if (executionContext) {
+            qriOptionsFormalComparisonPublication = JSON.parse(JSON.stringify({
+                result,
+                previousRevision: previousEntry?.revisions.find(revision =>
+                    revision.versionKey === result.previousVersionKey) || null,
+                currentRevision: currentEntry?.revisions.find(revision =>
+                    revision.versionKey === result.currentVersionKey) || null,
+                previousEntryIdentity: previousEntry?.entryKey || null,
+                currentEntryIdentity: currentEntry?.entryKey || null,
+                previousActiveVersionKey: previousEntry?.activeVersionKey || null,
+                currentActiveVersionKey: currentEntry?.activeVersionKey || null,
+                runtimeContext: executionContext
+            }));
+        }
         const view = window.OptionMapQriOptionsHistoryComparisonView.createView(result);
         container.replaceChildren();
         const meta = document.createElement("p");
@@ -1333,6 +1357,13 @@ async function renderQriOptionsHistoryComparison() {
         return { status: view.state, contract };
     } catch (error) {
         if (sequence !== qriOptionsHistoryComparisonSequence) return { status: "stale_ignored" };
+        if (executionContext) {
+            qriOptionsFormalComparisonPublication = null;
+            window.invalidateFormalOptionAvailabilityEvidence?.({
+                requestId: executionContext.requestId, reason: "comparison_reset",
+                isCurrentRequest: executionContext.isCurrentRequest
+            });
+        }
         container.textContent = "正式history比較を読み込めませんでした。";
         console.warn("QRI正式history比較の表示に失敗しました:", error);
         return { status: "failed", contract };
@@ -1378,12 +1409,10 @@ async function persistQriOptionsHistory(canonical, fetchedAt, isCurrentRequest) 
             mode: "auto", isCurrentRequest
         });
         await renderQriOptionsHistoryStatus();
-        await renderQriOptionsHistoryComparison();
         return result;
     } catch (error) {
         console.warn("QRI正式historyへの保存に失敗しました:", error);
         await renderQriOptionsHistoryStatus();
-        await renderQriOptionsHistoryComparison();
         return { status: "failed", reason: "persistence_exception",
             errorCode: error?.message || String(error) };
     }
@@ -4597,6 +4626,11 @@ async function fetchQriData({ requestId } = {}) {
         requestId: activeRequestId,
         isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
     });
+    qriOptionsFormalComparisonPublication = null;
+    window.beginFormalOptionAvailabilityEvidencePublication?.({
+        requestId: activeRequestId,
+        isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+    });
     [
         "html",
         "referencePrice",
@@ -4724,6 +4758,53 @@ async function fetchQriData({ requestId } = {}) {
             }, {
                 isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
             });
+            const qriState = window.getQriFormalIdentityFact?.();
+            const qriFact = qriState?.fact;
+            const formalComparisonContract = qriState?.status === "available" &&
+                qriFact?.sourceClass === "formal_live" &&
+                qriFact.identityVerified === true &&
+                qriFact.acquisitionVerified === true &&
+                typeof qriFact.contract === "string" && qriFact.contract.trim()
+                ? qriFact.contract : null;
+            if (formalComparisonContract) {
+                await renderQriOptionsHistoryComparison({
+                    comparisonExecuted: true,
+                    requestId: activeRequestId,
+                    generation: qriFact.generation,
+                    sourceFingerprint: qriFact.generation.fingerprint,
+                    mixedAcquisition: false,
+                    isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+                }, { contract: formalComparisonContract });
+            }
+            const comparison = qriOptionsFormalComparisonPublication;
+            if (formalComparisonContract && comparison) {
+                await window.publishFormalOptionAvailabilityEvidence?.({
+                    historyComparisonResult: comparison.result,
+                    previousRevision: comparison.previousRevision,
+                    currentRevision: comparison.currentRevision,
+                    currentQriFormalIdentity: qriFact,
+                    runtimeContext: {
+                        comparisonExecuted: comparison.runtimeContext.comparisonExecuted,
+                        requestId: comparison.runtimeContext.requestId,
+                        generation: comparison.runtimeContext.generation,
+                        sourceFingerprint: comparison.runtimeContext.sourceFingerprint,
+                        mixedAcquisition: comparison.runtimeContext.mixedAcquisition,
+                        previousEntryIdentity: comparison.previousEntryIdentity,
+                        currentEntryIdentity: comparison.currentEntryIdentity,
+                        previousActiveVersionKey: comparison.previousActiveVersionKey,
+                        currentActiveVersionKey: comparison.currentActiveVersionKey
+                    }
+                }, { isCurrentRequest: () =>
+                    isCurrentFetchRequest(source, activeRequestId) &&
+                    window.getQriFormalIdentityFact?.()?.publicationGeneration ===
+                        qriState.publicationGeneration });
+            } else {
+                window.invalidateFormalOptionAvailabilityEvidence?.({
+                    requestId: activeRequestId,
+                    reason: comparison?.result?.reason || "comparison_unavailable",
+                    isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+                });
+            }
         }
 
         if (
@@ -5024,6 +5105,10 @@ async function fetchQriData({ requestId } = {}) {
         window.markQriFormalIdentityUnavailable?.({
             requestId: activeRequestId,
             reason: "acquisition_failed",
+            isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+        });
+        window.invalidateFormalOptionAvailabilityEvidence?.({
+            requestId: activeRequestId, reason: "qri_identity_unavailable",
             isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
         });
         if (!qriHtmlAcquired) {

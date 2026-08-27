@@ -79,13 +79,15 @@ test("output is deeply frozen", async () => { const value = await create();
     assert.equal(Object.isFrozen(value.comparisonIdentity.previous), true); });
 test("input is not mutated", async () => { const input = fixture(); const before = structuredClone(input);
     await Evidence.createEvidence(input); assert.deepEqual(input, before); });
-test("module has no storage fetch DOM Overall or Morning wiring", () => { const source = fs.readFileSync(
+test("foundation stays pure and is loaded only for the evidence runtime", () => { const source = fs.readFileSync(
     path.join(__dirname, "../js/formalOptionAvailabilityEvidence.js"), "utf8");
     for (const token of ["localStorage", "indexedDB", "fetch(", "OverallV2",
         "MorningBaseline", "setTimeout", "setInterval"]) assert.doesNotMatch(source, new RegExp(token.replace("(", "\\(")));
     assert.doesNotMatch(source, /(^|[^.\w])document\./);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.doesNotMatch(html, /formalOptionAvailabilityEvidence\.js/); });
+    assert.match(html, /formalOptionAvailabilityEvidence\.js/);
+    assert.ok(html.indexOf("formalOptionAvailabilityEvidence.js") <
+        html.indexOf("formalOptionAvailabilityEvidenceRuntime.js")); });
 test("taxonomy is exact and frozen", () => { assert.deepEqual([...Evidence.TAXONOMY], [
     "normal_no_change", "source_unavailable", "comparison_unavailable", "fallback_or_reference",
     "judgment_unavailable", "identity_missing", "invalid_input", "stale_or_mixed", "unknown"]);
