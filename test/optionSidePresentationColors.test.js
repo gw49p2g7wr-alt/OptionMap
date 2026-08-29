@@ -12,11 +12,24 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), 
 test("CALL and PUT chart presentation uses red and blue option-side constants", () => {
   assert.match(script, /OPTION_SIDE_CHART_COLORS[\s\S]*call:[\s\S]*rgba\(255, 99, 132,[\s\S]*put:[\s\S]*rgba\(74, 144, 226,/);
   assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.call\.soft/g) || []).length, 2);
-  assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.call\.strong/g) || []).length, 2);
+  assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.call\.strong/g) || []).length, 3);
   assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.call\.border/g) || []).length, 2);
   assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.put\.soft/g) || []).length, 2);
-  assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.put\.strong/g) || []).length, 2);
+  assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.put\.strong/g) || []).length, 3);
   assert.equal((script.match(/OPTION_SIDE_CHART_COLORS\.put\.border/g) || []).length, 2);
+});
+
+test("QRI OI TOP3 markers reuse CALL red and PUT blue option-side colors", () => {
+  const plugin = script.match(/const combinedWallRankPlugin = \{[\s\S]*?\n\};/)?.[0] || "";
+  assert.match(plugin, /datasetIndex === 0\s*\? OPTION_SIDE_CHART_COLORS\.call\.strong\s*: OPTION_SIDE_CHART_COLORS\.put\.strong/);
+});
+
+test("QRI OI TOP3 marker ranking, position and displayed rank stay unchanged", () => {
+  const plugin = script.match(/const combinedWallRankPlugin = \{[\s\S]*?\n\};/)?.[0] || "";
+  assert.match(plugin, /candidates\.sort\(\(a, b\) => b\.value - a\.value\);\s*const topThree = candidates\.slice\(0, 3\)/);
+  assert.match(plugin, /const x = bar\.x;[\s\S]*?chart\.chartArea\.top \+ 13,[\s\S]*?bar\.y - 14/);
+  assert.match(plugin, /chart\.chartArea\.bottom - 13,[\s\S]*?bar\.y \+ 14 \+ rankIndex \* 25/);
+  assert.match(plugin, /ctx\.fillText\(\s*String\(rankIndex \+ 1\),\s*x,\s*y\s*\)/);
 });
 
 test("saved option reference headings follow CALL red and PUT blue CSS variables", () => {

@@ -3690,8 +3690,8 @@ const combinedWallRankPlugin = {
 
                 ctx.fillStyle =
                     datasetIndex === 0
-                        ? "rgba(0, 82, 204, 0.95)"
-                        : "rgba(220, 20, 60, 0.95)";
+                        ? OPTION_SIDE_CHART_COLORS.call.strong
+                        : OPTION_SIDE_CHART_COLORS.put.strong;
 
                 ctx.fill();
 
