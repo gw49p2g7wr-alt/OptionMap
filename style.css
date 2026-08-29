@@ -6,6 +6,11 @@ body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
 
+:root {
+    --option-call-color: #9b4058;
+    --option-put-color: #285f9e;
+}
+
 
 /* 全体の幅 */
 
@@ -858,11 +863,11 @@ canvas {
 }
 
 .qri-options-saved-reference-side.is-call strong {
-    color: #285f9e;
+    color: var(--option-call-color);
 }
 
 .qri-options-saved-reference-side.is-put strong {
-    color: #9b4058;
+    color: var(--option-put-color);
 }
 
 .qri-options-saved-reference-side ol {
@@ -955,7 +960,7 @@ canvas {
     height: 360px;
 }
 
-/* CALL・PUT 壁候補カード */
+/* 上側・下側の重要帯色。CALL / PUT option-side配色とは別semantic。 */
 .wall-summary {
     display: grid;
     grid-template-columns: 1fr 1fr;

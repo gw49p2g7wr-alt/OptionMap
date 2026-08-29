@@ -22,6 +22,36 @@ const PARTICIPANT_CUMULATIVE_COLORS = Object.freeze({
     })
 });
 
+const TRADE_DIRECTION_CHART_COLORS = Object.freeze({
+    buy: Object.freeze({
+        fill: "rgba(255, 99, 132, 0.75)",
+        border: "rgba(255, 99, 132, 1)"
+    }),
+    sell: Object.freeze({
+        fill: "rgba(54, 162, 235, 0.75)",
+        border: "rgba(54, 162, 235, 1)"
+    })
+});
+
+const TRADE_DIRECTION_MARKERS = Object.freeze({
+    buy: "🔴",
+    sell: "🔵",
+    neutral: "○"
+});
+
+const OPTION_SIDE_CHART_COLORS = Object.freeze({
+    call: Object.freeze({
+        soft: "rgba(255, 99, 132, 0.45)",
+        strong: "rgba(220, 20, 60, 0.95)",
+        border: "rgba(255, 99, 132, 1)"
+    }),
+    put: Object.freeze({
+        soft: "rgba(74, 144, 226, 0.45)",
+        strong: "rgba(0, 82, 204, 0.95)",
+        border: "rgba(74, 144, 226, 1)"
+    })
+});
+
 function readableLegendOptions(display = true) {
     return {
         display,
@@ -2396,8 +2426,8 @@ const rows = Array.from(rowMap.values());
           {
             label: "売り建玉",
             data: sellValues,
-            backgroundColor: "rgba(255, 99, 132, 0.75)",
-            borderColor: "rgba(255, 99, 132, 1)",
+            backgroundColor: TRADE_DIRECTION_CHART_COLORS.sell.fill,
+            borderColor: TRADE_DIRECTION_CHART_COLORS.sell.border,
             borderWidth: 1,
             categoryPercentage: 0.8,
             barPercentage: 0.9,
@@ -2405,8 +2435,8 @@ const rows = Array.from(rowMap.values());
           {
             label: "買い建玉",
             data: buyValues,
-            backgroundColor: "rgba(54, 162, 235, 0.75)",
-            borderColor: "rgba(54, 162, 235, 1)",
+            backgroundColor: TRADE_DIRECTION_CHART_COLORS.buy.fill,
+            borderColor: TRADE_DIRECTION_CHART_COLORS.buy.border,
             borderWidth: 1,
             categoryPercentage: 0.8,
             barPercentage: 0.9,
@@ -5756,11 +5786,11 @@ async function renderSavedSnapshots() {
         );
 
         const weeklyStatusLabels = {
-            estimatedBuy: "🔵 買い推定",
-            estimatedSell: "🔴 売り推定",
-            reducedBuy: "↘️ 買い縮小",
-            reducedSell: "↗️ 売り縮小",
-            unconfirmed: "○ 未確定"
+            estimatedBuy: `${TRADE_DIRECTION_MARKERS.buy} 買い推定`,
+            estimatedSell: `${TRADE_DIRECTION_MARKERS.sell} 売り推定`,
+            reducedBuy: `${TRADE_DIRECTION_MARKERS.buy}↘️ 買い縮小`,
+            reducedSell: `${TRADE_DIRECTION_MARKERS.sell}↗️ 売り縮小`,
+            unconfirmed: `${TRADE_DIRECTION_MARKERS.neutral} 未確定`
         };
         
         if (weeklyDirectionElement) {
@@ -5772,15 +5802,20 @@ async function renderSavedSnapshots() {
             } = currentWeeklyJudgment;
         
             if (weeklyDirection === "強い買い優勢") {
-                weeklyDirectionElement.textContent = "🔵 強い買い優勢";
+                weeklyDirectionElement.textContent =
+                    `${TRADE_DIRECTION_MARKERS.buy} 強い買い優勢`;
             } else if (weeklyDirection === "買い優勢") {
-                weeklyDirectionElement.textContent = "🔵 買い優勢";
+                weeklyDirectionElement.textContent =
+                    `${TRADE_DIRECTION_MARKERS.buy} 買い優勢`;
             } else if (weeklyDirection === "強い売り優勢") {
-                weeklyDirectionElement.textContent = "🔴 強い売り優勢";
+                weeklyDirectionElement.textContent =
+                    `${TRADE_DIRECTION_MARKERS.sell} 強い売り優勢`;
             } else if (weeklyDirection === "売り優勢") {
-                weeklyDirectionElement.textContent = "🔴 売り優勢";
+                weeklyDirectionElement.textContent =
+                    `${TRADE_DIRECTION_MARKERS.sell} 売り優勢`;
             } else {
-                weeklyDirectionElement.textContent = "○ 方向感薄い";
+                weeklyDirectionElement.textContent =
+                    `${TRADE_DIRECTION_MARKERS.neutral} 方向感薄い`;
             }
 
             if (weeklyBrokerCommentElement) {
@@ -6882,13 +6917,15 @@ function renderQriContractDisplayChart() {
             { label: isVolumeMode ? "CALL取引高" : "CALL建玉残",
                 data: numericCallValues.map(value => value / maxCall * 100),
                 backgroundColor: createBarColors(numericCallValues,
-                    "rgba(74, 144, 226, 0.45)", "rgba(0, 82, 204, 0.95)"),
-                borderColor: "rgba(74, 144, 226, 1)", borderWidth: 1 },
+                    OPTION_SIDE_CHART_COLORS.call.soft,
+                    OPTION_SIDE_CHART_COLORS.call.strong),
+                borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1 },
             { label: isVolumeMode ? "PUT取引高" : "PUT建玉残",
                 data: numericPutValues.map(value => -(value / maxPut * 100)),
                 backgroundColor: createBarColors(numericPutValues,
-                    "rgba(255, 99, 132, 0.45)", "rgba(220, 20, 60, 0.95)"),
-                borderColor: "rgba(255, 99, 132, 1)", borderWidth: 1 }
+                    OPTION_SIDE_CHART_COLORS.put.soft,
+                    OPTION_SIDE_CHART_COLORS.put.strong),
+                borderColor: OPTION_SIDE_CHART_COLORS.put.border, borderWidth: 1 }
         ] },
         options: { responsive: true, maintainAspectRatio: false, animation: false,
             scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 16, maxRotation: 45,
@@ -7243,12 +7280,12 @@ console.log(
 
                     backgroundColor: createBarColors(
                         numericCallValues,
-                        "rgba(74, 144, 226, 0.45)",
-                        "rgba(0, 82, 204, 0.95)"
+                        OPTION_SIDE_CHART_COLORS.call.soft,
+                        OPTION_SIDE_CHART_COLORS.call.strong
                     ),
 
                     borderColor:
-                        "rgba(74, 144, 226, 1)",
+                        OPTION_SIDE_CHART_COLORS.call.border,
 
                     borderWidth: 1
                 },
@@ -7260,12 +7297,12 @@ console.log(
 
                     backgroundColor: createBarColors(
                         numericPutValues,
-                        "rgba(255, 99, 132, 0.45)",
-                        "rgba(220, 20, 60, 0.95)"
+                        OPTION_SIDE_CHART_COLORS.put.soft,
+                        OPTION_SIDE_CHART_COLORS.put.strong
                     ),
 
                     borderColor:
-                        "rgba(255, 99, 132, 1)",
+                        OPTION_SIDE_CHART_COLORS.put.border,
 
                     borderWidth: 1
                 }

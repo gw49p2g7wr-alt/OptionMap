@@ -11,6 +11,16 @@
     const RANGE_MODES = Object.freeze([
         "plus_minus_3000", "plus_minus_5000", "all"
     ]);
+    const OPTION_SIDE_IV_COLORS = Object.freeze({
+        call: Object.freeze({
+            line: "rgba(211, 65, 101, 1)",
+            fill: "rgba(211, 65, 101, 0.18)"
+        }),
+        put: Object.freeze({
+            line: "rgba(36, 111, 192, 1)",
+            fill: "rgba(36, 111, 192, 0.18)"
+        })
+    });
 
     function resolveChannel(selection, runtime) {
         if (selection?.mode === "auto") {
@@ -31,12 +41,13 @@
     function dataset(series) {
         if (!series || series.state === "empty") return null;
         const call = series.optionType === "call";
+        const colors = call ? OPTION_SIDE_IV_COLORS.call : OPTION_SIDE_IV_COLORS.put;
         return {
             label: call ? "CALL IV" : "PUT IV",
             data: series.values.slice(),
-            borderColor: call ? "rgba(36, 111, 192, 1)" : "rgba(211, 65, 101, 1)",
-            backgroundColor: call ? "rgba(36, 111, 192, 0.18)" : "rgba(211, 65, 101, 0.18)",
-            pointBackgroundColor: call ? "rgba(36, 111, 192, 1)" : "rgba(211, 65, 101, 1)",
+            borderColor: colors.line,
+            backgroundColor: colors.fill,
+            pointBackgroundColor: colors.line,
             borderWidth: 2,
             pointRadius: 4,
             pointHoverRadius: 6,

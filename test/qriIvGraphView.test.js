@@ -23,6 +23,12 @@ test("CALL and PUT line datasets preserve null and disable gap spanning", () => 
     ));
     assert.deepEqual(result.datasets.map(item => item.label), ["CALL IV", "PUT IV"]);
     assert.deepEqual(result.datasets[0].data, [20, null, 22]);
+    assert.deepEqual(result.datasets.map(item => item.borderColor),
+        ["rgba(211, 65, 101, 1)", "rgba(36, 111, 192, 1)"]);
+    assert.deepEqual(result.datasets.map(item => item.backgroundColor),
+        ["rgba(211, 65, 101, 0.18)", "rgba(36, 111, 192, 0.18)"]);
+    assert.deepEqual(result.datasets.map(item => item.pointBackgroundColor),
+        ["rgba(211, 65, 101, 1)", "rgba(36, 111, 192, 1)"]);
     assert.equal(result.datasets.every(item => item.spanGaps === false), true);
     assert.equal(result.datasets.every(item => item.tension === 0), true);
 });
