@@ -7,6 +7,21 @@ const CHART_TEXT_SIZE = Object.freeze({
     tooltip: 14
 });
 
+const PARTICIPANT_CUMULATIVE_COLORS = Object.freeze({
+    estimatedBuy: Object.freeze({
+        day: "rgba(255, 99, 132, 0.85)",
+        night: "rgba(255, 99, 132, 0.35)"
+    }),
+    estimatedSell: Object.freeze({
+        day: "rgba(54, 162, 235, 0.85)",
+        night: "rgba(54, 162, 235, 0.35)"
+    }),
+    unconfirmed: Object.freeze({
+        day: "rgba(140, 140, 140, 0.60)",
+        night: "rgba(180, 180, 180, 0.30)"
+    })
+});
+
 function readableLegendOptions(display = true) {
     return {
         display,
@@ -6229,30 +6244,20 @@ if (cumulativeCanvas) {
             label: "日中",
             data: companyDailySeries.map(item => item.day),
             backgroundColor: companyDailySeries.map(item => {
-                if (item.status === "estimatedBuy") {
-                    return "rgba(54, 162, 235, 0.85)";
-                }
-        
-                if (item.status === "estimatedSell") {
-                    return "rgba(255, 99, 132, 0.85)";
-                }
-        
-                return "rgba(140, 140, 140, 0.60)";
+                const colors =
+                    PARTICIPANT_CUMULATIVE_COLORS[item.status] ||
+                    PARTICIPANT_CUMULATIVE_COLORS.unconfirmed;
+                return colors.day;
             })
         },
         {
             label: "夜間",
             data: companyDailySeries.map(item => item.night),
             backgroundColor: companyDailySeries.map(item => {
-                if (item.status === "estimatedBuy") {
-                    return "rgba(54, 162, 235, 0.35)";
-                }
-        
-                if (item.status === "estimatedSell") {
-                    return "rgba(255, 99, 132, 0.35)";
-                }
-        
-                return "rgba(180, 180, 180, 0.30)";
+                const colors =
+                    PARTICIPANT_CUMULATIVE_COLORS[item.status] ||
+                    PARTICIPANT_CUMULATIVE_COLORS.unconfirmed;
+                return colors.night;
             })
         }
       ]
