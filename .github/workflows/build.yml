@@ -1,9 +1,7 @@
 name: Build Windows App
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,11 +14,9 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm install
+      - run: npm ci
 
-      - run: npm run dist
-        env:
-         GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      - run: npm run dist -- --win nsis --x64 --publish never
 
       - uses: actions/upload-artifact@v4
         with:

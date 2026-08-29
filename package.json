@@ -1,6 +1,6 @@
 {
   "name": "optionmap",
-  "version": "1.0.0",
+  "version": "1.1.0-beta.1",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -10,12 +10,43 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "OptionMap - Nikkei 225 options and futures market analysis",
   "build": {
     "appId": "com.natsu.optionmap",
     "productName": "OptionMap",
+    "files": [
+      "index.html",
+      "main.js",
+      "style.css",
+      "js/**/*",
+      "!js/script2026807.js",
+      "!js/script_v0.92.js",
+      "!.env",
+      "!.env.*",
+      "!test{,/**/*}",
+      "!.github{,/**/*}",
+      "!docs{,/**/*}",
+      "!README*",
+      "!ROADMAP*",
+      "!IDEAS*",
+      "!OptionMap.code-workspace",
+      "!data{,/**/*}",
+      "!dist{,/**/*}",
+      "!**/.DS_Store"
+    ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
     }
   },
   "devDependencies": {
