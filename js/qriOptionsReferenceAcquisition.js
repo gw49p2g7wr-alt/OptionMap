@@ -1,6 +1,8 @@
-(function (factory) {
-    if (typeof module === "object" && module.exports) module.exports = factory();
-})(function () {
+(function (root, factory) {
+    const api = factory();
+    if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
+    if (root) root.OptionMapQriOptionsReferenceAcquisition = api;
+})(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
 
     const CONTRACT_PATTERN = /^20\d{2}-(0[1-9]|1[0-2])$/;

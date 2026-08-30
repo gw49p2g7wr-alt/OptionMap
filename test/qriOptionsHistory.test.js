@@ -269,7 +269,7 @@ test("reference history rejects unsupported context and invalid candidates", asy
     "specific_display_not_persisted");
 });
 
-test("reference persistence is storage-only and has no formal or runtime dependencies", () => {
+test("reference persistence is storage-only and production calls it only through reference wiring", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsHistoryPersistence.js"), "utf8");
     assert.doesNotMatch(source, /publishQriFormalIdentity|FormalOptionAvailability|CurrentPrice|OverallV2|Morning|LastValid|optionMapLastValid|optionMapQriOptionsLastValid|option signal|document\.|localStorage|fetch-option-page/);
@@ -277,7 +277,11 @@ test("reference persistence is storage-only and has no formal or runtime depende
         source.indexOf("const getState"));
     assert.doesNotMatch(referenceMethod, /isActiveContract/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.doesNotMatch(html, /persistReferenceContractCache/);
+    const referenceWiring = html.slice(
+        html.indexOf("function initializeQriReferenceAcquisitionRuntime"),
+        html.indexOf("function validateQriPayload"));
+    assert.match(referenceWiring, /persistReferenceContractCache/);
+    assert.equal((html.match(/persistReferenceContractCache/g) || []).length, 1);
 });
 
 test("renderer wiring persists only in fetchQriData and leaves specific path disconnected", () => {

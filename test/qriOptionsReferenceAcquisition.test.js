@@ -219,10 +219,11 @@ test("missing dependency is a programming error", () => {
         /missing_dependency:fetchReferencePage/);
 });
 
-test("module is pure and production wiring is absent", () => {
+test("module stays pure while exposing its factory for production wiring", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsReferenceAcquisition.js"), "utf8");
     assert.doesNotMatch(source, /FormalOptionAvailability|publishQriFormal|LastValid|OverallV2|Morning|optionSignal|CurrentPrice|IvAdoption|MobileSummary|document\.|indexedDB|ipcRenderer|BrowserWindow|fetch\s*\(|setTimeout|setInterval/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.doesNotMatch(html, /qriOptionsReferenceAcquisition/);
+    assert.match(source, /root\.OptionMapQriOptionsReferenceAcquisition = api/);
+    assert.match(html, /qriOptionsReferenceAcquisition\.js/);
 });

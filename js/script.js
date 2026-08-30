@@ -4574,7 +4574,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
     const result = calculateOptionMapOverallJudgmentV2();
     optionMapJudgmentStateV2.result = result;
     optionMapJudgmentStateV2.lastError = null;
-    void publishFormalIdentityEnvelopesV2(result);
+    const formalPublication = publishFormalIdentityEnvelopesV2(result);
 
     const directionElement = document.getElementById("optionMapV2Direction");
     const scoreElement = document.getElementById("optionMapV2DirectionScore");
@@ -4588,7 +4588,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
         !directionElement || !scoreElement || !confidenceElement ||
         !statusElement || !optionElement || !weeklyElement || !warningsElement
     ) {
-        return;
+        return formalPublication;
     }
 
     directionElement.textContent = result.directionLabel ||
@@ -4652,6 +4652,7 @@ function renderOptionMapOverallJudgmentV2Internal() {
     } else {
         summaryElement.classList.add("is-neutral");
     }
+    return formalPublication;
 }
 
 async function publishFormalIdentityEnvelopesV2(result) {
@@ -4847,13 +4848,18 @@ function renderWeeklyTwelveGroupReference() {
 renderWeeklyTwelveGroupReference();
 
 function safeRenderOptionMapOverallJudgmentV2() {
-    if (!OPTION_MAP_V2_ENABLED) return;
+    if (!OPTION_MAP_V2_ENABLED) return Promise.resolve(null);
 
     try {
-        renderOptionMapOverallJudgmentV2Internal();
+        return Promise.resolve(renderOptionMapOverallJudgmentV2Internal()).catch(error => {
+            optionMapJudgmentStateV2.lastError = error;
+            console.error("OptionMap総合判断 v2 の正式公開に失敗しました:", error);
+            return null;
+        });
     } catch (error) {
         optionMapJudgmentStateV2.lastError = error;
         console.error("OptionMap総合判断 v2 の描画に失敗しました:", error);
+        return Promise.resolve(null);
     }
 }
 

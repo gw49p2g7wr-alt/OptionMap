@@ -1110,6 +1110,8 @@
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
+<script src="js/qriOptionsReferenceAcquisition.js"></script>
+<script src="js/qriOptionsReferenceAcquisitionRuntime.js"></script>
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
@@ -1364,6 +1366,7 @@ let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
+let qriReferenceAcquisitionRuntime = null;
 let qriOptionsHistoryComparisonSequence = 0;
 let qriOptionsFormalComparisonPublication = null;
 
@@ -4125,6 +4128,61 @@ function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {
     };
 }
 
+function initializeQriReferenceAcquisitionRuntime() {
+    if (qriReferenceAcquisitionRuntime) return qriReferenceAcquisitionRuntime;
+    const lifecycle = { getState: () => qriReferenceAcquisitionRuntime?.getLifecycleState() ||
+        { generation: 0, disposed: false } };
+    const buildFormalContext = ({ requestId, formalCompletionVerified }) => {
+        const state = window.getQriFormalIdentityFact?.();
+        const fact = state?.status === "available" && state.requestId === requestId
+            ? state.fact : null;
+        return { parentMarketRefreshRequestId: requestId,
+            formalPublicationGeneration: state?.publicationGeneration ?? null,
+            formalCompletionVerified: formalCompletionVerified === true,
+            sourceClass: fact?.sourceClass || null,
+            identityVerified: fact?.identityVerified === true,
+            acquisitionVerified: fact?.acquisitionVerified === true,
+            openInterestStatus: fact ? "available" : null,
+            activeContract: fact?.contract || null,
+            formalTradingDate: fact?.tradingDate || null,
+            activeCanonicalVersionKey: fact?.canonicalVersionKey || null,
+            activeSourceUrl: qriOptionsDisplayLiveState?.canonical?.sourceUrl || null,
+            availableContracts: qriContractManifest?.availableContracts
+                ? JSON.parse(JSON.stringify(qriContractManifest.availableContracts)) : null };
+    };
+    const orchestrator = window.OptionMapQriOptionsReferenceAcquisition
+        .createQriReferenceAcquisitionOrchestrator({
+            fetchReferencePage: async url => {
+                const response = await ipcRenderer.invoke("fetch-option-page", url);
+                if (!response?.success) throw new Error(response?.error || "reference_fetch_failed");
+                if (response.sourceUrl !== url) throw new Error("reference_source_url_mismatch");
+                return response.html;
+            },
+            buildCanonical: (html, { sourceUrl }) =>
+                window.OptionMapQriOptions.parseQriOptionsPage(html, sourceUrl),
+            validateCanonical: canonical => window.OptionMapQriOptions.validateCanonical(
+                canonical, { allowUnresolvedContracts: true }),
+            buildCache: canonical => window.OptionMapQriOptions.createCacheV2(
+                canonical, new Date().toISOString()),
+            validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
+            persistReference: (cache, context) =>
+                qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            getCurrentFormalContext: () => buildFormalContext({
+                requestId: qriReferenceAcquisitionRuntime?.getState().runtime.activeRequestId,
+                formalCompletionVerified: qriReferenceAcquisitionRuntime?.getState()
+                    .runtime.formalCompletedRequestId != null }),
+            getCurrentLifecycleState: () => lifecycle.getState(),
+            now: () => new Date().toISOString(),
+            createRequestId: () => window.createFetchRequestId("qriReference")
+        });
+    qriReferenceAcquisitionRuntime = window.OptionMapQriOptionsReferenceAcquisitionRuntime
+        .createRuntime({ orchestrator, buildFormalContext });
+    return qriReferenceAcquisitionRuntime;
+}
+
+window.getQriReferenceAcquisitionState = () =>
+    initializeQriReferenceAcquisitionRuntime().getState();
+
 function validateQriPayload(payload) {
     if (
         !payload ||
@@ -5706,6 +5764,7 @@ function refreshAllMarketData() {
     }
 
     const requestId = window.createFetchRequestId("marketRefresh");
+    initializeQriReferenceAcquisitionRuntime().beginMarketRefresh(requestId);
     window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
     window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     const startedAt = new Date().toISOString();
@@ -5738,7 +5797,7 @@ function refreshAllMarketData() {
             weeklyOptions: weeklyResult.optionsResult
         };
 
-        window.renderOptionMapOverallJudgmentV2?.();
+        await window.renderOptionMapOverallJudgmentV2?.();
         await window.OptionMapMobileSummaryPreview?.update({
             ...(qriResult?.data || {}),
             fetchedAt: qriResult?.fetchedAt || null
@@ -5757,6 +5816,7 @@ function refreshAllMarketData() {
         marketRefreshPromise = null;
         await window.publishMorningComparisonV4Runtime?.();
         window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
+        initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
     });
 
     return marketRefreshPromise;
