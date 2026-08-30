@@ -176,6 +176,110 @@ test("persistence saves auto only, rejects stale and never treats unpublished as
     assert.equal(revision.canonical.records.find(item => item.value === 0).published, true);
 });
 
+test("reference history adds a separate contract without changing the existing entry", async () => {
+    const store = makeStore();
+    const persistence = persistenceApi.createQriOptionsHistoryPersistence({ store,
+        now: () => timestamp });
+    await persistence.openPersistence();
+    await persistence.persistActiveContractCache(await cache(),
+        { mode: "auto", isCurrentRequest: () => true });
+    const existing = structuredClone((await store.loadHistory()).history.entries[0]);
+    const referenceCache = await cache({ contract: "2026-10" });
+    const inputBefore = structuredClone(referenceCache);
+    const result = await persistence.persistReferenceContractCache(referenceCache, {
+        mode: "reference_history", acquisitionOrigin: "live", requestId: "reference-1",
+        requestedContract: "2026-10", sourceUrl: urlFor("2026-10"),
+        isCurrentRequest: () => true
+    });
+    assert.equal(result.status, "saved");
+    const history = (await store.loadHistory()).history;
+    assert.deepEqual(historyApi.listContracts(history), ["2026-09", "2026-10"]);
+    assert.deepEqual(history.entries.find(entry => entry.contract === "2026-09"), existing);
+    const reference = history.entries.find(entry => entry.contract === "2026-10");
+    assert.equal(reference.entryKey, "2026-10|2026-08-18");
+    assert.equal(reference.activeVersionKey, reference.revisions[0].versionKey);
+    assert.notEqual(reference.activeVersionKey, existing.activeVersionKey);
+    assert.notEqual(reference.revisions[0].signature, existing.revisions[0].signature);
+    assert.deepEqual(referenceCache, inputBefore);
+});
+
+test("reference history preserves revision and duplicate semantics", async () => {
+    let clock = timestamp;
+    const store = makeStore();
+    const persistence = persistenceApi.createQriOptionsHistoryPersistence({ store,
+        now: () => clock });
+    await persistence.openPersistence();
+    const options = { mode: "reference_history", acquisitionOrigin: "live",
+        requestId: "reference-2", requestedContract: "2026-10",
+        sourceUrl: urlFor("2026-10"), isCurrentRequest: () => true };
+    const first = await cache({ contract: "2026-10" });
+    assert.equal((await persistence.persistReferenceContractCache(first, options)).status, "saved");
+    assert.equal((await persistence.persistReferenceContractCache(first, options)).status, "unchanged");
+    assert.equal((await store.loadEntry("2026-10", "2026-08-18")).entry.revisions.length, 1);
+    clock = "2026-08-18T09:00:00.000Z";
+    const second = await cache({ contract: "2026-10", value: 200,
+        pageUpdatedAt: "2026-08-18T17:00:00+09:00" });
+    assert.equal((await persistence.persistReferenceContractCache(second, options)).reason,
+        "revision_added");
+    const entry = (await store.loadEntry("2026-10", "2026-08-18")).entry;
+    assert.equal(entry.revisions.length, 2);
+    assert.equal(entry.revisions[0].replacedAt, clock);
+    assert.equal(entry.activeVersionKey, second.versionKey);
+    assert.equal(entry.revisions[1].replacedAt, null);
+});
+
+test("reference history rejects unsupported context and invalid candidates", async () => {
+    const store = makeStore();
+    const persistence = persistenceApi.createQriOptionsHistoryPersistence({ store,
+        now: () => timestamp });
+    await persistence.openPersistence();
+    const reference = await cache({ contract: "2026-10" });
+    const eligible = { mode: "reference_history", acquisitionOrigin: "live",
+        requestId: "reference-3", requestedContract: "2026-10",
+        sourceUrl: urlFor("2026-10"), isCurrentRequest: () => true };
+    for (const [change, reason] of [
+        [value => { value.mode = "specific"; }, "reference_context_invalid"],
+        [value => { value.requestedContract = "2026-09"; }, "requested_contract_mismatch"],
+        [value => { value.sourceUrl = urlFor("2026-09"); }, "source_url_mismatch"],
+        [value => { value.isCurrentRequest = () => false; }, "stale_request"]
+    ]) {
+        const context = { ...eligible }; change(context);
+        assert.equal((await persistence.persistReferenceContractCache(reference, context)).reason, reason);
+    }
+    const unavailable = await cache({ contract: "2026-10", status: "unavailable" });
+    const invalidCandidates = [
+        [(() => { const value = structuredClone(reference); value.contract = "2026-09"; return value; })(),
+            "requested_contract_mismatch"],
+        [unavailable, "open_interest_unavailable"],
+        [(() => { const value = structuredClone(reference); value.signature = "0".repeat(64); return value; })(),
+            "signature_mismatch"],
+        [(() => { const value = structuredClone(reference); value.versionKey += "x"; return value; })(),
+            "version_key_mismatch"],
+        [(() => { const value = structuredClone(reference); value.canonical.records = []; return value; })(),
+            "invalid_canonical"],
+        [(() => { const value = structuredClone(reference); value.canonical.tradingDate = "invalid"; return value; })(),
+            "invalid_canonical"]
+    ];
+    for (const [candidate, reason] of invalidCandidates) {
+        assert.equal((await persistence.persistReferenceContractCache(candidate, eligible)).reason, reason);
+    }
+    assert.equal((await store.loadHistory()).status, "empty");
+    assert.equal((await persistence.persistActiveContractCache(reference,
+        { mode: "specific", isCurrentRequest: () => true })).reason,
+    "specific_display_not_persisted");
+});
+
+test("reference persistence is storage-only and has no formal or runtime dependencies", () => {
+    const source = fs.readFileSync(path.join(__dirname,
+        "../js/qriOptionsHistoryPersistence.js"), "utf8");
+    assert.doesNotMatch(source, /publishQriFormalIdentity|FormalOptionAvailability|CurrentPrice|OverallV2|Morning|LastValid|optionMapLastValid|optionMapQriOptionsLastValid|option signal|document\.|localStorage|fetch-option-page/);
+    const referenceMethod = source.slice(source.indexOf("async function persistReferenceContractCache"),
+        source.indexOf("const getState"));
+    assert.doesNotMatch(referenceMethod, /isActiveContract/);
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.doesNotMatch(html, /persistReferenceContractCache/);
+});
+
 test("renderer wiring persists only in fetchQriData and leaves specific path disconnected", () => {
     const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
     const specific = html.slice(html.indexOf("async function showSpecificQriContract"),
