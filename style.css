@@ -11,6 +11,72 @@ body{
     --option-put-color: #285f9e;
 }
 
+.historical-qri-panel {
+    margin: 14px 0;
+    padding: 12px 14px;
+    border: 1px solid rgba(74, 92, 118, 0.28);
+    border-radius: 12px;
+    background: rgba(247, 249, 252, 0.9);
+}
+
+.historical-qri-panel > summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: #294b78;
+}
+
+.historical-qri-heading {
+    margin-top: 12px;
+}
+
+.historical-qri-heading p {
+    margin: 8px 0;
+    color: #5d6673;
+}
+
+.historical-qri-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #e7edf5;
+    color: #334b68;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.historical-qri-selectors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.historical-qri-selectors select {
+    min-width: 145px;
+}
+
+.historical-qri-metadata {
+    line-height: 1.7;
+    color: #46515f;
+}
+
+.historical-qri-chart-container {
+    position: relative;
+    width: 100%;
+    min-height: 360px;
+}
+
+.historical-qri-developer-panel {
+    margin-top: 12px;
+    color: #66717f;
+}
+
+.historical-qri-developer-panel pre {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
 
 /* 全体の幅 */
 

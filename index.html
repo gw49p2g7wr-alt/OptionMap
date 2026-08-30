@@ -800,6 +800,35 @@
                 QRI正式history：確認中…
             </p>
 
+            <details id="historicalQriPanel" class="historical-qri-panel">
+                <summary>保存済みQRI履歴を見る</summary>
+                <div class="historical-qri-heading">
+                    <span class="historical-qri-badge">保存済み履歴</span>
+                    <p>これは保存時点のQRI建玉スナップショットです。現在値ではありません。</p>
+                </div>
+                <div class="historical-qri-selectors">
+                    <label for="historyContractSelect">限月：</label>
+                    <select id="historyContractSelect" disabled></select>
+                    <label for="historyDateSelect">保存日：</label>
+                    <select id="historyDateSelect" disabled></select>
+                </div>
+                <p id="historicalQriState" role="status" aria-live="polite">
+                    detailsを開くと保存済み履歴を確認します
+                </p>
+                <div id="historicalQriContent" hidden>
+                    <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
+                    <h4>保存済みCALL・PUT建玉残</h4>
+                    <div id="historicalQriChartContainer"
+                        class="historical-qri-chart-container" hidden>
+                        <canvas id="historicalQriOpenInterestChart"></canvas>
+                    </div>
+                    <details class="historical-qri-developer-panel">
+                        <summary>履歴identity詳細</summary>
+                        <pre id="historicalQriDeveloperDetails"></pre>
+                    </details>
+                </div>
+            </details>
+
             <details id="qriOptionsHistoryComparisonPanel"
                 class="weekly-options-shadow-panel ui-category-panel category-options">
                 <summary class="ui-category-title">QRI建玉 前回保存日比較
@@ -1115,6 +1144,7 @@
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
+<script src="js/qriOptionsHistoricalView.js"></script>
 <script src="js/formalOptionAvailabilityEvidence.js"></script>
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
 <script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
@@ -1532,6 +1562,23 @@ window.listQriOptionsHistoryContracts = () =>
     window.OptionMapQriOptionsHistoryStore.listContracts();
 window.listQriOptionsHistorySourceDates = contract =>
     window.OptionMapQriOptionsHistoryStore.listSourceDates(contract);
+
+const qriHistoricalViewModelApi = require("./js/qriOptionsHistoricalViewModel.js");
+const qriHistoricalRootStyle = getComputedStyle(document.documentElement);
+const qriHistoricalView = window.OptionMapQriOptionsHistoricalView
+    .createQriOptionsHistoricalView({
+        documentRef: document,
+        ChartConstructor: Chart,
+        readHistory: () => window.getQriOptionsHistory(),
+        buildViewModel: input =>
+            qriHistoricalViewModelApi.buildQriHistoricalViewModel(input),
+        optionColors: {
+            call: qriHistoricalRootStyle.getPropertyValue("--option-call-color").trim(),
+            put: qriHistoricalRootStyle.getPropertyValue("--option-put-color").trim()
+        }
+    });
+qriHistoricalView.initialize();
+window.getQriHistoricalViewState = () => qriHistoricalView.getState();
 
 const participantBackfillStartDate = document.getElementById(
     "participantBackfillStartDate"

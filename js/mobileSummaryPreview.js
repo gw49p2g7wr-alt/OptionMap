@@ -23,6 +23,15 @@
         return `生成時刻：${new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo",
             hour: "2-digit", minute: "2-digit", hour12: false }).format(date)}（JST）`;
     };
+    const morningBaselineUpdateConfirmation = (marketDate, capturedAt) => {
+        const parts = Object.fromEntries(new Intl.DateTimeFormat("ja-JP", {
+            timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }).formatToParts(new Date(capturedAt)).map(part => [part.type, part.value]));
+        const savedAt = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+        return `取引日${marketDate}の朝基準が保存済みです。\n` +
+            `保存日時：${savedAt}\n現在の状態で更新しますか？`;
+    };
     const qualityLabel = value => ({ complete: "データ良好", partial: "一部データ不足",
         unavailable: "データ利用不可" })[value] || "状態不明";
     const morningQualityLabel = value => ({ complete: "良好", partial: "一部データ不足",
@@ -468,8 +477,8 @@
             let allowUpdate = false;
             if (existingResult.available) {
                 const active = window.OptionMapMorningBaseline.activeRevision(existingResult.baseline);
-                const savedAt = new Date(active.capturedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-                allowUpdate = window.confirm(`今日の朝基準は${savedAt}に保存済みです。現在の状態で更新しますか？`);
+                allowUpdate = window.confirm(morningBaselineUpdateConfirmation(
+                    summary.marketDate, active.capturedAt));
                 if (!allowUpdate) return { success: false, reason: "update_cancelled" };
             }
             const saved = await window.OptionMapMorningBaseline.saveCandidate(
@@ -508,5 +517,6 @@
     });
 
     return Object.freeze({ update, saveMorningBaseline, renderFormalComparisonV4,
+        morningBaselineUpdateConfirmation,
         getLatestSummary: () => clone(latestSummary) });
 });
