@@ -328,6 +328,58 @@
             
             <canvas id="cumulativeChart" height="220"></canvas>
         </div>
+        <details id="weeklyOptionsParticipantHistoricalPanel"
+            class="card option-participant-historical-card ui-category-panel category-options">
+            <summary class="ui-category-title">
+                📊 オプション参加者別 公表建玉推移
+                <span class="ui-category-badge">オプション</span>
+                <span class="ui-attribute-badge attribute-participant">参加者別</span>
+            </summary>
+            <div class="option-participant-historical-heading">
+                <span class="historical-qri-badge">保存済みJPX週次履歴</span>
+                <p>JPX公表順位に掲載された建玉のみを集計しています。非掲載は0ではありません。</p>
+                <p>買い／売りは相場の強気・弱気を意味しません。</p>
+            </div>
+            <div class="option-participant-historical-selectors">
+                <label>参加者
+                    <select id="weeklyOptionsParticipantSelect" disabled></select>
+                </label>
+                <label>種別
+                    <select id="weeklyOptionsParticipantOptionType">
+                        <option value="call" selected>CALL</option>
+                        <option value="put">PUT</option>
+                    </select>
+                </label>
+                <label>期間
+                    <select id="weeklyOptionsParticipantPeriod">
+                        <option value="last20" selected>直近20週</option>
+                        <option value="threeMonths">3か月</option>
+                        <option value="all">全期間</option>
+                    </select>
+                </label>
+            </div>
+            <p id="weeklyOptionsParticipantHistoricalState" role="status">
+                開くと保存済みJPX週次履歴を読み込みます
+            </p>
+            <div id="weeklyOptionsParticipantHistoricalContent" hidden>
+                <p id="weeklyOptionsParticipantHistoricalMetadata"
+                    class="option-participant-historical-metadata"></p>
+                <p id="weeklyOptionsParticipantHistoricalRename"
+                    class="option-participant-historical-warning" hidden></p>
+                <div class="option-participant-historical-rolls">
+                    <strong>限月切替</strong>
+                    <ul id="weeklyOptionsParticipantHistoricalRolls" hidden></ul>
+                </div>
+                <div id="weeklyOptionsParticipantHistoricalChartContainer"
+                    class="option-participant-historical-chart-container" hidden>
+                    <canvas id="weeklyOptionsParticipantHistoricalChart" height="300"></canvas>
+                </div>
+                <details class="historical-qri-developer-panel">
+                    <summary>履歴identity（開発者向け）</summary>
+                    <pre id="weeklyOptionsParticipantHistoricalDeveloper"></pre>
+                </details>
+            </div>
+        </details>
             <div class="intelligence-card ui-category-panel category-overall">
                 <h3 class="ui-category-title">🧬 OptionMap Intelligence
                     <span class="ui-category-badge">総合</span>
@@ -1161,6 +1213,8 @@
 <script src="js/weeklyOptionsChangesView.js"></script>
 <script src="js/weeklyOptionsHistoryComparison.js"></script>
 <script src="js/weeklyOptionsHistoryComparisonView.js"></script>
+<script src="js/weeklyOptionsParticipantHistoricalViewModel.js"></script>
+<script src="js/weeklyOptionsParticipantHistoricalView.js"></script>
 <script src="js/qriOptions.js"></script>
 <script src="js/qriOptionsLastValidCache.js"></script>
 <script src="js/storage/qriOptionsLastValidStore.js"></script>
@@ -1601,6 +1655,30 @@ window.listQriOptionsHistoryContracts = () =>
     window.OptionMapQriOptionsHistoryStore.listContracts();
 window.listQriOptionsHistorySourceDates = contract =>
     window.OptionMapQriOptionsHistoryStore.listSourceDates(contract);
+
+const weeklyOptionsParticipantHistoricalViewModelApi =
+    window.OptionMapWeeklyOptionsParticipantHistoricalViewModel;
+const weeklyOptionsParticipantHistoricalView =
+    window.OptionMapWeeklyOptionsParticipantHistoricalView
+        .createWeeklyOptionsParticipantHistoricalView({
+            documentRef: document,
+            ChartConstructor: Chart,
+            readHistory: () => window.OptionMapWeeklyOptionsHistoryStore
+                .readWeeklyOptionsHistory(),
+            listParticipants: history => weeklyOptionsParticipantHistoricalViewModelApi
+                .listWeeklyOptionsParticipants(history),
+            buildViewModel: input => weeklyOptionsParticipantHistoricalViewModelApi
+                .buildWeeklyOptionsParticipantHistoricalViewModel(input),
+            colors: {
+                buy: "rgba(255, 99, 132, 0.75)",
+                buyBorder: "rgba(255, 99, 132, 1)",
+                sell: "rgba(54, 162, 235, 0.75)",
+                sellBorder: "rgba(54, 162, 235, 1)"
+            }
+        });
+weeklyOptionsParticipantHistoricalView.initialize();
+window.getWeeklyOptionsParticipantHistoricalViewState = () =>
+    weeklyOptionsParticipantHistoricalView.getState();
 
 const qriHistoricalViewModelApi = require("./js/qriOptionsHistoricalViewModel.js");
 const qriHistoricalRootStyle = getComputedStyle(document.documentElement);

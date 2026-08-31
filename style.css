@@ -106,6 +106,75 @@ body{
     font-weight: 600;
 }
 
+.option-participant-historical-card {
+    width: 100%;
+    max-width: 1100px;
+    box-sizing: border-box;
+}
+
+.option-participant-historical-card > summary {
+    cursor: pointer;
+}
+
+.option-participant-historical-heading {
+    margin-top: 12px;
+}
+
+.option-participant-historical-heading p {
+    margin: 7px 0;
+    color: #5d6673;
+}
+
+.option-participant-historical-selectors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin: 14px 0;
+}
+
+.option-participant-historical-selectors label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.option-participant-historical-selectors select {
+    min-width: 145px;
+}
+
+.option-participant-historical-metadata {
+    line-height: 1.7;
+    color: #46515f;
+}
+
+.option-participant-historical-warning {
+    padding: 7px 10px;
+    border-radius: 7px;
+    background: rgba(230, 190, 96, 0.2);
+    color: #735b24;
+}
+
+.option-participant-historical-rolls {
+    margin: 10px 0;
+    color: #46515f;
+}
+
+.option-participant-historical-rolls ul {
+    margin: 6px 0;
+}
+
+.option-participant-historical-chart-container {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+    min-height: 360px;
+}
+
+#weeklyOptionsParticipantHistoricalChart {
+    width: 100% !important;
+    max-width: 1100px;
+}
+
 
 /* 全体の幅 */
 
