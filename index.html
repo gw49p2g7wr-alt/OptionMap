@@ -530,6 +530,7 @@
                             <strong id="morningComparisonV4Status">利用不可</strong>
                         </div>
                         <p id="morningComparisonV4Reason">正式比較の公開待ちです</p>
+                        <p id="morningBaselineV4AutomaticStatus">正式朝基準：条件待ち</p>
                         <div class="mobile-summary-preview-grid morning-v4-formal-grid">
                             <div class="mobile-summary-card"><span>朝基準</span>
                                 <strong id="morningComparisonV4CapturedAt">—</strong></div>
@@ -4371,6 +4372,13 @@ function initializeQriReferenceAcquisitionRuntime() {
 window.getQriReferenceAcquisitionState = () =>
     initializeQriReferenceAcquisitionRuntime().getState();
 
+function runAutomaticFirstSuccessCapture(requestId) {
+    return window.OptionMapMorningBaselineV4CaptureRuntime?.captureAutomatic({
+        mode: "automatic_first_success", requestId,
+        requestedAt: new Date().toISOString()
+    });
+}
+
 function validateQriPayload(payload) {
     if (
         !payload ||
@@ -6004,6 +6012,9 @@ function refreshAllMarketData() {
         marketRefreshPromise = null;
         await window.publishMorningComparisonV4Runtime?.();
         window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
+        void runAutomaticFirstSuccessCapture(requestId)
+            ?.then(() => window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.())
+            .catch(error => console.warn("正式朝基準の自動保存を完了できませんでした:", error));
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
     });
 

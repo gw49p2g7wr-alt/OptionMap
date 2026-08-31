@@ -69,6 +69,16 @@
         container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
         text("morningComparisonV4Status", model.status);
         text("morningComparisonV4Reason", model.reason || "同じ取引日の朝基準と現在を比較しています");
+        const automatic = window.getMorningBaselineV4AutomaticCaptureOutcome?.() || null;
+        const automaticTime = automatic?.capturedAt ? new Intl.DateTimeFormat("ja-JP", {
+            timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false
+        }).format(new Date(automatic.capturedAt)) : null;
+        const automaticLabel = automatic?.saved ? `正式朝基準：${automaticTime} 自動保存済み` :
+            automatic?.windowStatus === "outside_window_after" ?
+                "正式朝基準：本日は保存されていません（自動保存時間 05:00〜09:00）" :
+                automatic?.status === "already_saved" || automatic?.status === "duplicate" ?
+                    "正式朝基準：保存済み" : "正式朝基準：条件待ち";
+        text("morningBaselineV4AutomaticStatus", automaticLabel);
         text("morningComparisonV4CapturedAt", model.capturedAt);
         text("morningComparisonV4Score", model.score ?
             `朝 ${model.score.baselineLabel} ${model.score.baseline} → 現在 ${model.score.currentLabel} ${model.score.current}` : "—");

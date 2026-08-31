@@ -129,8 +129,13 @@
 
         diagnostics.manualCapture = context?.mode === "manual";
         diagnostics.userInitiated = context?.userInitiated === true;
-        if (!diagnostics.manualCapture) return rejected("capture_not_manual", state);
-        if (!diagnostics.userInitiated) return rejected("capture_not_user_initiated", state);
+        const automaticCapture = context?.mode === "automatic_first_success";
+        if (!diagnostics.manualCapture && !automaticCapture)
+            return rejected("capture_not_manual", state);
+        if (diagnostics.manualCapture && !diagnostics.userInitiated)
+            return rejected("capture_not_user_initiated", state);
+        if (automaticCapture && diagnostics.userInitiated)
+            return rejected("capture_mode_invalid", state);
         if (!timestamp(context?.requestedAt) || !timestamp(collector.collectedAt) ||
             Date.parse(context.requestedAt) < Date.parse(collector.collectedAt))
             return rejected("collector_identity_invalid", state);
@@ -147,6 +152,27 @@
             builderInput.qriContext?.identity?.contract !== scope.contract)
             return rejected("scope_identity_mismatch", state);
 
+        const existing = storageContainerOf(input.existingStorageState);
+        diagnostics.existingStorageStatus = existing.status;
+        if (existing.status === "invalid" || existing.status === "ready" &&
+            !await storageApi.validateMorningBaselineV4Storage(existing.container))
+            return rejected("existing_storage_invalid", state);
+        const existingSeries = existing.container?.series.find(item => item.scopeId === scope.scopeId) || null;
+        diagnostics.sameScopeFound = Boolean(existingSeries);
+        if (existingSeries && (existingSeries.formalTradingDate !== scope.formalTradingDate ||
+            existingSeries.contract !== scope.contract)) return rejected("storage_identity_mismatch", state);
+        const existingActive = existingSeries?.revisions.find(item =>
+            item.baselineId === existingSeries.activeBaselineId) || null;
+        if (existingSeries && !existingActive) return rejected("storage_identity_mismatch", state);
+        state.existingBaselineIdentity = existingActive ? { baselineId: existingActive.baselineId,
+            contentSignature: existingActive.contentSignature, versionKey: existingActive.versionKey,
+            capturedAt: existingActive.capturedAt } : null;
+        if (automaticCapture && existingActive) return result({ status: "no_change",
+            reason: "already_saved", reasons: ["already_saved"], action: "already_saved",
+            scopeIdentity: state.scopeIdentity, collectorIdentity: state.collectorIdentity,
+            existingBaselineIdentity: state.existingBaselineIdentity, builderInput,
+            diagnostics });
+
         const builder = dependencies.buildBaseline || baselineApi.buildMorningBaselineV4;
         let built;
         diagnostics.builderInvoked = true;
@@ -162,11 +188,8 @@
         diagnostics.baselineValidated = true;
         state.baselineCandidate = built.baseline;
 
-        const storage = storageContainerOf(input.existingStorageState);
+        const storage = existing;
         diagnostics.existingStorageStatus = storage.status;
-        if (storage.status === "invalid" || storage.status === "ready" &&
-            !await storageApi.validateMorningBaselineV4Storage(storage.container))
-            return rejected("existing_storage_invalid", state);
         let containerFingerprint = null;
         if (storage.container) {
             const serialized = await storageApi.serializeMorningBaselineV4Storage(storage.container);
@@ -175,15 +198,11 @@
             diagnostics.storageFingerprintAvailable = true;
         }
 
-        const series = storage.container?.series.find(item => item.scopeId === scope.scopeId) || null;
+        const series = existingSeries;
         diagnostics.sameScopeFound = Boolean(series);
         if (series && (series.formalTradingDate !== scope.formalTradingDate ||
             series.contract !== scope.contract)) return rejected("storage_identity_mismatch", state);
-        const active = series?.revisions.find(item => item.baselineId === series.activeBaselineId) || null;
-        state.existingBaselineIdentity = active ? { baselineId: active.baselineId,
-            contentSignature: active.contentSignature, versionKey: active.versionKey,
-            capturedAt: active.capturedAt } : null;
-        if (series && !active) return rejected("storage_identity_mismatch", state);
+        const active = existingActive;
         if (active && Date.parse(built.baseline.capturedAt) < Date.parse(active.capturedAt)) {
             diagnostics.staleCapture = true; return rejected("stale_capture", state);
         }
