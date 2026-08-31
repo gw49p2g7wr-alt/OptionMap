@@ -439,8 +439,14 @@ test("rendererはfetch/write/polling/QRI/formal計算へ接続しない", () => 
 
 test("responsive widthは100%かつmax-width 1100px", () => {
     const css = fs.readFileSync(path.join(__dirname, "../style.css"), "utf8");
+    const genericCardIndex = css.indexOf(".card{");
+    const optionCardIndex = css.indexOf(".option-participant-historical-card {");
+    assert.ok(optionCardIndex > genericCardIndex,
+        "option card width rule must override the later generic 320px card rule");
     assert.match(css, /\.option-participant-historical-card\s*{[^}]*width:\s*100%/s);
     assert.match(css, /\.option-participant-historical-card\s*{[^}]*max-width:\s*1100px/s);
+    assert.doesNotMatch(css.match(
+        /\.option-participant-historical-card\s*{[^}]*}/s)?.[0] || "", /width:\s*320px/);
     assert.match(css,
         /#weeklyOptionsParticipantHistoricalChart\s*{[^}]*width:\s*100%\s*!important/s);
 });

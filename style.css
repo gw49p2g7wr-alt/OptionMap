@@ -106,12 +106,6 @@ body{
     font-weight: 600;
 }
 
-.option-participant-historical-card {
-    width: 100%;
-    max-width: 1100px;
-    box-sizing: border-box;
-}
-
 .option-participant-historical-card > summary {
     cursor: pointer;
 }
@@ -2045,6 +2039,12 @@ canvas {
     box-sizing: border-box;
     margin-top: 20px;
     padding: 20px;
+}
+
+.option-participant-historical-card {
+    width: 100%;
+    max-width: 1100px;
+    box-sizing: border-box;
 }
 
 .cumulative-chart-controls {
