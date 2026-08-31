@@ -1188,6 +1188,8 @@
   <div id="futureOpenInterestRanking" class="ranking-box"></div>
 
 <script src="js/vendor/chart.umd.js"></script>
+<script src="js/vendor/xlsx.full.min.js"></script>
+<script src="js/vendor/xlsx.browser-global.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/overallJudgmentV2.js"></script>
 <script src="js/mobileSummary.js"></script>
@@ -1306,7 +1308,11 @@ import {
 } from "./js/parser/jpxParser.js";
 
 const { ipcRenderer } = require("electron");
-const XLSX = require("xlsx");
+const XLSX = window.XLSX;
+if (!XLSX || typeof XLSX.read !== "function" ||
+    typeof XLSX.utils?.sheet_to_json !== "function") {
+    throw new Error("Local XLSX browser bundle is unavailable");
+}
 
 const PARTICIPANT_PAGE_URL =
     "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html";
