@@ -4,7 +4,84 @@ const {
   ipcMain,
   net,
 } = require("electron");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
+const { createWeeklyListingAcquisitionDiagnostics } = require(
+  "./js/security/weeklyListingAcquisitionDiagnostics.js"
+);
 require("dotenv").config();
+
+const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
+
+const SAFE_ERROR_MESSAGES = Object.freeze({
+  invalid_url: "取得先URLが不正です",
+  invalid_protocol: "取得先URLが不正です",
+  invalid_credentials: "取得先URLが不正です",
+  invalid_host: "許可されていない取得先です",
+  invalid_port: "取得先URLが不正です",
+  invalid_query: "取得先URLが不正です",
+  invalid_hash: "取得先URLが不正です",
+  invalid_path: "許可されていない取得先です",
+  invalid_date: "取得先URLの日付が不正です",
+  invalid_redirect: "取得先の移動を許可できませんでした"
+});
+
+function securityError(errorCode) {
+  const error = new Error(SAFE_ERROR_MESSAGES[errorCode] || "取得先を確認できませんでした");
+  error.errorCode = errorCode || "invalid_url";
+  return error;
+}
+
+function requireAllowedUrl(validator, value) {
+  const validation = validator(value);
+  if (!validation.ok) throw securityError(validation.errorCode);
+  return validation.url;
+}
+
+function safeIpcFailure(error, fallbackMessage) {
+  const errorCode = SAFE_ERROR_MESSAGES[error?.errorCode] ? error.errorCode : null;
+  return {
+    success: false,
+    error: errorCode ? SAFE_ERROR_MESSAGES[errorCode] : fallbackMessage,
+    ...(errorCode ? { errorCode } : {})
+  };
+}
+
+function installHiddenWindowPolicy(fetchWindow) {
+  let activeValidator = () => ({ ok: false });
+  let redirectBlocked = false;
+  const validateNavigation = (event, url) => {
+    if (!activeValidator(url).ok) {
+      redirectBlocked = true;
+      event.preventDefault();
+    }
+  };
+  fetchWindow.webContents.on("will-navigate", validateNavigation);
+  fetchWindow.webContents.on("will-redirect", validateNavigation);
+  fetchWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  return {
+    async load(url, validator, options) {
+      activeValidator = validator;
+      redirectBlocked = false;
+      const requestedUrl = requireAllowedUrl(validator, url);
+      try {
+        await fetchWindow.loadURL(requestedUrl, options);
+      } catch (error) {
+        if (redirectBlocked) throw securityError("invalid_redirect");
+        throw error;
+      }
+      const finalUrl = fetchWindow.webContents.getURL();
+      const finalValidation = networkUrlPolicy.validateFinalUrl(
+        validator, requestedUrl, finalUrl
+      );
+      if (redirectBlocked || !finalValidation.ok) {
+        throw securityError("invalid_redirect");
+      }
+      return finalValidation.url;
+    }
+  };
+}
 
 let mainWindow = null;
 const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
@@ -24,56 +101,78 @@ app.on("second-instance", () => {
 });
 
 ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
+  weeklyListingDiagnostics.begin(jsonUrl);
   try {
-    const parsedUrl = new URL(jsonUrl);
-
-    if (
-      parsedUrl.hostname !== "www.jpx.co.jp" ||
-      !/^\/automation\/markets\/derivatives\/open-interest\/json\/open_interest_20\d{2}\.json$/.test(
-        parsedUrl.pathname
-      )
-    ) {
-      throw new Error("許可されていないJPX週次JSON取得先です");
-    }
-
-    const response = await net.fetch(parsedUrl.href, {
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `JPX週次JSONの取得に失敗しました（HTTP ${response.status}）`
+    const requestedValidation = networkUrlPolicy.validateOpenInterestJsonUrl(jsonUrl);
+    weeklyListingDiagnostics.requestedValidated(requestedValidation);
+    if (!requestedValidation.ok) throw securityError(requestedValidation.errorCode);
+    const requestedUrl = requestedValidation.url;
+    weeklyListingDiagnostics.networkStarted();
+    let response;
+    try {
+      response = await net.fetch(requestedUrl, {
+        cache: "no-store",
+        redirect: "error"
+      });
+    } catch (_error) {
+      weeklyListingDiagnostics.fail(
+        "network_started",
+        "network_or_redirect_rejected",
+        "fetch_rejected",
+        { redirectPolicy: "error" }
       );
+      throw new Error("weekly_listing_network_failed");
+    }
+    weeklyListingDiagnostics.responseReceived(response.status);
+    weeklyListingDiagnostics.redirectProtected(requestedUrl);
+
+    weeklyListingDiagnostics.httpChecked(response.status);
+    if (!response.ok) {
+      weeklyListingDiagnostics.fail("http_status_checked", "http_error", null,
+        { httpStatus: response.status });
+      throw new Error("weekly_listing_http_error");
     }
 
+    let body;
+    try {
+      body = await response.text();
+      weeklyListingDiagnostics.bodyRead();
+    } catch (_error) {
+      weeklyListingDiagnostics.fail("body_read", "body_read_failed");
+      throw new Error("weekly_listing_body_read_failed");
+    }
+    let data;
+    try {
+      data = JSON.parse(body);
+      weeklyListingDiagnostics.jsonParsed();
+    } catch (_error) {
+      weeklyListingDiagnostics.fail("json_parsed", "json_parse_failed");
+      throw new Error("weekly_listing_json_parse_failed");
+    }
+    weeklyListingDiagnostics.accepted();
     return {
       success: true,
-      data: await response.json()
+      data
     };
   } catch (error) {
-    return {
-      success: false,
-      error: error?.message || String(error)
-    };
+    return safeIpcFailure(error, "JPX週次JSONを取得できませんでした");
   }
 });
 
+ipcMain.handle("get-weekly-listing-acquisition-diagnostics", () =>
+  weeklyListingDiagnostics.getState()
+);
+
 ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
   try {
-    const parsedUrl = new URL(jsonUrl);
-    const allowedPath =
-      parsedUrl.pathname === "/automation/markets/derivatives/participant-volume/json/participant-volume_monthlylist.json" ||
-      /^\/automation\/markets\/derivatives\/participant-volume\/json\/participant_volume_20\d{4}\.json$/.test(
-        parsedUrl.pathname
-      );
-    if (
-      parsedUrl.protocol !== "https:" ||
-      parsedUrl.hostname !== "www.jpx.co.jp" ||
-      !allowedPath
-    ) {
-      throw new Error("許可されていないJPX参加者別JSON取得先です");
-    }
-    const response = await net.fetch(parsedUrl.href, { cache: "no-store" });
+    const requestedUrl = requireAllowedUrl(
+      networkUrlPolicy.validateParticipantJsonUrl, jsonUrl
+    );
+    const response = await net.fetch(requestedUrl, { cache: "no-store" });
+    const finalUrl = networkUrlPolicy.validateFinalUrl(
+      networkUrlPolicy.validateParticipantJsonUrl, requestedUrl, response.url
+    );
+    if (!finalUrl.ok) throw securityError("invalid_redirect");
     if (!response.ok) {
       throw new Error(
         `JPX参加者別JSONの取得に失敗しました（HTTP ${response.status}）`
@@ -81,7 +180,7 @@ ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
     }
     return { success: true, data: await response.json() };
   } catch (error) {
-    return { success: false, error: error?.message || String(error) };
+    return safeIpcFailure(error, "JPX参加者別JSONを取得できませんでした");
   }
 });
 
@@ -90,14 +189,10 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
     let fetchWindow = null;
   
     try {
-        console.log("オプションページ取得開始:", pageUrl);
-  
-        // 念のため、取得先をQRIだけに限定
-        const parsedUrl = new URL(pageUrl);
-  
-        if (parsedUrl.hostname !== "svc.qri.jp") {
-            throw new Error("許可されていない取得先です");
-        }
+        console.log("オプションページ取得開始");
+        const requestedUrl = requireAllowedUrl(
+            networkUrlPolicy.validateQriUrl, pageUrl
+        );
   
         fetchWindow = new BrowserWindow({
             show: false,
@@ -117,10 +212,12 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             "Version/18.0 Safari/605.1.15";
   
         fetchWindow.webContents.setUserAgent(userAgent);
+        const navigation = installHiddenWindowPolicy(fetchWindow);
   
         // ① まずJPXトップページを開く
-  await fetchWindow.loadURL(
+  await navigation.load(
     "https://www.jpx.co.jp/",
+    networkUrlPolicy.validateJpxInternalUrl,
     {
         userAgent
     }
@@ -137,8 +234,9 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
   const jpxQuotesUrl =
       "https://www.jpx.co.jp/markets/derivatives/quotes/index.html";
   
-  await fetchWindow.loadURL(
+  await navigation.load(
       jpxQuotesUrl,
+      networkUrlPolicy.validateJpxInternalUrl,
       {
           userAgent
       }
@@ -149,8 +247,9 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
   );
   
   // ③ JPXの案内ページを参照元としてQRIを開く
-  await fetchWindow.loadURL(
-      pageUrl,
+  await navigation.load(
+      requestedUrl,
+      networkUrlPolicy.validateQriUrl,
       {
           userAgent,
           httpReferrer: jpxQuotesUrl
@@ -175,6 +274,13 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             setTimeout(resolve, 3000);
         });
   
+        const finalValidation = networkUrlPolicy.validateFinalUrl(
+            networkUrlPolicy.validateQriUrl,
+            requestedUrl,
+            fetchWindow.webContents.getURL()
+        );
+        if (!finalValidation.ok) throw securityError("invalid_redirect");
+
         const pageInfo =
             await fetchWindow.webContents.executeJavaScript(`
                 (() => {
@@ -213,7 +319,7 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
         return {
             success: true,
             html: pageInfo.html,
-            sourceUrl: fetchWindow.webContents.getURL()
+            sourceUrl: finalValidation.url
         };
     } catch (error) {
         console.error(
@@ -221,10 +327,7 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             error
         );
   
-        return {
-            success: false,
-            error: error.message
-        };
+        return safeIpcFailure(error, "オプションページを取得できませんでした");
     } finally {
         if (
             fetchWindow &&
@@ -238,14 +341,10 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
     let fetchWindow = null;
   
     try {
-        console.log("日中データページ取得開始:", pageUrl);
-  
-        // 念のため、取得先をQRIだけに限定
-        const parsedUrl = new URL(pageUrl);
-  
-        if (parsedUrl.hostname !== "www.jpx.co.jp") {
-            throw new Error("許可されていない取得先です");
-        }
+        console.log("日中データページ取得開始");
+        const requestedUrl = requireAllowedUrl(
+            networkUrlPolicy.validateJpxPageUrl, pageUrl
+        );
   
         fetchWindow = new BrowserWindow({
             show: false,
@@ -265,12 +364,12 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             "Version/18.0 Safari/605.1.15";
   
         fetchWindow.webContents.setUserAgent(userAgent);
-  
-        console.log("📅 daytrading pageUrl =", pageUrl);
+        const navigation = installHiddenWindowPolicy(fetchWindow);
   
         // ① まずJPXトップページを開く
-  await fetchWindow.loadURL(
+  await navigation.load(
     "https://www.jpx.co.jp/",
+    networkUrlPolicy.validateJpxInternalUrl,
     {
         userAgent
     }
@@ -287,8 +386,9 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
   const jpxParticipantVolumeUrl =
   "https://www.jpx.co.jp/markets/derivatives/participant-volume/index.html";
   
-  await fetchWindow.loadURL(
+  await navigation.load(
     jpxParticipantVolumeUrl,
+    networkUrlPolicy.validateJpxInternalUrl,
       {
           userAgent
       }
@@ -299,8 +399,9 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
   );
   
   // ③ JPXの案内ページを参照元としてQRIを開く
-  await fetchWindow.loadURL(
-      pageUrl,
+  await navigation.load(
+      requestedUrl,
+      networkUrlPolicy.validateJpxPageUrl,
       {
           userAgent,
           httpReferrer: jpxParticipantVolumeUrl
@@ -325,6 +426,13 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             setTimeout(resolve, 3000);
         });
   
+        const finalValidation = networkUrlPolicy.validateFinalUrl(
+            networkUrlPolicy.validateJpxPageUrl,
+            requestedUrl,
+            fetchWindow.webContents.getURL()
+        );
+        if (!finalValidation.ok) throw securityError("invalid_redirect");
+
         const pageInfo =
             await fetchWindow.webContents.executeJavaScript(`
                 (() => {
@@ -370,10 +478,7 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             error
         );
   
-        return {
-            success: false,
-            error: error.message
-        };
+        return safeIpcFailure(error, "日中データページを取得できませんでした");
     } finally {
         if (
             fetchWindow &&
@@ -386,9 +491,17 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
     
   ipcMain.handle("download-daytrading-excel", async (event, excelUrl) => {
     try {
-        console.log("日中Excelダウンロード開始:", excelUrl);
-
-        const response = await fetch(excelUrl);
+        console.log("日中Excelダウンロード開始");
+        const requestedUrl = requireAllowedUrl(
+            networkUrlPolicy.validateExcelUrl, excelUrl
+        );
+        const response = await fetch(requestedUrl);
+        const finalUrl = networkUrlPolicy.validateFinalUrl(
+            networkUrlPolicy.validateExcelUrl,
+            requestedUrl,
+            response.url
+        );
+        if (!finalUrl.ok) throw securityError("invalid_redirect");
 
         if (!response.ok) {
             throw new Error(
@@ -405,10 +518,7 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
     } catch (error) {
         console.error("日中Excelダウンロードエラー:", error);
 
-        return {
-            success: false,
-            error: error.message
-        };
+        return safeIpcFailure(error, "Excelを取得できませんでした");
     }
 });
 
@@ -432,6 +542,13 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  const mainDocumentUrl = pathToFileURL(
+    path.join(__dirname, "index.html")
+  ).href;
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (targetUrl !== mainDocumentUrl) event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.loadFile("index.html");
 }
 
