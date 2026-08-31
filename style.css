@@ -77,6 +77,35 @@ body{
     white-space: pre-wrap;
 }
 
+.historical-qri-aggregation-contracts-fieldset {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(74, 92, 118, 0.22);
+    border-radius: 9px;
+}
+
+.historical-qri-aggregation-contracts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.historical-qri-aggregation-contracts label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.historical-qri-aggregation-partial-legend {
+    display: inline-block;
+    margin: 4px 0 10px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: rgba(230, 190, 96, 0.2);
+    color: #735b24;
+    font-weight: 600;
+}
+
 
 /* 全体の幅 */
 

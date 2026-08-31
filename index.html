@@ -829,6 +829,44 @@
                 </div>
             </details>
 
+            <details id="historicalQriAggregationPanel"
+                class="historical-qri-panel historical-qri-aggregation-panel">
+                <summary>保存済みQRIを複数限月で合算</summary>
+                <div class="historical-qri-heading">
+                    <span class="historical-qri-badge">保存済み履歴からの合算</span>
+                    <p>保存済み履歴からの合算です。現在値ではありません。</p>
+                </div>
+                <fieldset class="historical-qri-aggregation-contracts-fieldset">
+                    <legend>合算する限月（2つ以上）</legend>
+                    <div id="historicalQriAggregationContracts"
+                        class="historical-qri-aggregation-contracts"></div>
+                </fieldset>
+                <div class="historical-qri-selectors">
+                    <label for="historicalQriAggregationDate">共通取引日：</label>
+                    <select id="historicalQriAggregationDate" disabled></select>
+                </div>
+                <p id="historicalQriAggregationState" role="status" aria-live="polite">
+                    detailsを開くと保存済み履歴を確認します
+                </p>
+                <div id="historicalQriAggregationContent" hidden>
+                    <p id="historicalQriAggregationMetadata"
+                        class="historical-qri-metadata"></p>
+                    <p id="historicalQriAggregationPartialLegend"
+                        class="historical-qri-aggregation-partial-legend" hidden>
+                        淡色は一部限月のみ掲載
+                    </p>
+                    <h4>保存済みCALL・PUT建玉残の限月合算</h4>
+                    <div id="historicalQriAggregationChartContainer"
+                        class="historical-qri-chart-container" hidden>
+                        <canvas id="historicalQriAggregationChart"></canvas>
+                    </div>
+                    <details class="historical-qri-developer-panel">
+                        <summary>合算identity詳細</summary>
+                        <pre id="historicalQriAggregationDeveloperDetails"></pre>
+                    </details>
+                </div>
+            </details>
+
             <details id="qriOptionsHistoryComparisonPanel"
                 class="weekly-options-shadow-panel ui-category-panel category-options">
                 <summary class="ui-category-title">QRI建玉 前回保存日比較
@@ -1145,6 +1183,7 @@
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
 <script src="js/qriOptionsHistoricalView.js"></script>
+<script src="js/qriOptionsHistoricalAggregationView.js"></script>
 <script src="js/formalOptionAvailabilityEvidence.js"></script>
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
 <script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
@@ -1579,6 +1618,30 @@ const qriHistoricalView = window.OptionMapQriOptionsHistoricalView
     });
 qriHistoricalView.initialize();
 window.getQriHistoricalViewState = () => qriHistoricalView.getState();
+
+const qriHistoricalAggregationApi = require("./js/qriOptionsHistoricalAggregation.js");
+const qriHistoricalAggregationView =
+    window.OptionMapQriOptionsHistoricalAggregationView
+        .createQriHistoricalAggregationView({
+            documentRef: document,
+            ChartConstructor: Chart,
+            readHistory: () => window.getQriOptionsHistory(),
+            buildHistoricalViewModel: input =>
+                qriHistoricalViewModelApi.buildQriHistoricalViewModel(input),
+            buildAggregation: input =>
+                qriHistoricalAggregationApi.buildQriHistoricalAggregation(input),
+            optionColors: {
+                call: qriHistoricalRootStyle.getPropertyValue("--option-call-color").trim(),
+                put: qriHistoricalRootStyle.getPropertyValue("--option-put-color").trim()
+            },
+            partialColors: {
+                call: "rgba(155, 64, 88, 0.38)",
+                put: "rgba(40, 95, 158, 0.38)"
+            }
+        });
+qriHistoricalAggregationView.initialize();
+window.getQriHistoricalAggregationViewState = () =>
+    qriHistoricalAggregationView.getState();
 
 const participantBackfillStartDate = document.getElementById(
     "participantBackfillStartDate"
