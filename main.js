@@ -6,6 +6,23 @@ const {
 } = require("electron");
 require("dotenv").config();
 
+let mainWindow = null;
+const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotTheSingleInstanceLock) {
+  console.log("Second instance blocked; focusing existing window");
+  app.quit();
+} else {
+console.log("OptionMap single-instance lock acquired");
+
+app.on("second-instance", () => {
+  console.log("Second instance blocked; focusing existing window");
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+});
+
 ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
   try {
     const parsedUrl = new URL(jsonUrl);
@@ -402,7 +419,7 @@ console.log(
 );
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     title: "OptionMap",
@@ -412,7 +429,10 @@ function createWindow() {
     }
   });
 
-  win.loadFile("index.html");
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+  mainWindow.loadFile("index.html");
 }
 
 app.whenReady().then(createWindow);
@@ -422,3 +442,4 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+}
