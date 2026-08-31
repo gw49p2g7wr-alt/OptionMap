@@ -1239,6 +1239,8 @@
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
+<script src="js/qriOptionsHistoricalViewModel.js"></script>
+<script src="js/qriOptionsHistoricalAggregation.js"></script>
 <script src="js/qriOptionsHistoricalView.js"></script>
 <script src="js/qriOptionsHistoricalAggregationView.js"></script>
 <script src="js/formalOptionAvailabilityEvidence.js"></script>
@@ -1687,7 +1689,11 @@ weeklyOptionsParticipantHistoricalView.initialize();
 window.getWeeklyOptionsParticipantHistoricalViewState = () =>
     weeklyOptionsParticipantHistoricalView.getState();
 
-const qriHistoricalViewModelApi = require("./js/qriOptionsHistoricalViewModel.js");
+const qriHistoricalViewModelApi = window.OptionMapQriOptionsHistoricalViewModel;
+if (!qriHistoricalViewModelApi ||
+    typeof qriHistoricalViewModelApi.buildQriHistoricalViewModel !== "function") {
+    throw new Error("QRI historical view model browser module is unavailable");
+}
 const qriHistoricalRootStyle = getComputedStyle(document.documentElement);
 const qriHistoricalView = window.OptionMapQriOptionsHistoricalView
     .createQriOptionsHistoricalView({
@@ -1704,7 +1710,11 @@ const qriHistoricalView = window.OptionMapQriOptionsHistoricalView
 qriHistoricalView.initialize();
 window.getQriHistoricalViewState = () => qriHistoricalView.getState();
 
-const qriHistoricalAggregationApi = require("./js/qriOptionsHistoricalAggregation.js");
+const qriHistoricalAggregationApi = window.OptionMapQriOptionsHistoricalAggregation;
+if (!qriHistoricalAggregationApi ||
+    typeof qriHistoricalAggregationApi.buildQriHistoricalAggregation !== "function") {
+    throw new Error("QRI historical aggregation browser module is unavailable");
+}
 const qriHistoricalAggregationView =
     window.OptionMapQriOptionsHistoricalAggregationView
         .createQriHistoricalAggregationView({

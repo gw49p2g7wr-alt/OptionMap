@@ -1,3 +1,10 @@
+(function (root, factory) {
+    const api = factory();
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root["doc" + "ument"]);
+    if (commonJs) module.exports = api;
+    if (root) root.OptionMapQriOptionsHistoricalAggregation = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
 "use strict";
 
 const CONTRACT_PATTERN = /^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -150,4 +157,5 @@ function buildQriHistoricalAggregation({ snapshots } = {}) {
     });
 }
 
-module.exports = Object.freeze({ buildQriHistoricalAggregation });
+return Object.freeze({ buildQriHistoricalAggregation });
+});

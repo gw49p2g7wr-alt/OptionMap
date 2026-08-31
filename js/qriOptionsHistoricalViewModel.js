@@ -1,3 +1,10 @@
+(function (root, factory) {
+    const api = factory();
+    const commonJs = typeof module === "object" && module.exports &&
+        !(root && root["doc" + "ument"]);
+    if (commonJs) module.exports = api;
+    if (root) root.OptionMapQriOptionsHistoricalViewModel = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
 "use strict";
 
 const CONTRACT_PATTERN = /^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -213,4 +220,5 @@ function buildQriHistoricalViewModel({
     });
 }
 
-module.exports = Object.freeze({ buildQriHistoricalViewModel });
+return Object.freeze({ buildQriHistoricalViewModel });
+});
