@@ -48,6 +48,10 @@ test("Windows packaging is pinned to x64 NSIS", () => {
     workflow,
     /npm run dist -- --win nsis --x64 --publish never/
   );
+  assert.match(
+    workflow,
+    /- name: Build unsigned Windows RC\s*\n\s+shell: cmd\s*\n\s+run: npm run dist -- --win nsis --x64 --publish never$/m
+  );
   assert.equal(
     packageJson.build.artifactName,
     "OptionMap-${version}-win-${arch}.${ext}"

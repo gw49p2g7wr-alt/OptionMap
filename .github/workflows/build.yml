@@ -40,6 +40,7 @@ jobs:
         run: node --check preload.js
 
       - name: Build unsigned Windows RC
+        shell: cmd
         run: npm run dist -- --win nsis --x64 --publish never
 
       - name: Create checksum and release manifest
