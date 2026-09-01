@@ -3,6 +3,9 @@ name: Build Windows App
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -14,11 +17,66 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm ci
+      - name: Resolve RC identity
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+          "SHORT_SHA=$shortSha" >> $env:GITHUB_ENV
+          "RC_INSTALLER_FILENAME=OptionMap-$version-win-x64.exe" >> $env:GITHUB_ENV
+          "RC_CHECKSUM_FILENAME=OptionMap-$version-win-x64.exe.sha256" >> $env:GITHUB_ENV
 
-      - run: npm run dist -- --win nsis --x64 --publish never
+      - name: Install dependencies
+        run: npm ci
 
-      - uses: actions/upload-artifact@v4
+      - name: Run tests
+        run: npm test
+
+      - name: Check main process syntax
+        run: node --check main.js
+
+      - name: Check preload syntax
+        run: node --check preload.js
+
+      - name: Build unsigned Windows RC
+        run: npm run dist -- --win nsis --x64 --publish never
+
+      - name: Create checksum and release manifest
+        shell: pwsh
+        run: |
+          $installerPath = Join-Path "dist" $env:RC_INSTALLER_FILENAME
+          if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+            throw "Expected installer not found: $installerPath"
+          }
+          $installer = Get-Item -LiteralPath $installerPath
+          $sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha256  $($installer.Name)" | Set-Content -LiteralPath (Join-Path "dist" $env:RC_CHECKSUM_FILENAME) -Encoding utf8
+          $manifest = [ordered]@{
+            product = "OptionMap"
+            version = $env:APP_VERSION
+            architecture = "x64"
+            commitSha = "${{ github.sha }}"
+            shortSha = $env:SHORT_SHA
+            workflowRunId = "${{ github.run_id }}"
+            workflowAttempt = "${{ github.run_attempt }}"
+            buildUtc = (Get-Date).ToUniversalTime().ToString("o")
+            installerFilename = $installer.Name
+            installerSizeBytes = $installer.Length
+            sha256 = $sha256
+            signingStatus = "unsigned"
+            runnerOs = "${{ runner.os }}"
+            nodeVersion = (node --version)
+          }
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath "dist/release-manifest.json" -Encoding utf8
+
+      - name: Upload Windows RC identity bundle
+        uses: actions/upload-artifact@v4
         with:
-          name: OptionMap-Windows
-          path: dist/*.exe
+          name: OptionMap-${{ env.APP_VERSION }}-win-x64-${{ env.SHORT_SHA }}
+          path: |
+            dist/${{ env.RC_INSTALLER_FILENAME }}
+            dist/${{ env.RC_CHECKSUM_FILENAME }}
+            dist/release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
