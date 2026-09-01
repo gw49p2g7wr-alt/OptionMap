@@ -175,7 +175,7 @@ test("renderer wires active auto after unchanged history and excludes specific p
         active.indexOf("buildAndSaveQriOptionsLastValid(localStorage"));
     assert.ok(active.indexOf("buildAndSaveQriOptionsLastValid(localStorage") <
         active.indexOf("window.saveLastValidQriOpenInterest({"));
-    assert.equal((active.match(/ipcRenderer\.invoke\(/g) || []).length, 1);
+    assert.equal((active.match(/optionMapBridge\.fetchQriOptionPage\(/g) || []).length, 1);
     const selected = html.slice(html.indexOf("async function showSpecificQriContract"),
         html.indexOf("async function updateQriContractManifest"));
     assert.equal(selected.includes("buildAndSaveQriOptionsLastValid"), false);

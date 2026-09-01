@@ -1309,7 +1309,20 @@ import {
     parseJpxReferencePrices
 } from "./js/parser/jpxParser.js";
 
-const { ipcRenderer } = require("electron");
+const optionMapBridge = window.optionMapBridge;
+const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
+    "downloadJpxExcel",
+    "fetchJpxPage",
+    "fetchOpenInterestListing",
+    "fetchParticipantListing",
+    "fetchQriOptionPage"
+]);
+if (!optionMapBridge ||
+    JSON.stringify(Object.keys(optionMapBridge).sort()) !==
+        JSON.stringify(OPTION_MAP_BRIDGE_KEYS) ||
+    OPTION_MAP_BRIDGE_KEYS.some(key => typeof optionMapBridge[key] !== "function")) {
+    throw new Error("OptionMap preload bridge unavailable");
+}
 const XLSX = window.XLSX;
 if (!XLSX || typeof XLSX.read !== "function" ||
     typeof XLSX.utils?.sheet_to_json !== "function") {
@@ -1851,12 +1864,12 @@ function validateWeeklyOptionsBackfillRange() {
     return { startDate, endDate };
 }
 async function fetchWeeklyOptionsBackfillListing(listingUrl) {
-    const result = await ipcRenderer.invoke("fetch-jpx-open-interest-json", listingUrl);
+    const result = await optionMapBridge.fetchOpenInterestListing(listingUrl);
     if (!result?.success) throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
     return result.data;
 }
 async function fetchWeeklyOptionsBackfillExcel(sourceUrl) {
-    const result = await ipcRenderer.invoke("download-daytrading-excel", sourceUrl);
+    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
     if (!result?.success) throw new Error(result?.error || "JPX週次オプションExcelを取得できませんでした");
     return result.data;
 }
@@ -2060,9 +2073,7 @@ function validateWeeklyFuturesBackfillRange() {
 }
 
 async function fetchWeeklyFuturesBackfillListing(listingUrl) {
-    const result = await ipcRenderer.invoke(
-        "fetch-jpx-open-interest-json", listingUrl
-    );
+    const result = await optionMapBridge.fetchOpenInterestListing(listingUrl);
     if (!result?.success) {
         throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
     }
@@ -2070,9 +2081,7 @@ async function fetchWeeklyFuturesBackfillListing(listingUrl) {
 }
 
 async function fetchWeeklyFuturesBackfillExcel(sourceUrl) {
-    const result = await ipcRenderer.invoke(
-        "download-daytrading-excel", sourceUrl
-    );
+    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
     if (!result?.success) {
         throw new Error(result?.error || "JPX週次先物Excelを取得できませんでした");
     }
@@ -2213,9 +2222,7 @@ function validateParticipantBackfillRange() {
 }
 
 async function fetchParticipantBackfillJson(sourceUrl) {
-    const result = await ipcRenderer.invoke(
-        "fetch-jpx-participant-json", sourceUrl
-    );
+    const result = await optionMapBridge.fetchParticipantListing(sourceUrl);
     if (!result?.success) {
         throw new Error(result?.error || "JPX参加者別公式一覧を取得できませんでした");
     }
@@ -2223,9 +2230,7 @@ async function fetchParticipantBackfillJson(sourceUrl) {
 }
 
 async function fetchParticipantBackfillExcel(sourceUrl) {
-    const result = await ipcRenderer.invoke(
-        "download-daytrading-excel", sourceUrl
-    );
+    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
     if (!result?.success) {
         throw new Error(result?.error || "JPX参加者別Excelを取得できませんでした");
     }
@@ -2605,10 +2610,7 @@ function makeParticipantUrls(dateStr) {
 }
 
 async function downloadAndParseHistoricalExcel(excelUrl, label) {
-    const excelResult = await ipcRenderer.invoke(
-        "download-daytrading-excel",
-        excelUrl
-    );
+    const excelResult = await optionMapBridge.downloadJpxExcel(excelUrl);
 
     if (!excelResult.success) {
         throw new Error(
@@ -2671,8 +2673,7 @@ async function findLatestParticipantDate(startDate, maxDays = 10) {
 
             console.log("🔎 手口データ確認中 =", dateStr);
 
-            const result = await ipcRenderer.invoke(
-                "download-daytrading-excel",
+            const result = await optionMapBridge.downloadJpxExcel(
                 urls.dayAuctionUrl
             );
 
@@ -2721,10 +2722,7 @@ async function downloadAndParseParticipantExcel(
     console.log(`${label} URL:`, excelUrl);
 
     try {
-        const excelResult = await ipcRenderer.invoke(
-            "download-daytrading-excel",
-            excelUrl
-        );
+        const excelResult = await optionMapBridge.downloadJpxExcel(excelUrl);
 
         console.log(`${label}取得結果:`, excelResult);
 
@@ -2799,8 +2797,7 @@ async function handleHistoricalDataClick() {
 
         console.log("📅 過去データ巡回 =", dateStr);
 
-        const checkResult = await ipcRenderer.invoke(
-            "download-daytrading-excel",
+        const checkResult = await optionMapBridge.downloadJpxExcel(
             urls.dayAuctionUrl
         );
 
@@ -3895,10 +3892,7 @@ function isValidWeeklyOptionsResult(result) {
 }
 
 async function fetchWeeklyPage({ requestId } = {}) {
-    const result = await ipcRenderer.invoke(
-        "fetch-daytrading-page",
-        WEEKLY_PAGE_URL
-    );
+    const result = await optionMapBridge.fetchJpxPage(WEEKLY_PAGE_URL);
 
     console.log("週次ページ取得結果:", result);
 
@@ -3916,8 +3910,7 @@ async function fetchWeeklyPage({ requestId } = {}) {
     let listing = null;
 
     try {
-        const listingResult = await ipcRenderer.invoke(
-            "fetch-jpx-open-interest-json",
+        const listingResult = await optionMapBridge.fetchOpenInterestListing(
             listingJsonUrl
         );
 
@@ -3979,10 +3972,7 @@ async function fetchWeeklyFuturesData({
     window.updateFetchState(source, { sourceUrl });
 
     try {
-        const excelResult = await ipcRenderer.invoke(
-            "download-daytrading-excel",
-            sourceUrl
-        );
+        const excelResult = await optionMapBridge.downloadJpxExcel(sourceUrl);
 
         if (!excelResult.success) {
             throw new Error(
@@ -4091,10 +4081,7 @@ async function fetchWeeklyOptionsData({
     window.updateFetchState(source, { sourceUrl });
 
     try {
-        const excelResult = await ipcRenderer.invoke(
-            "download-daytrading-excel",
-            sourceUrl
-        );
+        const excelResult = await optionMapBridge.downloadJpxExcel(sourceUrl);
 
         if (!excelResult.success) {
             throw new Error(
@@ -4358,7 +4345,7 @@ function initializeQriReferenceAcquisitionRuntime() {
     const orchestrator = window.OptionMapQriOptionsReferenceAcquisition
         .createQriReferenceAcquisitionOrchestrator({
             fetchReferencePage: async url => {
-                const response = await ipcRenderer.invoke("fetch-option-page", url);
+                const response = await optionMapBridge.fetchQriOptionPage(url);
                 if (!response?.success) throw new Error(response?.error || "reference_fetch_failed");
                 if (response.sourceUrl !== url) throw new Error("reference_source_url_mismatch");
                 return response.html;
@@ -4757,7 +4744,7 @@ async function showSpecificQriContract(contract) {
     window.setQriContractDisplayUnavailable?.(contract);
     setQriContractSelectionNote(`表示用：${contract}限を取得中…（総合判定には未使用）`, "loading");
     try {
-        const response = await ipcRenderer.invoke("fetch-option-page", listed.url);
+        const response = await optionMapBridge.fetchQriOptionPage(listed.url);
         if (sequence !== qriContractSelectionState.requestSequence ||
             qriContractSelectionState.contract !== contract) return { status: "stale_ignored" };
         if (!response.success) {
@@ -4842,7 +4829,7 @@ async function showUnresolvedQriEntry(selectionKey) {
             selectionKey,
             validateCanonical: window.OptionMapQriOptions.validateCanonical,
             load: async url => {
-                const response = await ipcRenderer.invoke("fetch-option-page", url);
+                const response = await optionMapBridge.fetchQriOptionPage(url);
                 if (!response.success) throw new Error(`lazy_fetch_failed:${response.error || "unknown"}`);
                 if (response.sourceUrl !== url) throw new Error("lazy_source_url_mismatch");
                 const payload = createQriPayload(response.html, response.sourceUrl);
@@ -5021,10 +5008,7 @@ async function fetchQriData({ requestId } = {}) {
     refreshQriOptionsDisplay({ liveState: null, liveStatus: "pending" });
 
     try {
-        const result = await ipcRenderer.invoke(
-            "fetch-option-page",
-            sourceUrl
-        );
+        const result = await optionMapBridge.fetchQriOptionPage(sourceUrl);
 
         if (!result.success) {
             throw new Error(
@@ -5546,10 +5530,7 @@ async function fetchParticipantData({
         successCount: null
     });
 
-    const result = await ipcRenderer.invoke(
-        "fetch-daytrading-page",
-        PARTICIPANT_PAGE_URL
-    );
+    const result = await optionMapBridge.fetchJpxPage(PARTICIPANT_PAGE_URL);
 
         console.log("日中データ取得結果:", result);
 

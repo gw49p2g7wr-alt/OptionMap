@@ -166,7 +166,7 @@ test("renderer wires only active adopted result with dependency order and no ext
     assert.match(active, /const ivAdoption = await adoptQriOptionIv\("active"/);
     assert.match(active, /ivAdoption\.adopted && ivAdoption\.status === "available"/);
     assert.match(active, /buildAndSaveQriOptionIvLastValid\(localStorage/);
-    assert.equal((active.match(/ipcRenderer\.invoke\(/g) || []).length, 1);
+    assert.equal((active.match(/optionMapBridge\.fetchQriOptionPage\(/g) || []).length, 1);
     const selected = html.slice(html.indexOf("async function fetchSelectedQriContract"),
         html.indexOf("async function updateQriContractManifest"));
     assert.equal(selected.includes("buildAndSaveQriOptionIvLastValid"), false);

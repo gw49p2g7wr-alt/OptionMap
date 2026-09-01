@@ -129,6 +129,6 @@ test("renderer reuses one payload HTML, loads dependencies in order and adds no 
     assert.match(payload, /parseQriOptionIvPage\(\s*html, sourceUrl/);
     const active = index.slice(index.indexOf("async function fetchQriData"),
         index.indexOf("async function fetchParticipantData"));
-    assert.equal((active.match(/ipcRenderer\.invoke\(/g) || []).length, 1);
+    assert.equal((active.match(/optionMapBridge\.fetchQriOptionPage\(/g) || []).length, 1);
     assert.match(index, /id="qriIvCurvePanel"/);
 });

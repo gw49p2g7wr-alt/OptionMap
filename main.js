@@ -535,7 +535,8 @@ function createWindow() {
     title: "OptionMap",
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js")
     }
   });
 

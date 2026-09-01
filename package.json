@@ -17,6 +17,7 @@
     "files": [
       "index.html",
       "main.js",
+      "preload.js",
       "style.css",
       "js/**/*",
       "!js/script2026807.js",

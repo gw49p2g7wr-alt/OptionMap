@@ -308,7 +308,7 @@ test("unresolved lazy fetchは表示専用でsequence確認後だけmanifestへ�
     const lazy = html.slice(html.indexOf("async function showUnresolvedQriEntry"),
         html.indexOf("async function updateQriContractManifest"));
     assert.match(lazy, /qriLazyManifestResolver\.resolve/);
-    assert.match(lazy, /ipcRenderer\.invoke\("fetch-option-page", url\)/);
+    assert.match(lazy, /optionMapBridge\.fetchQriOptionPage\(url\)/);
     assert.match(lazy, /sequence !== qriContractSelectionState\.requestSequence/);
     assert.match(lazy, /qriContractManifest = resolved\.manifest/);
     assert.doesNotMatch(lazy, /persistQriOptionsHistory|morningBaseline|overallJudgment/);
