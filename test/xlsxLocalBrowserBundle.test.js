@@ -20,7 +20,10 @@ const localLicensePath = path.join(root, "js/vendor/xlsx.LICENSE");
 const localSource = fs.readFileSync(localAssetPath, "utf8");
 const adapterPath = path.join(root, "js/vendor/xlsx.browser-global.js");
 const adapterSource = fs.readFileSync(adapterPath, "utf8");
-const hash = value => crypto.createHash("sha256").update(value).digest("hex");
+const canonicalText = value => value.toString("utf8").replace(/\r\n?/g, "\n");
+const canonicalTextHash = value =>
+    crypto.createHash("sha256").update(canonicalText(value)).digest("hex");
+const canonicalRelativePath = value => value.replaceAll("\\", "/");
 const plain = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
 function loadBrowserXlsx({ hybrid = false } = {}) {
@@ -125,11 +128,22 @@ test("XLSX 0.20.3 browser assetとApache licenseをinstalled packageからexact�
     assert.equal(packageLock.packages["node_modules/xlsx"].version, "0.20.3");
     assert.equal(fs.statSync(localAssetPath).isFile(), true);
     assert.equal(fs.statSync(localLicensePath).isFile(), true);
-    assert.equal(hash(fs.readFileSync(localAssetPath)),
-        hash(fs.readFileSync(installedAssetPath)));
-    assert.equal(hash(fs.readFileSync(localLicensePath)),
-        hash(fs.readFileSync(installedLicensePath)));
+    assert.equal(canonicalTextHash(fs.readFileSync(localAssetPath)),
+        canonicalTextHash(fs.readFileSync(installedAssetPath)));
+    assert.equal(canonicalTextHash(fs.readFileSync(localLicensePath)),
+        canonicalTextHash(fs.readFileSync(installedLicensePath)));
     assert.match(fs.readFileSync(localLicensePath, "utf8"), /Apache License/);
+});
+
+test("XLSX配布testの改行とpath separatorをcross-platform canonical化", () => {
+    const lf = Buffer.from("first\nsecond\n", "utf8");
+    const crlf = Buffer.from("first\r\nsecond\r\n", "utf8");
+    assert.equal(canonicalText(lf), canonicalText(crlf));
+    assert.equal(canonicalTextHash(lf), canonicalTextHash(crlf));
+    assert.equal(canonicalRelativePath("js/vendor/xlsx.full.min.js"),
+        canonicalRelativePath("js\\vendor\\xlsx.full.min.js"));
+    assert.equal(canonicalRelativePath("js/vendor/xlsx.LICENSE"),
+        canonicalRelativePath("js\\vendor\\xlsx.LICENSE"));
 });
 
 test("local bundleはwindow.XLSX 0.20.3と必要APIを公開", () => {
@@ -260,6 +274,8 @@ test("XLSX read・sheet selection・sheet_to_json production semanticsを維持"
 
 test("electron-builderのjs globがXLSX assetとlicenseをpackage対象に含む", () => {
     assert.ok(packageJson.build.files.includes("js/**/*"));
-    assert.equal(path.relative(root, localAssetPath), "js/vendor/xlsx.full.min.js");
-    assert.equal(path.relative(root, localLicensePath), "js/vendor/xlsx.LICENSE");
+    assert.equal(canonicalRelativePath(path.relative(root, localAssetPath)),
+        "js/vendor/xlsx.full.min.js");
+    assert.equal(canonicalRelativePath(path.relative(root, localLicensePath)),
+        "js/vendor/xlsx.LICENSE");
 });
