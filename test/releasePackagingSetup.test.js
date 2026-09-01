@@ -7,6 +7,9 @@ const root = path.join(__dirname, "..");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
+const packageLock = JSON.parse(
+  fs.readFileSync(path.join(root, "package-lock.json"), "utf8")
+);
 const workflow = fs.readFileSync(
   path.join(root, ".github/workflows/build.yml"),
   "utf8"
@@ -24,6 +27,17 @@ test("private beta package metadata preserves application identity", () => {
   assert.equal(packageJson.build.nsis.perMachine, false);
   assert.match(html, new RegExp(`OptionMap v${packageJson.version.replaceAll(".", "\\.")}`));
   assert.doesNotMatch(html, /OptionMap v1\.0(?:<|\s)/);
+});
+
+test("RC dependencies pin Electron patch and exclude unused OpenAI", () => {
+  assert.equal(packageJson.devDependencies.electron, "42.5.1");
+  assert.equal(packageLock.packages["node_modules/electron"].version, "42.5.1");
+  assert.equal(Object.hasOwn(packageJson.dependencies, "openai"), false);
+  assert.equal(Object.hasOwn(packageLock.packages, "node_modules/openai"), false);
+  assert.equal(packageJson.dependencies["chart.js"], "4.5.1");
+  assert.equal(packageLock.packages["node_modules/chart.js"].version, "4.5.1");
+  assert.equal(packageLock.packages["node_modules/xlsx"].version, "0.20.3");
+  assert.equal(packageJson.dependencies.dotenv, "^17.4.2");
 });
 
 test("Windows packaging is pinned to x64 NSIS", () => {
@@ -78,6 +92,7 @@ test("manual artifact workflow validates source before building without publishi
     assert.ok(workflow.includes(`run: ${command}`), `missing check: ${command}`);
   }
   assert.match(workflow, /^permissions:\s*\n\s+contents: read$/m);
+  assert.match(workflow, /node-version:\s*22\.12\.0/);
   assert.doesNotMatch(workflow, /GH_TOKEN|npm install|\bpush:/);
 });
 
