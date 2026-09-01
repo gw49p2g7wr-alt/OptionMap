@@ -67,12 +67,12 @@ function loadPreload(invokeImplementation = async (channel, url) => ({ channel, 
   return { ...publication, calls };
 }
 
-test("main window enables context isolation with Node ON and an absolute root preload", () => {
+test("main window enables context isolation with Node OFF and an absolute root preload", () => {
   const main = mainWindowBlock();
-  assert.match(main, /nodeIntegration:\s*true/);
+  assert.match(main, /nodeIntegration:\s*false/);
   assert.match(main, /contextIsolation:\s*true/);
   assert.match(main, /preload:\s*path\.join\(__dirname, "preload\.js"\)/);
-  assert.doesNotMatch(main, /contextIsolation:\s*false|nodeIntegration:\s*false/);
+  assert.doesNotMatch(main, /contextIsolation:\s*false|nodeIntegration:\s*true/);
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
