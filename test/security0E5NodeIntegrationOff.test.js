@@ -66,7 +66,7 @@ test("main world production has no raw Electron, XLSX require, or historical dir
     }
 });
 
-test("preload keeps Electron authority and the exact immutable five-method surface", () => {
+test("preload keeps Electron authority and the exact immutable six-method surface", () => {
     let exposed;
     const calls = [];
     const sandbox = {
@@ -84,7 +84,7 @@ test("preload keeps Electron authority and the exact immutable five-method surfa
     assert.equal(exposed.key, "optionMapBridge");
     assert.deepEqual(Object.keys(exposed.api).sort(), [
         "downloadJpxExcel", "fetchJpxPage", "fetchOpenInterestListing",
-        "fetchParticipantListing", "fetchQriOptionPage"
+        "fetchParticipantListing", "fetchQriOptionPage", "saveFullExportJson"
     ]);
     assert.equal(Object.isFrozen(exposed.api), true);
     assert.equal(calls.length, 0);

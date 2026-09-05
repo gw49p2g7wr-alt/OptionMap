@@ -43,8 +43,11 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
     }
 
     function unavailable(reason, source = null, freshness = null, status = "unavailable") {
+        const safeFreshness = freshness?.status === "fresh"
+            ? { status: "unavailable", reason: "section_unavailable" }
+            : freshness;
         return { status, reason, authority: authority({ source }), asOf: asOf(),
-            freshness: clone(freshness || { status: "unavailable",
+            freshness: clone(safeFreshness || { status: "unavailable",
                 reason: "freshness_status_unavailable" }), summary: null, details: null };
     }
 
@@ -70,8 +73,13 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
         const mode = price.mode;
         const identityState = clone(configuration.getCurrentPriceIdentity?.() || null);
         const liveFact = identityState?.status === "available" ? identityState.fact : null;
-        const automaticValid = mode === "automatic" && liveFact?.identityVerified === true &&
-            liveFact.source === price.source && liveFact.contract === price.contract;
+        const contractMatched = configuration.contractsMatch?.(
+            price.contract, liveFact?.contract) === true;
+        const automaticValid = mode === "automatic" && liveFact?.available === true &&
+            liveFact.sourceKind === "live" && liveFact.origin === "live" &&
+            liveFact.mode === "automatic" && liveFact.identityVerified === true &&
+            liveFact.acquisitionVerified === true && liveFact.currentRequestVerified === true &&
+            contractMatched;
         const manualValid = mode === "manual";
         if (!automaticValid && !manualValid) {
             return unavailable("current_price_identity_mismatch", "current-price",
@@ -277,7 +285,10 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
     async function createWeeklyFuturesSection(configuration) {
         const identityState = clone(configuration.getWeeklyFormalIdentity?.() || null);
         const fact = identityState?.status === "available" ? identityState.fact : null;
-        if (!fact || fact.sourceClass !== "formal_history") return unavailable(
+        if (!fact || fact.sourceClass !== "formal_history" ||
+            fact.origin !== "weekly_futures_history" ||
+            fact.dataStatus !== "formal_history" || fact.activeVersionMatched !== true ||
+            !text(fact.sourceFingerprint)) return unavailable(
             identityState?.reason || "weekly_formal_identity_unavailable", "weekly-futures",
             freshnessFor(configuration, "weeklyFutures"));
         let versions;
@@ -288,7 +299,7 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
         const current = versions?.find(item => item.versionKey === fact.currentVersionKey);
         if (!previous || !current) return unavailable("formal_revision_not_found", "weekly-futures",
             freshnessFor(configuration, "weeklyFutures"));
-        if (previous.signature !== fact.previousSignature || current.signature !== fact.currentSignature) {
+        if (current.signature !== fact.currentSignature || current.sourceDate !== fact.sourceDate) {
             return unavailable("formal_identity_mismatch", "weekly-futures",
                 freshnessFor(configuration, "weeklyFutures"));
         }

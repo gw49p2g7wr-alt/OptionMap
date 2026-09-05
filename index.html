@@ -42,6 +42,20 @@
         ></div>
     </section>
 
+    <section class="full-export-controls ui-category-panel category-system"
+        aria-labelledby="fullExportTitle">
+        <div>
+            <h2 id="fullExportTitle" class="ui-category-title">🤖 AI用エクスポート
+                <span class="ui-category-badge">JSON</span>
+            </h2>
+            <p>現在の正式データと利用可能な履歴を、AIへ渡せる1つのJSONに保存します。</p>
+        </div>
+        <div class="full-export-actions">
+            <button id="fullExportJsonButton" type="button">AI用データを書き出す</button>
+            <p id="fullExportStatus" role="status" aria-live="polite">未実行</p>
+        </div>
+    </section>
+
     <details id="weeklyOptionsChangesPanel"
         class="weekly-options-changes-panel ui-category-panel category-options">
         <summary>
@@ -1247,6 +1261,7 @@
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
 <script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
 <script src="js/dataFreshness.js"></script>
+<script src="js/fullExportFreshness.js"></script>
 <script src="js/qriOptionsLastValidRestore.js"></script>
 <script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>
 <script src="js/qriOptionsBootRestoreShadow.js"></script>
@@ -1300,7 +1315,12 @@
 <script src="js/weeklyFuturesTwelveGroupDualRunRuntime.js"></script>
 <script src="js/weeklyFuturesTwelveGroupReferenceView.js"></script>
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
+<script src="js/overallV2OptionQriBinding.js"></script>
 <script src="js/script.js"></script>
+<script src="js/fullExportSecurity.js"></script>
+<script src="js/fullExport.js"></script>
+<script src="js/fullExportCollector.js"></script>
+<script src="js/fullExportUi.js"></script>
 
 <script type="module">
 
@@ -1315,7 +1335,8 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "fetchJpxPage",
     "fetchOpenInterestListing",
     "fetchParticipantListing",
-    "fetchQriOptionPage"
+    "fetchQriOptionPage",
+    "saveFullExportJson"
 ]);
 if (!optionMapBridge ||
     JSON.stringify(Object.keys(optionMapBridge).sort()) !==
@@ -1509,6 +1530,70 @@ let weeklyFuturesBackfillCandidates = [];
 let weeklyFuturesBackfillCancelled = false;
 let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
+
+window.OptionMapFullExportUi.configure({
+    collect: () => {
+        const mobile = window.OptionMapMobileSummaryPreview?.getLatestSummary?.() || null;
+        const collectorState = window.getMorningBaselineV4RuntimeCollectorState?.() || null;
+        const session = collectorState?.facts?.marketSession || null;
+        const freshnessAdapter = window.OptionMapFullExportFreshness
+            .createFullExportFreshnessAdapter({
+                getMarketSession: () => session,
+                getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
+                getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
+                getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
+                getFetchState: name => window.dataFetchState?.[name] || null,
+                getWeeklyDataState: name => name === "weeklyFutures"
+                    ? window.weeklyFuturesDataState : window.weeklyOptionsDataState,
+                getParticipantState: () => window.participantDataState || null
+            });
+        const collector = window.OptionMapFullExportCollector.createFullExportCollector({
+            now: () => window.OptionMapFullExportUi.generatedAtJst(new Date()),
+            getMobileSummary: () => mobile,
+            contractsMatch: window.OptionMapCurrentPriceLastValidStore?.contractsMatch,
+            getMarketSession: () => session ? { ...session,
+                status: session.valid === false ? "unavailable" : "verified",
+                calendarDate: session.captureCalendarDate || null,
+                tradingDate: session.formalTradingDate || null } : null,
+            getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
+            getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
+            getMorningRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
+            getMorningComparisonState: () => window.getMorningComparisonV4RuntimeState?.() || null,
+            getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
+            readQriHistory: () => window.OptionMapQriOptionsHistoryStore.loadHistory(),
+            readWeeklyFuturesActiveVersions: () => window.OptionMapWeeklyFuturesHistory
+                .getActiveVersions(weeklyFuturesHistory),
+            getWeeklyFormalIdentity: () => window.getWeeklyFormalIdentityFact?.() || null,
+            getWeeklyCandidate: () => window.getWeeklyCandidateState?.() || null,
+            getTwelveGroup: () => window.getWeeklyFuturesTwelveGroupDualRun?.() || null,
+            readWeeklyOptionsHistory: () => window.OptionMapWeeklyOptionsHistoryStore
+                .readWeeklyOptionsHistory(),
+            validateWeeklyOptionsHistory: history => window.OptionMapWeeklyOptionsHistory
+                .validateWeeklyOptionsHistory(history),
+            compareWeeklyOptionsHistory: history => window.OptionMapWeeklyOptionsHistoryComparison
+                .compareLatestWeeklyOptionsHistory(history),
+            readParticipants: async () => {
+                if (!activeParticipantCache) return null;
+                const files = window.OptionMapParticipantData.cacheToParsedDayData(activeParticipantCache);
+                const records = Object.values(files).flatMap(file => Object.values(file || {})
+                    .flatMap(group => Array.isArray(group?.records) ? group.records : []));
+                return { status: "available", reason: null, origin: "validated_cache",
+                    sourceDate: activeParticipantCache.sourceDate,
+                    fetchedAt: activeParticipantCache.fetchedAt,
+                    versionKey: activeParticipantCache.versionKey,
+                    signature: activeParticipantCache.signature,
+                    fileStatuses: Object.fromEntries(window.OptionMapParticipantData.FILE_KEYS
+                        .map(key => [key, "success"])), records };
+            },
+            validateParticipants: async () => Boolean(activeParticipantCache &&
+                await window.OptionMapParticipantData.validateParticipantCache(activeParticipantCache)),
+            readIntelligenceSnapshots: () => JSON.parse(
+                localStorage.getItem("optionMapJpxSnapshots") || "[]"),
+            getSectionFreshness: freshnessAdapter.getSectionFreshness
+        });
+        return collector.collect({ market: "Nikkei 225 derivatives" });
+    }
+});
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
 let qriReferenceAcquisitionRuntime = null;

@@ -4360,11 +4360,19 @@ function createOptionComponentInputV2() {
     const metadata = source?.metadata || {};
     const sourceDate =
         metadata.currentOpenInterestSourceDate || metadata.currentSourceDate;
+    const bindingCurrent = window.OptionMapOverallV2OptionQriBinding
+        ?.matchesCurrent(
+            metadata.formalQriIdentity,
+            window.getQriFormalIdentityFact?.() || null,
+            sourceDate
+        ) === true;
 
-    if (source?.available !== true || !sourceDate) {
+    if (source?.available !== true || !sourceDate || !bindingCurrent) {
         return {
             available: false,
-            reason: source?.available === true
+            reason: source?.available === true && sourceDate && !bindingCurrent
+                ? "QRI正式identityとの一致を確認できません"
+                : source?.available === true
                 ? "QRI建玉の基準日を確認できません"
                 : "オプション市場データが利用できません"
         };
@@ -4412,7 +4420,8 @@ function createOptionComponentInputV2() {
             currentPriceMode: currentPriceState?.mode || null,
             currentPriceSource: currentPriceState?.source || null,
             currentPriceQuotedAt: currentPriceState?.quotedAt || null,
-            currentPriceFetchedAt: currentPriceState?.fetchedAt || null
+            currentPriceFetchedAt: currentPriceState?.fetchedAt || null,
+            formalQriIdentity: metadata.formalQriIdentity
         }
     };
 }
@@ -4954,6 +4963,13 @@ window.getMobileSummaryRendererState = function () {
         }
     };
 };
+window.getWeeklyCandidateState = function () {
+    return optionMapJudgmentStateV2.weeklyCandidate
+        ? (typeof structuredClone === "function"
+            ? structuredClone(optionMapJudgmentStateV2.weeklyCandidate)
+            : JSON.parse(JSON.stringify(optionMapJudgmentStateV2.weeklyCandidate)))
+        : null;
+};
 
 function invalidateOptionMarketJudgment() {
     optionMapJudgmentState.option = {
@@ -5293,6 +5309,20 @@ function autoSelectComparisonSnapshot() {
         comparisonSelectionCurrentSourceDate ===
         currentSourceDate
     ) {
+        const binding = window.OptionMapOverallV2OptionQriBinding;
+        const shouldReapply = binding
+            ?.shouldReapplySelectedSnapshot({
+                sameSourceDate: true,
+                snapshotValid: isValidOptionSnapshot(comparisonSnapshot),
+                judgmentState: optionMapJudgmentState.option,
+                qriState: window.getQriFormalIdentityFact?.() || null,
+                sourceDate: currentSourceDate
+            }) === true;
+        if (shouldReapply) {
+            applyComparisonSnapshot(comparisonSnapshot, {
+                selectionMode: comparisonSelectionMode
+            });
+        }
         return comparisonSnapshot;
     }
 
@@ -9012,6 +9042,14 @@ const optionMarketJudgment =
         currentPrice: numericCurrentPrice
     });
 
+const currentOpenInterestSourceDate =
+    getCurrentQriOpenInterestSourceDate();
+const formalQriIdentity = window.OptionMapOverallV2OptionQriBinding
+    ?.createBinding(
+        window.getQriFormalIdentityFact?.() || null,
+        currentOpenInterestSourceDate
+    ) || null;
+
 optionMapJudgmentState.option = {
     available: optionMarketJudgment.available === true,
     judgment: optionMarketJudgment.available === true
@@ -9021,9 +9059,9 @@ optionMapJudgmentState.option = {
         comparisonSourceDate:
             comparisonSnapshot?.sourceDate || null,
         currentSourceDate:
-            getCurrentQriOpenInterestSourceDate(),
+            currentOpenInterestSourceDate,
         currentOpenInterestSourceDate:
-            getCurrentQriOpenInterestSourceDate(),
+            currentOpenInterestSourceDate,
         currentOpenInterestSourceDateKind:
             qriOpenInterestDataState.sourceDateKind,
         openInterestOrigin:
@@ -9035,7 +9073,8 @@ optionMapJudgmentState.option = {
             !Number.isNaN(lastJpxFetchedAt.getTime())
                 ? lastJpxFetchedAt.toISOString()
                 : null,
-        currentPrice: numericCurrentPrice
+        currentPrice: numericCurrentPrice,
+        formalQriIdentity
     }
 };
 

@@ -1,18 +1,23 @@
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   net,
 } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs/promises");
+const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
+const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
 );
 require("dotenv").config();
 
 const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
+const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID });
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
   invalid_url: "取得先URLが不正です",
@@ -162,6 +167,14 @@ ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
 ipcMain.handle("get-weekly-listing-acquisition-diagnostics", () =>
   weeklyListingDiagnostics.getState()
 );
+
+ipcMain.handle("save-full-export-json", (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) {
+    return { success: false, cancelled: false, reason: "invalid_export_window" };
+  }
+  return fullExportSaveService.save(owner, request);
+});
 
 ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
   try {

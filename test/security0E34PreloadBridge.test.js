@@ -14,14 +14,17 @@ const expectedKeys = [
   "fetchJpxPage",
   "fetchOpenInterestListing",
   "fetchParticipantListing",
-  "fetchQriOptionPage"
+  "fetchQriOptionPage",
+  "saveFullExportJson"
 ];
+const urlKeys = expectedKeys.filter(key => key !== "saveFullExportJson");
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
   fetchJpxPage: "fetch-daytrading-page",
   fetchOpenInterestListing: "fetch-jpx-open-interest-json",
   fetchParticipantListing: "fetch-jpx-participant-json",
-  downloadJpxExcel: "download-daytrading-excel"
+  downloadJpxExcel: "download-daytrading-excel",
+  saveFullExportJson: "save-full-export-json"
 };
 
 function mainWindowBlock() {
@@ -76,7 +79,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact five-method narrow bridge", () => {
+test("preload publishes only the exact six-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -91,7 +94,7 @@ test("each public method maps one unchanged URL to its fixed IPC channel", async
   const failure = Object.freeze({ success: false, error: "safe", errorCode: "invalid_url" });
   const { api, calls } = loadPreload(async channel =>
     channel === "download-daytrading-excel" ? response : failure);
-  for (const method of expectedKeys) {
+  for (const method of urlKeys) {
     const url = ` https://example.invalid/${method} `;
     const result = await api[method](url);
     assert.deepEqual(calls.at(-1), [mapping[method], url]);
@@ -104,7 +107,7 @@ test("each public method maps one unchanged URL to its fixed IPC channel", async
 test("all bridge methods reject invalid argument shape without invoking IPC", async () => {
   const { api, calls } = loadPreload();
   const invalidCalls = [[], ["one", "two"], [null], [42], [""], [" \n\t "], ["x".repeat(4097)]];
-  for (const method of expectedKeys) {
+  for (const method of urlKeys) {
     for (const args of invalidCalls) {
       const result = await api[method](...args);
       assert.deepEqual(JSON.parse(JSON.stringify(result)), {
@@ -115,8 +118,13 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
     }
   }
   assert.equal(calls.length, 0);
-  await api.fetchQriOptionPage("x".repeat(4096));
+  const exportRequest = { fileName: "OptionMap-Full-Export-2026-09-06T071500-JST.json",
+    json: "{}" };
+  await api.saveFullExportJson(exportRequest);
+  assert.deepEqual(calls.at(-1), ["save-full-export-json", exportRequest]);
   assert.equal(calls.length, 1);
+  await api.fetchQriOptionPage("x".repeat(4096));
+  assert.equal(calls.length, 2);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {

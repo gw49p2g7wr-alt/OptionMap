@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const fullExport = require("../js/fullExport.js");
 const { createFullExportCollector } = require("../js/fullExportCollector.js");
+const { contractsMatch } = require("../js/storage/currentPriceLastValidStore.js");
 
 const qriVersion = "qri-options-v2|2026-09|page|sha256:qri-signature";
 const weeklyPrevious = "weekly-futures-v2|2026-08-21|sha256:weekly-old";
@@ -67,6 +68,7 @@ function dependencies(overrides = {}) {
                     published: true, value: 20 }] } }] }] };
     return {
         now: () => "2026-09-06T07:15:00+09:00",
+        contractsMatch,
         getMobileSummary: () => ({ marketDate: "2026-09-07",
             payload: { currentPrice: { available: true, status: "available", value: 42125,
                 source: "qri-nikkei225-futures", mode: "automatic", contract: "2026-09",
@@ -79,8 +81,11 @@ function dependencies(overrides = {}) {
             warnings: [] }),
         getMarketSession: () => ({ status: "verified", calendarDate: "2026-09-06",
             tradingDate: "2026-09-07" }),
-        getCurrentPriceIdentity: () => ({ status: "available", fact: { identityVerified: true,
-            source: "qri-nikkei225-futures", contract: "2026-09" } }),
+        getCurrentPriceIdentity: () => ({ status: "available", fact: { available: true,
+            sourceKind: "live", origin: "live", mode: "automatic", identityVerified: true,
+            acquisitionVerified: true, currentRequestVerified: true, contract: "2026-09",
+            qriTradingDateMapping: { mappingVerified: true,
+                mappingSource: "same_date_explicit" } } }),
         getOverallV2FormalEnvelope: () => ({ status: "available", envelope: {
             formalApplied: true, identityVerified: true, logicVersion: "overall-v2-weights-55-45-v1",
             evaluatedAt: "2026-09-05T09:46:10Z", inputFingerprint: "overall-fingerprint",
@@ -113,8 +118,10 @@ function dependencies(overrides = {}) {
         compareQriHistory: async () => qriComparison,
         getWeeklyFormalIdentity: () => ({ status: "available", fact: {
             sourceClass: "formal_history", previousVersionKey: weeklyPrevious,
-            currentVersionKey: weeklyCurrent, previousSignature: "weekly-old",
-            currentSignature: "weekly-new", identityVerified: true } }),
+            currentVersionKey: weeklyCurrent, currentSignature: "weekly-new",
+            sourceDate: "2026-08-28", activeVersionMatched: true,
+            dataStatus: "formal_history", origin: "weekly_futures_history",
+            sourceFingerprint: "weekly-fingerprint" } }),
         readWeeklyFuturesActiveVersions: async () => weeklyVersions,
         getWeeklyCandidate: () => ({ available: true,
             judgment: { direction: "買い優勢", buyScore: 0.2, sellScore: 0.1,
@@ -162,6 +169,96 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     assert.equal(fullExport.validateFullExport(result).valid, true);
     assert.deepEqual(Object.keys(result.sections), fullExport.REQUIRED_SECTION_KEYS);
     assert.equal(result.sections.participants.status, "partial");
+});
+
+test("production形状のsourceなしlive current-price factを正常受理", async () => {
+    const deps = dependencies();
+    const fact = deps.getCurrentPriceIdentity().fact;
+    assert.equal(Object.hasOwn(fact, "source"), false);
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.authority.sourceClass, "formal_live");
+});
+
+test("current-price contract不一致とacquisition未検証はunavailable", async () => {
+    for (const patch of [{ contract: "2026-12" }, { acquisitionVerified: false }]) {
+        const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
+        deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
+        const result = await awaitFullExport(deps);
+        assert.equal(result.sections.marketSnapshot.reason, "current_price_identity_mismatch");
+    }
+});
+
+test("saved/cache/reference current-price factへfallbackしない", async () => {
+    for (const patch of [{ sourceKind: "saved", origin: "saved" },
+        { sourceKind: "cache", origin: "cache" }, { sourceKind: "reference", origin: "reference" }]) {
+        const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
+        deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
+        const result = await awaitFullExport(deps);
+        assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    }
+});
+
+test("実機相当weekend cross-date factをruntime authorityどおりavailableで保持", async () => {
+    const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
+    const mobile = deps.getMobileSummary();
+    deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
+        currentPrice: { ...mobile.payload.currentPrice, contract: "26年09月限" } } });
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        reason: "date_context_unresolved", qriTradingDateMapping: { mappingVerified: false,
+            mappingSource: null, relation: "previous_date", quoteDate: "2026-09-05",
+            qriTradingDate: "2026-09-07", status: "date_context_unresolved" } } });
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.authority.formalStatus, "verified");
+    assert.deepEqual(result.sections.marketSnapshot.details.identity.qriTradingDateMapping,
+        { mappingVerified: false, mappingSource: null, relation: "previous_date",
+            quoteDate: "2026-09-05", qriTradingDate: "2026-09-07",
+            status: "date_context_unresolved" });
+});
+
+test("既存contractsMatchはcanonical/display表記を一致させ異なる限月を拒否", () => {
+    assert.equal(contractsMatch("26年09月限", "2026-09"), true);
+    assert.equal(contractsMatch("26年12月限", "2026-09"), false);
+});
+
+test("contractsMatch helperが利用不可ならautomaticを推測でavailableにしない", async () => {
+    const result = await collect({ contractsMatch: undefined });
+    assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    assert.equal(result.sections.marketSnapshot.reason, "current_price_identity_mismatch");
+});
+
+test("runtime unavailableとMobile Summary単独表示はFormalへ昇格しない", async () => {
+    for (const getCurrentPriceIdentity of [() => ({ status: "unavailable", fact: null }),
+        () => null]) {
+        const result = await collect({ getCurrentPriceIdentity });
+        assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    }
+});
+
+test("current-price identity/currentRequest未検証はunavailable", async () => {
+    for (const patch of [{ identityVerified: false }, { currentRequestVerified: false }]) {
+        const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
+        deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
+        const result = await awaitFullExport(deps);
+        assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    }
+});
+
+test("manual modeの既存user_input分岐は不変", async () => {
+    const deps = dependencies(); const mobile = deps.getMobileSummary();
+    deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
+        currentPrice: { ...mobile.payload.currentPrice, mode: "manual", source: "manual" } } });
+    deps.getCurrentPriceIdentity = () => ({ status: "unavailable", fact: null });
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.authority.sourceClass, "user_input");
+});
+
+test("collectorは独自contract normalizerを持たない", () => {
+    const source = fs.readFileSync(path.join(__dirname, "../js/fullExportCollector.js"), "utf8");
+    assert.doesNotMatch(source, /canonicalContract|normalizeContract|年\\s\*\\d|月限/);
+    assert.match(source, /configuration\.contractsMatch/);
 });
 
 test("QRI formal versionKey不一致はfallbackせずunavailable", async () => {
@@ -218,9 +315,39 @@ test("Morning incomparable時にdeltaを推測しない", async () => {
 test("Weekly Futures formal mismatchはunavailable", async () => {
     const result = await collect({ getWeeklyFormalIdentity: () => ({ status: "available", fact: {
         sourceClass: "formal_history", previousVersionKey: weeklyPrevious,
-        currentVersionKey: "wrong", previousSignature: "weekly-old", currentSignature: "wrong" } }) });
+        currentVersionKey: "wrong", currentSignature: "wrong", sourceDate: "2026-08-28",
+        activeVersionMatched: true, dataStatus: "formal_history",
+        origin: "weekly_futures_history", sourceFingerprint: "weekly-fingerprint" } }) });
     assert.equal(result.sections.weeklyFutures.status, "unavailable");
     assert.equal(result.sections.weeklyFutures.reason, "formal_revision_not_found");
+});
+
+test("previousSignatureを持たない正式Weekly factと一致active revisionsを受理", async () => {
+    const deps = dependencies(); const fact = deps.getWeeklyFormalIdentity().fact;
+    assert.equal(Object.hasOwn(fact, "previousSignature"), false);
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.weeklyFutures.status, "available");
+    assert.equal(result.sections.weeklyFutures.authority.versionKey, weeklyCurrent);
+});
+
+test("Weekly current signatureまたはsourceDate不一致はunavailable", async () => {
+    for (const patch of [{ currentSignature: "wrong" }, { sourceDate: "2026-08-21" }]) {
+        const deps = dependencies(); const state = deps.getWeeklyFormalIdentity();
+        deps.getWeeklyFormalIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
+        const result = await awaitFullExport(deps);
+        assert.equal(result.sections.weeklyFutures.reason, "formal_identity_mismatch");
+    }
+});
+
+test("Weekly previous/current versionKey不一致はactive以外へfallbackしない", async () => {
+    for (const patch of [{ previousVersionKey: "inactive-previous" },
+        { currentVersionKey: "inactive-current" }]) {
+        const deps = dependencies(); const state = deps.getWeeklyFormalIdentity();
+        deps.getWeeklyFormalIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
+        const result = await awaitFullExport(deps);
+        assert.equal(result.sections.weeklyFutures.reason, "formal_revision_not_found");
+        assert.equal(result.sections.weeklyFutures.details, null);
+    }
 });
 
 test("主要5社/12-groupは既存objectを転記しcollectorで再計算しない", async () => {
@@ -260,6 +387,16 @@ test("freshness statusをそのまま保持", async () => {
         { status: "stale", reason: "source_not_updated" });
     assert.deepEqual(result.compactSummary.freshnessIssues,
         [{ section: "qriOptions", status: "stale", reason: "source_not_updated" }]);
+});
+
+test("unavailable sectionは提供freshnessがfreshでも昇格させない", async () => {
+    const result = await collect({
+        getCurrentPriceIdentity: () => ({ status: "unavailable", fact: null }),
+        getSectionFreshness: () => ({ status: "fresh", reason: "current" })
+    });
+    assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    assert.deepEqual(result.sections.marketSnapshot.freshness,
+        { status: "unavailable", reason: "section_unavailable" });
 });
 
 test("Intelligenceは集計値だけでmemo/tags/raw inputを出力しない", async () => {

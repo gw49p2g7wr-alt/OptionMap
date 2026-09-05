@@ -2196,3 +2196,25 @@ canvas {
     gap: 8px;
     margin: 10px 0;
 }
+
+.full-export-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 14px 18px;
+}
+.full-export-controls h2,
+.full-export-controls p { margin: 4px 0; }
+.full-export-actions {
+    min-width: 270px;
+    text-align: right;
+}
+.full-export-actions button[aria-busy="true"] { cursor: wait; }
+#fullExportStatus[data-state="success"] { color: #28633f; }
+#fullExportStatus[data-state="failure"] { color: #9b3030; }
+#fullExportStatus[data-state="cancelled"] { color: #666f7a; }
+@media (max-width: 620px) {
+    .full-export-controls { align-items: stretch; flex-direction: column; }
+    .full-export-actions { min-width: 0; text-align: left; }
+}
