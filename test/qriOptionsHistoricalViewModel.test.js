@@ -69,6 +69,21 @@ test("明示contract/dateを選択できarchive identityを返す", async () => 
         entryKey: "2026-09|2026-08-30", activeVersionKey: view.metadata.activeVersionKey });
 });
 
+test("legacy revision projects snapshotDate from confirmedAt without mutating history", async () => {
+    const history = await add(historyApi.createEmptyQriOptionsHistory(), {
+        date: "2026-09-07", updated: "2026-09-05T18:45:00+09:00"
+    }, "2026-09-05T09:46:00.000Z");
+    delete history.entries[0].revisions[0].snapshotDate;
+    const before = structuredClone(history);
+    const view = build({ history });
+    assert.equal(view.metadata.snapshotDate, "2026-09-05");
+    assert.deepEqual(view.dateOptions, [{ value: "2026-09-07",
+        label: "2026-09-05（取引日：2026-09-07）" }]);
+    assert.equal(view.metadata.tradingDate, "2026-09-07");
+    assert.equal(view.metadata.pageUpdatedAt, "2026-09-05T18:45:00+09:00");
+    assert.deepEqual(history, before);
+});
+
 test("不存在の明示contract/dateへfallbackしない", async () => {
     const history = await fixture();
     assert.equal(build({ history, selectedContract: "2026-11" }).reason, "selection_not_found");

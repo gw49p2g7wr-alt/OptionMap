@@ -23,7 +23,7 @@
                 `${number(item.strike)}円：前回 ${number(item.previous.value)}（差分なし）`) };
     }
     function createView(result) {
-        const base = { title: "QRI建玉 前回保存日比較",
+        const base = { title: "QRI建玉 前回取引日比較",
             notices: ["非掲載を0として補完していません。", "総合判定には未使用です。"],
             contract: result?.contract || null, comparisonLabel: null,
             state: "invalid", message: "正式history比較を検証できません。", call: null, put: null };
@@ -34,7 +34,7 @@
                 : "正式historyがまだありません。" };
         if (result.status === "waiting_previous") return { ...base, state: "waiting",
             message: "1日分保存済み・前回比較なし",
-            comparisonLabel: `最新保存日：${date(result.currentSourceDate)}` };
+            comparisonLabel: `最新取引日：${date(result.currentSourceDate)}` };
         return { ...base, state: "ready", message: null,
             comparisonLabel: `${date(result.previousSourceDate)} → ${date(result.currentSourceDate)}`,
             call: typeView(result.comparison.byType.call),

@@ -34,6 +34,7 @@ function result(status, reason, details = {}) {
         available: status === "available",
         contracts: [],
         dates: [],
+        dateOptions: [],
         selection: null,
         snapshot: null,
         chartData: null,
@@ -70,6 +71,26 @@ function dateList(history, contract) {
 
 function validTimestamp(value) {
     return typeof value === "string" && !Number.isNaN(new Date(value).getTime());
+}
+
+function snapshotDateFromConfirmedAt(confirmedAt) {
+    if (!validTimestamp(confirmedAt)) return null;
+    return new Date(new Date(confirmedAt).getTime() + 9 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+}
+
+function effectiveSnapshotDate(revision) {
+    const derived = snapshotDateFromConfirmedAt(revision?.confirmedAt);
+    if (!derived) return null;
+    if (revision?.snapshotDate === undefined) return derived;
+    return validDate(revision.snapshotDate) && revision.snapshotDate === derived
+        ? revision.snapshotDate : null;
+}
+
+function activeRevisionFor(history, contract, tradingDate) {
+    const entry = history.entries.find(item => item?.contract === contract &&
+        item.sourceDateKey === tradingDate);
+    return entry?.revisions?.find(revision => revision?.versionKey === entry.activeVersionKey) || null;
 }
 
 function normalizeRecords(records, contract) {
@@ -115,6 +136,7 @@ function validSelectedRevision(revision, entry) {
         SIGNATURE_PATTERN.test(revision.signature || "") &&
         revision.signatureAlgorithm === "sha256" &&
         validTimestamp(revision.fetchedAt) && validTimestamp(revision.confirmedAt) &&
+        effectiveSnapshotDate(revision) !== null &&
         revision.replacedAt === null && canonical && typeof canonical === "object" &&
         canonical.contract === entry.contract && canonical.tradingDate === entry.sourceDateKey &&
         canonical.parserVersion === 2 && canonical.schemaVersion === 2 &&
@@ -146,42 +168,47 @@ function buildQriHistoricalViewModel({
     const dates = dateList(history, contract);
     if (!dates) return result("invalid", "snapshot_invalid", { contracts });
     if (dates.length === 0) return result("unavailable", "no_dates", { contracts });
+    const dateOptions = dates.map(value => {
+        const snapshotDate = effectiveSnapshotDate(activeRevisionFor(history, contract, value));
+        return { value, label: snapshotDate
+            ? `${snapshotDate}（取引日：${value}）` : `取引日：${value}` };
+    });
 
     const dateExplicit = selectedTradingDate !== null && selectedTradingDate !== undefined;
     const tradingDate = dateExplicit ? selectedTradingDate : dates[0];
     if (!validDate(tradingDate) || !dates.includes(tradingDate)) {
-        return result("unavailable", "selection_not_found", { contracts, dates });
+        return result("unavailable", "selection_not_found", { contracts, dates, dateOptions });
     }
 
     const entries = history.entries.filter(entry => entry.contract === contract &&
         entry.sourceDateKey === tradingDate);
     if (entries.length !== 1) {
-        return result("invalid", "snapshot_invalid", { contracts, dates });
+        return result("invalid", "snapshot_invalid", { contracts, dates, dateOptions });
     }
     const entry = entries[0];
     if (entry.entryKey !== `${contract}|${tradingDate}` ||
         typeof entry.activeVersionKey !== "string" || entry.activeVersionKey.length === 0 ||
         !Array.isArray(entry.revisions)) {
-        return result("invalid", "active_revision_missing", { contracts, dates });
+        return result("invalid", "active_revision_missing", { contracts, dates, dateOptions });
     }
     const active = entry.revisions.filter(revision =>
         revision?.versionKey === entry.activeVersionKey);
     if (active.length === 0) {
-        return result("invalid", "active_revision_missing", { contracts, dates });
+        return result("invalid", "active_revision_missing", { contracts, dates, dateOptions });
     }
     if (active.length !== 1) {
-        return result("invalid", "active_revision_ambiguous", { contracts, dates });
+        return result("invalid", "active_revision_ambiguous", { contracts, dates, dateOptions });
     }
     const revision = active[0];
     if (!validSelectedRevision(revision, entry)) {
-        return result("invalid", "snapshot_invalid", { contracts, dates });
+        return result("invalid", "snapshot_invalid", { contracts, dates, dateOptions });
     }
     if (revision.openInterestStatus !== "available") {
-        return result("unavailable", "oi_unavailable", { contracts, dates });
+        return result("unavailable", "oi_unavailable", { contracts, dates, dateOptions });
     }
     const chartData = normalizeRecords(revision.canonical.records, contract);
     if (!chartData) {
-        return result("unavailable", "records_unavailable", { contracts, dates });
+        return result("unavailable", "records_unavailable", { contracts, dates, dateOptions });
     }
 
     const identity = {
@@ -194,6 +221,7 @@ function buildQriHistoricalViewModel({
         ? `${revision.signature.slice(0, 12)}…` : revision.signature;
     const metadata = {
         contract,
+        snapshotDate: effectiveSnapshotDate(revision),
         tradingDate,
         pageUpdatedAt: revision.pageUpdatedAt,
         fetchedAt: revision.fetchedAt,
@@ -213,6 +241,7 @@ function buildQriHistoricalViewModel({
     return result("available", null, {
         contracts,
         dates,
+        dateOptions,
         selection: identity,
         snapshot: { identity, facts: chartData.points },
         chartData,

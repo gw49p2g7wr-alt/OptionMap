@@ -21,6 +21,18 @@
     };
     const validTimestamp = value => typeof value === "string" &&
         !Number.isNaN(new Date(value).getTime());
+    const snapshotDateFromConfirmedAt = confirmedAt => {
+        if (!validTimestamp(confirmedAt)) return null;
+        return new Date(new Date(confirmedAt).getTime() + 9 * 60 * 60 * 1000)
+            .toISOString().slice(0, 10);
+    };
+    const effectiveSnapshotDate = revision => {
+        const derived = snapshotDateFromConfirmedAt(revision?.confirmedAt);
+        if (!derived) return null;
+        if (revision?.snapshotDate === undefined) return derived;
+        return validDate(revision.snapshotDate) && revision.snapshotDate === derived
+            ? revision.snapshotDate : null;
+    };
     const validContract = value => /^20\d{2}-(0[1-9]|1[0-2])$/.test(value || "");
     const entryKeyFor = (contract, sourceDateKey) => `${contract}|${sourceDateKey}`;
 
@@ -114,6 +126,12 @@
         if (revision.signatureAlgorithm !== SIGNATURE_ALGORITHM) errors.push("signature_algorithm_invalid");
         if (!validTimestamp(revision.fetchedAt)) errors.push("fetched_at_invalid");
         if (!validTimestamp(revision.confirmedAt)) errors.push("confirmed_at_invalid");
+        if (revision.snapshotDate !== undefined) {
+            if (!validDate(revision.snapshotDate)) errors.push("snapshot_date_invalid");
+            else if (revision.snapshotDate !== snapshotDateFromConfirmedAt(revision.confirmedAt)) {
+                errors.push("snapshot_date_mismatch");
+            }
+        }
         if (revision.replacedAt !== null && !validTimestamp(revision.replacedAt)) {
             errors.push("replaced_at_invalid");
         }
@@ -199,6 +217,7 @@
             sourceUrl: candidate.sourceUrl,
             fetchedAt: candidate.fetchedAt,
             confirmedAt,
+            snapshotDate: snapshotDateFromConfirmedAt(confirmedAt),
             replacedAt: null,
             pageUpdatedAt: candidate.pageUpdatedAt,
             tradingDate: candidate.tradingDate,
@@ -271,5 +290,5 @@
     return Object.freeze({ HISTORY_VERSION, SOURCE, SIGNATURE_ALGORITHM,
         entryKeyFor, createEmptyQriOptionsHistory, createHistoryCandidate,
         validateHistory, mergeCandidate, listContracts, listSourceDates,
-        getActiveRevision });
+        getActiveRevision, snapshotDateFromConfirmedAt, effectiveSnapshotDate });
 });

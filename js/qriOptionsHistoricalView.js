@@ -15,7 +15,7 @@
     const ERROR_MESSAGES = Object.freeze({
         no_history: "保存済みQRI履歴はまだありません",
         no_contracts: "表示できる保存済み限月がありません",
-        no_dates: "この限月の保存日はありません",
+        no_dates: "この限月の取引日はありません",
         selection_not_found: "選択した保存履歴を確認できません",
         active_revision_missing: "保存履歴のrevisionを確認できないため表示できません",
         active_revision_ambiguous: "保存履歴のrevisionを確認できないため表示できません",
@@ -101,10 +101,11 @@
 
         function setOptions(select, values, selected) {
             if (!select || !documentRef?.createElement) return;
-            const options = values.map(value => {
+            const options = values.map(item => {
+                const value = typeof item === "object" ? item.value : item;
                 const option = documentRef.createElement("option");
                 option.value = value;
-                option.textContent = value;
+                option.textContent = typeof item === "object" ? item.label : value;
                 option.selected = value === selected;
                 return option;
             });
@@ -126,6 +127,7 @@
             if (!dom.metadata) return;
             dom.metadata.textContent = [
                 `${metadata.contract}限月`,
+                `保存日：${metadata.snapshotDate || "不明"}`,
                 `取引日：${metadata.tradingDate}`,
                 `QRIページ更新：${metadata.pageUpdatedAt || "不明"}`,
                 `OptionMap取得：${metadata.fetchedAt || "不明"}`,
@@ -177,7 +179,8 @@
                     viewModel?.reason || "snapshot_invalid", viewModel, { rendered: true });
             }
             setOptions(dom.contract, viewModel.contracts, viewModel.selection.contract);
-            setOptions(dom.date, viewModel.dates, viewModel.selection.tradingDate);
+            setOptions(dom.date, viewModel.dateOptions || viewModel.dates,
+                viewModel.selection.tradingDate);
             if (dom.state) { dom.state.hidden = true; dom.state.textContent = ""; }
             if (dom.content) dom.content.hidden = false;
             renderMetadata(viewModel.metadata);

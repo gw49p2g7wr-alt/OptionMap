@@ -14,7 +14,7 @@
 
     const ERROR_MESSAGES = Object.freeze({
         not_enough_contracts: "合算する保存済み限月を2つ以上選択してください",
-        no_common_date: "選択した限月に共通する保存日はありません",
+        no_common_date: "選択した限月に共通する取引日はありません",
         snapshot_unavailable: "選択した保存snapshotを利用できません",
         snapshot_invalid: "保存snapshotの整合性を確認できません",
         trading_date_mismatch: "保存snapshotの取引日が一致しません",

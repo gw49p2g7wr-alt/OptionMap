@@ -73,6 +73,7 @@ test("連続営業日を推測せず保存済み最新2日を選ぶ", async () =
     assert.equal(result.previousSourceDate, "2026-08-14");
     assert.equal(result.currentSourceDate, "2026-08-18");
     assert.equal(viewApi.createView(result).comparisonLabel, "2026/08/14 → 2026/08/18");
+    assert.equal(viewApi.createView(result).title, "QRI建玉 前回取引日比較");
 });
 
 test("CALLとPUTを分離しcomparable/previous_only/current_only/unobservedを保持", async () => {

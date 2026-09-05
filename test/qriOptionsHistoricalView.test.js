@@ -44,11 +44,14 @@ function viewModel({ selectedContract, selectedTradingDate } = {}) {
     const dates = contract === "2026-09" ? ["2026-08-31", "2026-08-30"] : ["2026-08-31"];
     const tradingDate = selectedTradingDate || dates[0];
     return { status: "available", reason: null, contracts: ["2026-10", "2026-09"], dates,
+        dateOptions: dates.map(value => ({ value,
+            label: `2026-08-31（取引日：${value}）` })),
         selection: { contract, tradingDate, entryKey: `${contract}|${tradingDate}`,
             activeVersionKey: `version-${contract}-${tradingDate}` },
         chartData: { strikes: [40000, 40500], callOpenInterest: [10, 0],
             putOpenInterest: [20, null], publishedByStrike: [], points: [] },
-        metadata: { contract, tradingDate, pageUpdatedAt: "2026-08-31T16:00:00+09:00",
+        metadata: { contract, tradingDate, snapshotDate: "2026-08-31",
+            pageUpdatedAt: "2026-08-31T16:00:00+09:00",
             fetchedAt: "2026-08-31T11:00:00Z", confirmedAt: "2026-08-31T11:01:00Z",
             openInterestStatus: "available", source: "qri-nikkei225-options",
             sourceUrl: "https://svc.qri.jp/jpx/nkopm/1",
@@ -134,7 +137,10 @@ test("metadata・historical notice・developer detailsを分離", async () => {
     const value = harness(); value.nodes.historicalQriPanel.open = true;
     await value.runtime.open();
     assert.match(value.nodes.historicalQriMetadata.textContent,
-        /2026-10限月.*取引日：2026-08-31.*QRIページ更新.*OptionMap取得.*履歴保存確認.*CALL\/PUT掲載あり/);
+        /2026-10限月.*保存日：2026-08-31.*取引日：2026-08-31.*QRIページ更新.*OptionMap取得.*履歴保存確認.*CALL\/PUT掲載あり/);
+    assert.equal(value.nodes.historyDateSelect.children[0].value, "2026-08-31");
+    assert.equal(value.nodes.historyDateSelect.children[0].textContent,
+        "2026-08-31（取引日：2026-08-31）");
     assert.match(value.nodes.historicalQriDeveloperDetails.textContent,
         /source: qri-nikkei225-options.*activeVersionKey:.*signature:/s);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
@@ -224,6 +230,9 @@ test("index wiringは専用IDs/read getter/Phase 2B builderだけを使用", () 
     assert.match(html, /readHistory: \(\) => window\.getQriOptionsHistory\(\)/);
     assert.match(html, /qriHistoricalViewModelApi\.buildQriHistoricalViewModel/);
     assert.match(html, /window\.getQriHistoricalViewState/);
+    assert.match(html, /保存日：/);
+    assert.match(html, /QRI建玉 前回取引日比較/);
+    assert.doesNotMatch(html, /QRI建玉 前回保存日比較/);
 });
 
 test("rendererはcurrent/formal/storage/network/runtimeへ接続しない", () => {

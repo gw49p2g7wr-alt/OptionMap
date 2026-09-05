@@ -63,6 +63,55 @@ test("candidate uses tradingDate and rejects v1, unavailable, signature and vers
     assert.equal((await historyApi.createHistoryCandidate(record)).reason, "record_contract_mismatch");
 });
 
+test("future tradingDate is preserved while a new revision records its JST snapshot date", async () => {
+    const original = canonical({ tradingDate: "2026-09-07",
+        pageUpdatedAt: "2026-09-05T18:45:00+09:00" });
+    const formal = await qri.createCacheV2(original, "2026-09-05T09:45:30.000Z");
+    const candidate = (await historyApi.createHistoryCandidate(formal)).candidate;
+    const merged = await historyApi.mergeCandidate(historyApi.createEmptyQriOptionsHistory(),
+        candidate, { confirmedAt: "2026-09-05T09:46:00.000Z" });
+    assert.equal(merged.changed, true);
+    const entry = merged.history.entries[0];
+    const revision = entry.revisions[0];
+    assert.deepEqual({ sourceDateKey: entry.sourceDateKey, entryKey: entry.entryKey,
+        tradingDate: revision.tradingDate, canonicalTradingDate: revision.canonical.tradingDate,
+        pageUpdatedAt: revision.pageUpdatedAt,
+        canonicalPageUpdatedAt: revision.canonical.pageUpdatedAt,
+        snapshotDate: revision.snapshotDate }, {
+        sourceDateKey: "2026-09-07", entryKey: "2026-09|2026-09-07",
+        tradingDate: "2026-09-07", canonicalTradingDate: "2026-09-07",
+        pageUpdatedAt: "2026-09-05T18:45:00+09:00",
+        canonicalPageUpdatedAt: "2026-09-05T18:45:00+09:00",
+        snapshotDate: "2026-09-05"
+    });
+    assert.equal((await historyApi.validateHistory(merged.history)).valid, true);
+});
+
+test("snapshotDate uses Asia/Tokyo calendar boundaries", () => {
+    assert.equal(historyApi.snapshotDateFromConfirmedAt("2026-09-05T14:59:59.999Z"),
+        "2026-09-05");
+    assert.equal(historyApi.snapshotDateFromConfirmedAt("2026-09-05T15:00:00.000Z"),
+        "2026-09-06");
+    assert.equal(historyApi.snapshotDateFromConfirmedAt("2026-09-05T00:01:00+09:00"),
+        "2026-09-05");
+});
+
+test("legacy revision without snapshotDate remains valid and explicit mismatch is rejected", async () => {
+    const candidate = (await historyApi.createHistoryCandidate(await cache())).candidate;
+    const history = (await historyApi.mergeCandidate(historyApi.createEmptyQriOptionsHistory(),
+        candidate, { confirmedAt: "2026-09-05T15:00:00.000Z" })).history;
+    const legacy = structuredClone(history);
+    delete legacy.entries[0].revisions[0].snapshotDate;
+    assert.equal((await historyApi.validateHistory(legacy)).valid, true);
+    assert.equal(historyApi.effectiveSnapshotDate(legacy.entries[0].revisions[0]),
+        "2026-09-06");
+    assert.equal("snapshotDate" in legacy.entries[0].revisions[0], false);
+    const mismatch = structuredClone(history);
+    mismatch.entries[0].revisions[0].snapshotDate = "2026-09-05";
+    assert.deepEqual((await historyApi.validateHistory(mismatch)).errors,
+        ["2026-09|2026-08-18:snapshot_date_mismatch"]);
+});
+
 test("history stores first entry, multiple dates, contract roll and active revisions", async () => {
     let history = historyApi.createEmptyQriOptionsHistory();
     for (const [options, confirmedAt] of [
@@ -127,6 +176,22 @@ test("IndexedDB initializes three stores and atomically persists, restores and l
         "same_version");
     store.closeHistoryStore();
     assert.equal((await store.loadHistory()).status, "ready");
+});
+
+test("history read projects no data and opens no readwrite transaction", async () => {
+    const store = makeStore();
+    const first = (await historyApi.createHistoryCandidate(await cache())).candidate;
+    await store.persistCandidate(first, { confirmedAt: timestamp });
+    const db = await store.openHistoryStore();
+    const transaction = db.transaction.bind(db);
+    let readwriteTransactions = 0;
+    db.transaction = (...args) => {
+        if (args[1] === "readwrite") readwriteTransactions += 1;
+        return transaction(...args);
+    };
+    const loaded = await store.loadHistory();
+    assert.equal(loaded.status, "ready");
+    assert.equal(readwriteTransactions, 0);
 });
 
 test("same-day revision is atomic and injected transaction failure preserves existing history", async () => {

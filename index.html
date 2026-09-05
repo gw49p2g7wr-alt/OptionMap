@@ -922,7 +922,7 @@
 
             <details id="qriOptionsHistoryComparisonPanel"
                 class="weekly-options-shadow-panel ui-category-panel category-options">
-                <summary class="ui-category-title">QRI建玉 前回保存日比較
+                <summary class="ui-category-title">QRI建玉 前回取引日比較
                     <span class="ui-category-badge">オプション</span>
                     <span class="ui-status-badge status-validation">検証表示</span>
                 </summary>
@@ -1590,7 +1590,7 @@ async function renderQriOptionsHistoryComparison(executionContext = null,
         container.replaceChildren();
         const meta = document.createElement("p");
         meta.textContent = `対象限月：${view.contract || "未選択"}` +
-            (view.state === "ready" ? ` / 比較：${view.comparisonLabel} / 比較種別：前回保存日比`
+            (view.state === "ready" ? ` / 比較：${view.comparisonLabel} / 比較種別：前回取引日比`
                 : view.comparisonLabel ? ` / ${view.comparisonLabel}` : "");
         container.appendChild(meta);
         if (view.message) {
