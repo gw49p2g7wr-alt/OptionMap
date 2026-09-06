@@ -167,8 +167,20 @@ async function collect(overrides = {}) {
 test("全section available/partial fixtureからvalid Full Exportを構築", async () => {
     const result = await collect();
     assert.equal(fullExport.validateFullExport(result).valid, true);
-    assert.deepEqual(Object.keys(result.sections), fullExport.REQUIRED_SECTION_KEYS);
+    assert.deepEqual(Object.keys(result.sections), [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary"]);
     assert.equal(result.sections.participants.status, "partial");
+    assert.equal(result.sections.aiSummary.status, "available");
+    assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
+    assert.equal(result.sections.aiSummary.summary.purpose,
+        "index_only_not_authoritative_data");
+    assert.equal(result.sections.aiSummary.summary.overallV2.direction,
+        result.sections.overallV2.summary.direction);
+    assert.equal(result.sections.aiSummary.summary.qriContracts.active.contract,
+        result.sections.qriOptions.summary.contract);
+    assert.equal(result.sections.aiSummary.summary.qriContracts.next.contract,
+        result.sections.qriOptionsNextContract.summary?.contract || null);
+    assert.equal(result.sections.aiSummary.summary.qriContracts.majorSq.contract,
+        result.sections.qriOptionsMajorSqNextContract.summary?.contract || null);
 });
 
 test("production形状のsourceなしlive current-price factを正常受理", async () => {
@@ -459,6 +471,6 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     const result = await collect({ readParticipants: async () => { throw new Error("read failed"); } });
     assert.equal(result.sections.participants.status, "unavailable");
     assert.equal(result.sections.participants.reason, "participant_read_failed");
-    assert.deepEqual(Object.keys(result.sections), fullExport.REQUIRED_SECTION_KEYS);
+    assert.deepEqual(Object.keys(result.sections), [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

@@ -168,6 +168,16 @@ test("公開URLはallowlistかつcredential/query/fragmentなしだけ許可す�
     }
 });
 
+test("aiSummary内の固定RFC 6901 pointerだけをlocal pathと区別する", () => {
+    assert.equal(security.inspectFullExportSecurity({ sections: { aiSummary: { details: {
+        authoritativeRoot: "/sections", sourcePointer: "/sections/qriOptions",
+        pointer: "/sections/overallV2/freshness" } } } }).valid, true);
+    for (const value of ["/etc/passwd", "/sections/unknown", "/sections/qriOptions/details"]) {
+        assert.equal(security.inspectFullExportSecurity({ sections: { aiSummary: {
+            sourcePointer: value } } }).valid, false);
+    }
+});
+
 test("NaN / Infinity / undefined / function / symbol / Dateをreject", () => {
     for (const value of [NaN, Infinity, undefined, () => 1, Symbol("x"), new Date()]) {
         const input = fixture();

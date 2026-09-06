@@ -23,6 +23,13 @@
 
     const normalizeKey = value => String(value).replace(/[^a-z0-9]/gi, "").toLowerCase();
     const pathFor = (parent, key) => `${parent}.${String(key)}`;
+    const jsonPointer = (value, key, path) => {
+        if (!["sourcePointer", "pointer", "authoritativeRoot"].includes(String(key))) return false;
+        if (!path.startsWith("$.sections.aiSummary.") &&
+            !path.startsWith("$.summary.") && !path.startsWith("$.details.")) return false;
+        return value === "/sections" || /^\/sections\/(?:marketSnapshot|overallV2|qriOptions|qriOptionsNextContract|qriOptionsMajorSqNextContract|qriHistoryComparison|weeklyFutures|weeklyOptions|participants|morning|importantLevels|intelligence)(?:\/freshness)?$/.test(value) ||
+            /^\/(?:warnings|compactSummary\/freshnessIssues)\/\d+$/.test(value);
+    };
     const plainObject = value => {
         if (value === null || typeof value !== "object") return false;
         const prototype = Object.getPrototypeOf(value);
@@ -56,7 +63,8 @@
             }
             if (current === null || ["string", "number", "boolean"].includes(type)) {
                 if (type !== "string") return;
-                if (/^(?:[A-Za-z]:[\\/]|~[\\/]|\\\\[^\\]+\\|\/(?!\/))/i.test(current))
+                if (/^(?:[A-Za-z]:[\\/]|~[\\/]|\\\\[^\\]+\\|\/(?!\/))/i.test(current) &&
+                    !jsonPointer(current, key, path))
                     add("absolute_local_path", path);
                 if (/<(?:!doctype|html|head|body|script|table)\b/i.test(current))
                     add("raw_html", path);

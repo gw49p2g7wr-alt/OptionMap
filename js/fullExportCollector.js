@@ -7,11 +7,14 @@
     const qriComparisonApi = commonJs ? require("./qriOptionsHistoryComparison.js") :
         root?.OptionMapQriOptionsHistoryComparison;
     const qriOptionsApi = commonJs ? require("./qriOptions.js") : root?.OptionMapQriOptions;
-    const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi);
+    const aiSummaryApi = commonJs ? require("./fullExportAiSummary.js") :
+        root?.OptionMapFullExportAiSummary;
+    const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
+        aiSummaryApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
-function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
+function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -646,6 +649,13 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
                         reason: importantLevels.reason, upper: null, lower: null },
                 qriHighlights: clone(qri.qriHistoryComparison.summary?.highlights || []),
                 freshnessIssues, warnings: clone(warnings) };
+            const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
+                exportMeta: { generatedAt, timeZone: "Asia/Tokyo", profile: "full",
+                    appVersion: options.appVersion || null, readOnly: true },
+                compactSummary, sections, warnings
+            }) || unavailable("ai_summary_builder_unavailable", "optionmap-full-export",
+                { status: "not_applicable", reason: "index_only" });
+            sections.aiSummary = aiSummary;
             return fullExportApi.buildFullExport({ exportMeta: { generatedAt,
                 timeZone: "Asia/Tokyo", profile: "full",
                 appVersion: options.appVersion || null, readOnly: true },
