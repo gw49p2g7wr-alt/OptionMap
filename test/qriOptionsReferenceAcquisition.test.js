@@ -166,6 +166,20 @@ test("accepted reference exposes the same fetched response to optional session c
     assert.equal(rejected.length, 0);
 });
 
+test("IV history runs after parent Formal persistence and failure does not block session", async () => {
+    const order = [];
+    const x = fixture({
+        persistReference: async () => (order.push("parent"), { status: "saved" }),
+        persistAcceptedIvHistory: async (input, guard) => {
+            order.push("iv"); assert.equal(input.referenceStatus, "saved");
+            assert.equal(guard.isCurrentRequest(), true); throw new Error("quota");
+        },
+        publishAcceptedReference: async () => { order.push("session"); }
+    });
+    assert.equal((await x.orchestrator.run(baseContext())).status, "saved");
+    assert.deepEqual(order, ["parent", "iv", "session"]);
+});
+
 test("fetch, canonical and persistence failures remain diagnostics", async () => {
     const cases = [
         [fixture({ fetchReferencePage: async () => { throw new Error("offline"); } }), "fetch_failed"],

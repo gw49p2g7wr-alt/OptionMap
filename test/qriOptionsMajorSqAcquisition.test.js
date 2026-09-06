@@ -30,7 +30,8 @@ function canonicalFor(contract, overrides = {}) {
         ...overrides };
 }
 function harness({ formal = context(), canonical, validateCanonical = true,
-    validateCache = true, persistence = { status: "saved" } } = {}) {
+    validateCache = true, persistence = { status: "saved" },
+    persistAcceptedIvHistory, publishAcceptedReference } = {}) {
     let current = structuredClone(formal); let lifecycle = { generation: null, disposed: false };
     const fetched = []; const persisted = [];
     const target = Api.nextMajorSqContract(formal.activeContract);
@@ -43,6 +44,8 @@ function harness({ formal = context(), canonical, validateCanonical = true,
             canonical: value }),
         validateCache: async () => validateCache,
         persistReference: async (cache, options) => (persisted.push({ cache, options }), persistence),
+        persistAcceptedIvHistory,
+        publishAcceptedReference,
         getCurrentFormalContext: () => current,
         getCurrentLifecycleState: () => lifecycle,
         now: () => "2026-09-06T10:00:00+09:00", createRequestId: () => "major-1"
@@ -220,6 +223,20 @@ test("Major-SQ session consumer runs only after accepted Formal persistence", as
         published[0].input.referenceVersionKey, published[0].current],
     [1, "same-major-html", target, "unchanged", "major-version", true]);
     current = null;
+});
+
+test("Major-SQ IV history receives calculated and manifest-verified target before session", async () => {
+    const order = []; const target = "2026-12";
+    const x = harness({
+        persistAcceptedIvHistory: async (input, guard) => {
+            order.push("iv"); assert.equal(input.targetContract, target);
+            assert.equal(input.referenceCanonical.contract, target);
+            assert.equal(guard.isCurrentRequest(), true);
+        },
+        publishAcceptedReference: async () => { order.push("session"); }
+    });
+    assert.equal((await x.orchestrator.run(context())).status, "saved");
+    assert.deepEqual(order, ["iv", "session"]);
 });
 
 test("production runtime stays dedicated while Full Export uses only its locator", () => {

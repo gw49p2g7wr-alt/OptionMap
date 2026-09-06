@@ -212,6 +212,18 @@
             } catch (error) { return fail(ownGeneration, "persistence_failed", error); }
             if (!requestCurrent(ownGeneration, captured)) return stale(ownGeneration);
             if (persistence?.status === "saved" || persistence?.status === "unchanged") {
+                if (typeof dependencies.persistAcceptedIvHistory === "function") {
+                    try { await dependencies.persistAcceptedIvHistory({ responseHtml: raw,
+                        referenceCanonical: canonical, referenceCache: cache,
+                        referenceStatus: persistence.status, targetContract,
+                        sourceUrl: targetUrl, requestId,
+                        parentMarketRefreshRequestId: captured.parentMarketRefreshRequestId,
+                        formalPublicationGeneration: captured.formalPublicationGeneration,
+                        acquisitionGeneration: ownGeneration, fetchedAt: cache.fetchedAt,
+                        confirmedAt: dependencies.now()
+                    }, { isCurrentRequest: () => requestCurrent(ownGeneration, captured) }); }
+                    catch (_error) { /* IV history is fail-open for the live acquisition. */ }
+                }
                 if (typeof dependencies.publishAcceptedReference === "function") {
                     try {
                         await dependencies.publishAcceptedReference({ responseHtml: raw,

@@ -1268,6 +1268,9 @@
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
+<script src="js/qriOptionIvHistory.js"></script>
+<script src="js/storage/qriOptionIvHistoryStore.js"></script>
+<script src="js/qriOptionIvHistoryPersistence.js"></script>
 <script src="js/qriOptionsReferenceAcquisition.js"></script>
 <script src="js/qriOptionsMajorSqAcquisition.js"></script>
 <script src="js/qriOptionsReferenceAcquisitionRuntime.js"></script>
@@ -1623,6 +1626,8 @@ window.OptionMapFullExportUi.configure({
 });
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
+const qriOptionIvHistoryPersistence =
+    window.OptionMapQriOptionIvHistoryPersistence.createPersistence();
 let qriReferenceAcquisitionRuntime = null;
 let qriMajorSqAcquisitionRuntime = null;
 let qriMajorSqAcquisitionOrchestrator = null;
@@ -4473,6 +4478,8 @@ function initializeQriReferenceAcquisitionRuntime() {
             validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
             persistReference: (cache, context) =>
                 qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            persistAcceptedIvHistory: (input, guard) =>
+                persistQriReferenceIvHistory("next", input, guard),
             publishAcceptedReference: (input, guard) =>
                 publishQriReferenceIvSession("next", input, guard),
             getCurrentFormalContext: () => buildFormalContext({
@@ -4530,6 +4537,8 @@ function initializeQriMajorSqAcquisitionRuntime() {
             validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
             persistReference: (cache, context) =>
                 qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            persistAcceptedIvHistory: (input, guard) =>
+                persistQriReferenceIvHistory("major_sq", input, guard),
             publishAcceptedReference: (input, guard) =>
                 publishQriReferenceIvSession("major_sq", input, guard),
             getCurrentFormalContext: () => buildFormalContext({
@@ -4668,6 +4677,39 @@ async function publishQriReferenceIvSession(role, input, guard) {
     renderQriIvGraph();
     return result;
 }
+
+async function persistQriReferenceIvHistory(role, input, guard) {
+    try {
+        const ivCanonical = window.OptionMapQriOptionIv.parseQriOptionIvPage(
+            input.responseHtml, input.sourceUrl
+        );
+        const [ivSignature, ivVersionKey] = await Promise.all([
+            window.OptionMapQriOptionIv.createSignature(ivCanonical),
+            window.OptionMapQriOptionIv.createVersionKey(ivCanonical)
+        ]);
+        return qriOptionIvHistoryPersistence.persist({
+            acquisitionRole: role, ivCanonical, ivSignature, ivVersionKey,
+            fetchedAt: input.fetchedAt, confirmedAt: input.confirmedAt,
+            parentPersistenceStatus: input.referenceStatus,
+            parentOptionsCanonical: input.referenceCanonical,
+            parentOptionsVersionKey: input.referenceCache?.versionKey,
+            parentOptionsSignature: input.referenceCache?.signature,
+            parentMarketRefreshRequestId: input.parentMarketRefreshRequestId,
+            requestId: input.requestId, acquisitionGeneration: input.acquisitionGeneration,
+            formalPublicationGeneration: input.formalPublicationGeneration,
+            expectedContract: input.targetContract,
+            expectedTradingDate: input.referenceCanonical?.tradingDate,
+            expectedPageUpdatedAt: input.referenceCanonical?.pageUpdatedAt,
+            expectedSourceUrl: input.sourceUrl
+        }, { isCurrentRequest: guard?.isCurrentRequest });
+    } catch (error) {
+        console.warn(`QRI ${role} IV history保存を開始できませんでした:`, error);
+        return { status: "unavailable", reason: "iv_parse_failed" };
+    }
+}
+
+window.getQriOptionIvHistoryPersistenceState = () =>
+    qriOptionIvHistoryPersistence.getState();
 
 async function adoptQriOptionIv(channel, payload, fetchedAt, requestContext, guard) {
     try {
@@ -5363,6 +5405,36 @@ async function fetchQriData({ requestId } = {}) {
             });
             const qriState = window.getQriFormalIdentityFact?.();
             const qriFact = qriState?.fact;
+            if (qriState?.status === "available" && qriFact &&
+                ivAdoption?.adopted === true && ivAdoption.status === "available") {
+                const formalPublicationGeneration = qriState.publicationGeneration;
+                try {
+                    await qriOptionIvHistoryPersistence.persist({
+                        acquisitionRole: "active",
+                        ivCanonical: ivAdoption.state.active.canonical,
+                        ivSignature: ivAdoption.state.active.signature,
+                        ivVersionKey: ivAdoption.state.active.versionKey,
+                        fetchedAt, confirmedAt: new Date().toISOString(),
+                        parentPersistenceStatus: qriPersistenceResult.status,
+                        parentOptionsCanonical: payload.canonicalV2,
+                        parentOptionsVersionKey: qriIdentityCache.versionKey,
+                        parentOptionsSignature: qriIdentityCache.signature,
+                        parentMarketRefreshRequestId: activeRequestId,
+                        requestId: activeRequestId,
+                        acquisitionGeneration: qriFact.generation.sequence,
+                        formalPublicationGeneration,
+                        expectedContract: payload.canonicalV2.contract,
+                        expectedTradingDate: payload.canonicalV2.tradingDate,
+                        expectedPageUpdatedAt: payload.canonicalV2.pageUpdatedAt,
+                        expectedSourceUrl: sourceUrl
+                    }, { isCurrentRequest: () =>
+                        isCurrentFetchRequest(source, activeRequestId) &&
+                        window.getQriFormalIdentityFact?.()?.publicationGeneration ===
+                            formalPublicationGeneration });
+                } catch (error) {
+                    console.warn("QRI active IV history保存に失敗しました:", error);
+                }
+            }
             const formalComparisonContract = qriState?.status === "available" &&
                 qriFact?.sourceClass === "formal_live" &&
                 qriFact.identityVerified === true &&
