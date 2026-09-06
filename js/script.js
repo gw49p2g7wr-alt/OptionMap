@@ -3791,17 +3791,21 @@ function switchChartMode(mode) {
     currentChartMode = mode;
 
     if (showOpenInterestButton) {
+        const selected = mode === "openInterest";
         showOpenInterestButton.classList.toggle(
             "active",
-            mode === "openInterest"
+            selected
         );
+        showOpenInterestButton.setAttribute("aria-pressed", String(selected));
     }
 
     if (showVolumeButton) {
+        const selected = mode === "volume";
         showVolumeButton.classList.toggle(
             "active",
-            mode === "volume"
+            selected
         );
+        showVolumeButton.setAttribute("aria-pressed", String(selected));
     }
 
     if (qriContractDisplayData) {

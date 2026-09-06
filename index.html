@@ -951,6 +951,7 @@
                     type="button"
                     id="showOpenInterestButton"
                     class="chart-mode-button active"
+                    aria-pressed="true"
                 >
                     建玉残
                 </button>
@@ -959,6 +960,7 @@
                     type="button"
                     id="showVolumeButton"
                     class="chart-mode-button"
+                    aria-pressed="false"
                 >
                     本日の取引高
                 </button>
@@ -983,12 +985,19 @@
                 <div class="qri-iv-content">
                     <div id="qriIvSourceMessage" class="qri-iv-source-message"
                         role="status" aria-live="polite" hidden></div>
-                    <div id="qriIvContractSwitch" class="iv-contract-switch"
-                        role="group" aria-label="IVカーブ限月"></div>
-                    <div class="iv-range-switch" role="group" aria-label="IVカーブ表示範囲">
-                        <button type="button" data-range-mode="plus_minus_3000" class="iv-range-button active">±3,000円</button>
-                        <button type="button" data-range-mode="plus_minus_5000" class="iv-range-button">±5,000円</button>
-                        <button type="button" data-range-mode="all" class="iv-range-button">全範囲</button>
+                    <div class="qri-iv-control-row">
+                        <span id="qriIvContractSwitchLabel" class="qri-iv-control-label">限月</span>
+                        <div id="qriIvContractSwitch" class="iv-contract-switch"
+                            role="group" aria-labelledby="qriIvContractSwitchLabel"></div>
+                    </div>
+                    <div class="qri-iv-control-row">
+                        <span id="qriIvRangeSwitchLabel" class="qri-iv-control-label">表示範囲</span>
+                        <div class="iv-range-switch" role="group"
+                            aria-labelledby="qriIvRangeSwitchLabel">
+                            <button type="button" data-range-mode="plus_minus_3000" class="iv-range-button active" aria-pressed="true">±3,000円</button>
+                            <button type="button" data-range-mode="plus_minus_5000" class="iv-range-button" aria-pressed="false">±5,000円</button>
+                            <button type="button" data-range-mode="all" class="iv-range-button" aria-pressed="false">全範囲</button>
+                        </div>
                     </div>
                     <div id="qriIvRangeCenterNote" class="qri-iv-range-center-note"></div>
                     <div id="qriIvMetadata" class="qri-iv-metadata" aria-live="polite"></div>
@@ -4784,7 +4793,9 @@ function renderQriIvGraph() {
     });
     qriIvRangeMode = composed.rangePolicy.rangeMode;
     qriIvRangeButtons.forEach(button => {
-        button.classList.toggle("active", button.dataset.rangeMode === qriIvRangeMode);
+        const selected = button.dataset.rangeMode === qriIvRangeMode;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
         button.disabled = composed.source.sourceKind === "saved" &&
             button.dataset.rangeMode !== "all" && !composed.rangePolicy.radiusEnabled;
     });
@@ -4887,7 +4898,11 @@ qriIvRangeButtons.forEach(button => button.addEventListener("click", () => {
     if (!window.OptionMapQriIvGraphView.RANGE_MODES.includes(mode)) return;
     qriIvRangeUserSelected = true;
     qriIvRangeMode = mode;
-    qriIvRangeButtons.forEach(item => item.classList.toggle("active", item === button));
+    qriIvRangeButtons.forEach(item => {
+        const selected = item === button;
+        item.classList.toggle("active", selected);
+        item.setAttribute("aria-pressed", String(selected));
+    });
     renderQriIvGraph();
 }));
 

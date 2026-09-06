@@ -455,7 +455,7 @@ h1{
 
 .data-fetch-refresh-button:disabled {
     background: #8d9bb0;
-    cursor: wait;
+    cursor: not-allowed;
     opacity: .85;
 }
 
@@ -782,10 +782,36 @@ button{
 }
 
 
-button:hover{
+button:hover:not(:disabled){
 
     background:#29508d;
 
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+    filter: saturate(0.35);
+}
+
+button:disabled {
+    box-shadow: none;
+}
+
+select:disabled,
+input:disabled {
+    border-color: #c8ced8;
+    background: #eceff3;
+    color: #737b87;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+    outline: 3px solid rgba(49, 95, 157, 0.52);
+    outline-offset: 2px;
 }
 
 
@@ -1054,22 +1080,46 @@ canvas {
     }
 }
 
+.qri-iv-control-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    max-width: 100%;
+    margin-bottom: 8px;
+}
+
+.qri-iv-control-label {
+    flex: 0 0 4.5rem;
+    color: #52657a;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
 .iv-contract-switch,
 .iv-range-switch {
     display: flex;
+    flex: 0 1 auto;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 14px;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
 }
 
 .iv-contract-button,
 .iv-range-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    margin: 0;
     border: 1px solid #b9c7d8;
     border-radius: 999px;
     background: #f5f8fc;
     color: #304761;
-    padding: 7px 14px;
+    padding: 6px 11px;
     cursor: pointer;
+    font-size: 0.88rem;
     font-weight: 600;
 }
 
@@ -1078,6 +1128,8 @@ canvas {
     border-color: #315f9d;
     background: #315f9d;
     color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+        0 0 0 2px rgba(49, 95, 157, 0.16);
 }
 
 .iv-contract-button:disabled,
@@ -1088,9 +1140,25 @@ canvas {
 
 .qri-iv-range-center-note {
     min-height: 1.2em;
-    margin: -6px 0 10px;
+    margin: 2px 0 12px;
     color: #66788d;
     font-size: 0.82rem;
+}
+
+@media (max-width: 550px) {
+    .qri-iv-control-row {
+        align-items: flex-start;
+        gap: 5px;
+    }
+
+    .qri-iv-control-label {
+        flex-basis: 100%;
+    }
+
+    .iv-contract-switch,
+    .iv-range-switch {
+        width: 100%;
+    }
 }
 
 .qri-iv-metadata,
@@ -1268,11 +1336,17 @@ canvas {
 
 .chart-mode-switch {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin: 12px 0 18px;
 }
 
 .chart-mode-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    margin: 0;
     padding: 10px 18px;
     border: 1px solid #c9ced8;
     border-radius: 10px;
@@ -1287,6 +1361,8 @@ canvas {
     background: #244a82;
     border-color: #244a82;
     color: #ffffff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+        0 0 0 2px rgba(36, 74, 130, 0.16);
 }
 
 .snapshot-controls {
