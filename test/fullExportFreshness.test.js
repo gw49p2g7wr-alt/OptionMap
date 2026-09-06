@@ -139,7 +139,7 @@ test("adapterはfetch/storage/publishを呼ばず入力を変更しない", () =
     const adapter = createFullExportFreshnessAdapter({ ...source,
         fetch: () => sideEffects++, put: () => sideEffects++, publish: () => sideEffects++ });
     for (const name of ["marketSnapshot", "overallV2", "morning", "importantLevels",
-        "qriOptions", "qriHistoryComparison", "weeklyFutures", "weeklyOptions",
+        "qriOptions", "qriOptionsNextContract", "qriHistoryComparison", "weeklyFutures", "weeklyOptions",
         "participants", "intelligence"]) adapter.getSectionFreshness(name);
     assert.equal(sideEffects, 0);
     assert.deepEqual(source.getQriFormalIdentity(), before);

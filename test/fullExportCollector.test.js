@@ -386,7 +386,9 @@ test("freshness statusをそのまま保持", async () => {
     assert.deepEqual(result.sections.qriOptions.freshness,
         { status: "stale", reason: "source_not_updated" });
     assert.deepEqual(result.compactSummary.freshnessIssues,
-        [{ section: "qriOptions", status: "stale", reason: "source_not_updated" }]);
+        [{ section: "qriOptions", status: "stale", reason: "source_not_updated" },
+        { section: "qriOptionsNextContract", status: "unavailable",
+            reason: "section_unavailable" }]);
 });
 
 test("unavailable sectionは提供freshnessがfreshでも昇格させない", async () => {

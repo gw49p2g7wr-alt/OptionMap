@@ -85,6 +85,23 @@
                 signatureValid: Boolean(fact.canonicalSignature), calculationEligible: "eligible" });
         }
 
+        function qriOptionsNextContract(context) {
+            const acquisition = context?.acquisition;
+            const revision = context?.revision;
+            if (!object(acquisition) || !["saved", "unchanged"].includes(acquisition.status) ||
+                !object(revision) || acquisition.targetContract !== revision.contract ||
+                acquisition.referenceTradingDate !== revision.tradingDate ||
+                acquisition.versionKey !== revision.versionKey || !revision.signature) {
+                return unavailable("next_contract_acquisition_unavailable");
+            }
+            return daily({ sourceType: "qri_options", origin: "history", hasData: true,
+                dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
+                fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
+                lastAttemptedAt: acquisition.completedAt || revision.confirmedAt || null,
+                lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
+                validation: true, signatureValid: true, calculationEligible: "eligible" });
+        }
+
         function weeklySource(name) {
             const state = configuration.getWeeklyDataState?.(name);
             if (!object(state)) return unavailable();
@@ -129,9 +146,10 @@
             return nonCurrent("overall_v2_formal_envelope");
         }
 
-        function getSectionFreshness(name) {
+        function getSectionFreshness(name, context = null) {
             if (name === "marketSnapshot") return marketSnapshot();
             if (name === "qriOptions") return qriOptions();
+            if (name === "qriOptionsNextContract") return qriOptionsNextContract(context);
             if (name === "importantLevels") return projectedQri();
             if (name === "weeklyFutures" || name === "weeklyOptions") return weeklySource(name);
             if (name === "participants") return participants();

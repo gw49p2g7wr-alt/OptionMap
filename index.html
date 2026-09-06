@@ -1560,6 +1560,8 @@ window.OptionMapFullExportUi.configure({
             getMorningRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
             getMorningComparisonState: () => window.getMorningComparisonV4RuntimeState?.() || null,
             getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
+            getQriReferenceAcquisitionState: () =>
+                window.getQriReferenceAcquisitionState?.() || null,
             readQriHistory: () => window.OptionMapQriOptionsHistoryStore.loadHistory(),
             readWeeklyFuturesActiveVersions: () => window.OptionMapWeeklyFuturesHistory
                 .getActiveVersions(weeklyFuturesHistory),

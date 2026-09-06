@@ -6,11 +6,12 @@
         root?.OptionMapQriOptionsHistory;
     const qriComparisonApi = commonJs ? require("./qriOptionsHistoryComparison.js") :
         root?.OptionMapQriOptionsHistoryComparison;
-    const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi);
+    const qriOptionsApi = commonJs ? require("./qriOptions.js") : root?.OptionMapQriOptions;
+    const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
-function (fullExportApi, qriHistoryApi, qriComparisonApi) {
+function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -57,8 +58,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
             freshness: clone(freshness), summary: clone(summary), details: clone(details) };
     }
 
-    function freshnessFor(configuration, name, observedAt = null) {
-        const provided = configuration.getSectionFreshness?.(name);
+    function freshnessFor(configuration, name, observedAt = null, context = null) {
+        const provided = configuration.getSectionFreshness?.(name, context);
         if (object(provided) && text(provided.status)) return clone(provided);
         return { status: "unavailable", reason: "freshness_status_unavailable",
             observedAt: validTimestamp(observedAt) ? observedAt : null };
@@ -270,6 +271,95 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
         return { qriOptions, qriHistoryComparison, comparison };
     }
 
+    function nextContractAcquisition(configuration) {
+        const state = clone(configuration.getQriReferenceAcquisitionState?.() || null);
+        return object(state?.acquisition) ? state.acquisition : state;
+    }
+
+    function aggregatePublishedRecords(records, optionType) {
+        const typed = records.filter(record => record.optionType === optionType);
+        const published = typed.filter(record => record.published === true);
+        return { value: published.reduce((sum, record) => sum + record.value, 0),
+            publishedRecordCount: published.length,
+            unpublishedRecordCount: typed.filter(record => record.published === false).length };
+    }
+
+    async function createQriNextContractSection(configuration) {
+        const acquisition = nextContractAcquisition(configuration);
+        const status = text(acquisition?.status);
+        if (!status) return unavailable("next_contract_acquisition_missing",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsNextContract", null, { acquisition: null, revision: null }));
+        if (!["saved", "unchanged"].includes(status)) {
+            return unavailable(`next_contract_acquisition_${status}`,
+                "qri-nikkei225-options", freshnessFor(configuration,
+                    "qriOptionsNextContract", null, { acquisition, revision: null }));
+        }
+        const targetContract = text(acquisition.targetContract);
+        const tradingDate = validDate(acquisition.referenceTradingDate)
+            ? acquisition.referenceTradingDate : null;
+        const versionKey = text(acquisition.versionKey);
+        if (!targetContract || !tradingDate || !versionKey) {
+            return unavailable("next_contract_locator_invalid", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsNextContract", null,
+                    { acquisition, revision: null }));
+        }
+        let loaded;
+        try { loaded = clone(await configuration.readQriHistory?.()); }
+        catch (_error) { return unavailable("next_contract_history_read_failed",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsNextContract", null, { acquisition, revision: null })); }
+        const validation = await (configuration.validateQriHistory ||
+            qriHistoryApi?.validateHistory)?.(loaded?.history);
+        if (loaded?.status !== "ready" || validation?.valid !== true) {
+            return unavailable("next_contract_history_invalid", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsNextContract", null,
+                    { acquisition, revision: null }), "invalid");
+        }
+        const entry = loaded.history.entries.find(item => item.entryKey ===
+            `${targetContract}|${tradingDate}`);
+        const revision = entry?.revisions?.find(item => item.versionKey === entry.activeVersionKey);
+        const canonical = revision?.canonical;
+        const locatorMatched = entry?.contract === targetContract &&
+            entry?.sourceDateKey === tradingDate && entry?.activeVersionKey === versionKey &&
+            revision?.versionKey === versionKey && revision?.contract === targetContract &&
+            revision?.tradingDate === tradingDate && canonical?.contract === targetContract &&
+            canonical?.tradingDate === tradingDate &&
+            text(acquisition.targetUrl) === revision?.sourceUrl &&
+            canonical?.sourceUrl === revision?.sourceUrl &&
+            canonical?.pageUpdatedAt === revision?.pageUpdatedAt &&
+            text(revision?.signature) !== null;
+        if (!locatorMatched) return unavailable("next_contract_identity_mismatch",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsNextContract", null, { acquisition, revision: null }));
+        let signature = null;
+        try { signature = await qriOptionsApi?.createSignature?.(canonical); }
+        catch (_error) { signature = null; }
+        if (!signature || signature !== revision.signature) {
+            return unavailable("next_contract_signature_mismatch", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsNextContract", null,
+                    { acquisition, revision: null }), "invalid");
+        }
+        const snapshotDate = qriHistoryApi?.effectiveSnapshotDate?.(revision) ||
+            revision.snapshotDate || null;
+        const sectionFreshness = freshnessFor(configuration, "qriOptionsNextContract",
+            revision.pageUpdatedAt, { acquisition, revision });
+        const records = clone(canonical.records);
+        return envelope({ authority: { source: "qri-nikkei225-options",
+            sourceClass: "formal_history", origin: "history", formalStatus: "verified",
+            versionKey: revision.versionKey, signature: revision.signature },
+        asOf: { tradingDate: revision.tradingDate, sourceDate: entry.sourceDateKey,
+            snapshotDate, pageUpdatedAt: revision.pageUpdatedAt,
+            fetchedAt: revision.fetchedAt, confirmedAt: revision.confirmedAt },
+        freshness: sectionFreshness,
+        summary: { contract: revision.contract, tradingDate: revision.tradingDate,
+            openInterestStatus: revision.openInterestStatus,
+            callAggregate: aggregatePublishedRecords(records, "call"),
+            putAggregate: aggregatePublishedRecords(records, "put") },
+        details: { versionKey: revision.versionKey, signature: revision.signature,
+            records, warnings: [] } });
+    }
+
     function createImportantLevelsSection(configuration, mobile, qriSection) {
         const levels = mobile?.payload?.nearestLevels;
         if (qriSection.status !== "available" || !object(levels)) {
@@ -436,6 +526,7 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
             const overallV2 = createOverallSection(configuration);
             const morning = createMorningSection(configuration);
             const qri = await createQriSections(configuration);
+            const qriOptionsNextContract = await createQriNextContractSection(configuration);
             const importantLevels = createImportantLevelsSection(
                 configuration, mobile, qri.qriOptions);
             const weeklyFutures = await createWeeklyFuturesSection(configuration);
@@ -444,6 +535,7 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi) {
             const intelligence = await createIntelligenceSection(configuration);
             const sections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,
+                qriOptionsNextContract,
                 qriHistoryComparison: qri.qriHistoryComparison,
                 weeklyFutures, weeklyOptions, participants, intelligence };
             const freshnessIssues = Object.entries(sections)
