@@ -147,6 +147,25 @@ test("unchanged is a successful session capture", async () => {
         "already_succeeded_for_trading_date");
 });
 
+test("accepted reference exposes the same fetched response to optional session consumers", async () => {
+    const published = [];
+    const x = fixture({ publishAcceptedReference: async (input, guard) => {
+        published.push({ input, current: guard.isCurrentRequest() });
+    } });
+    assert.equal((await x.orchestrator.run(baseContext())).status, "saved");
+    assert.equal(published.length, 1);
+    assert.deepEqual([published[0].input.responseHtml.html,
+        published[0].input.targetContract, published[0].input.referenceStatus,
+        published[0].input.sourceUrl, published[0].input.referenceVersionKey,
+        published[0].current],
+    ["sample", "2026-10", "saved", targetUrl, "reference-v1", true]);
+    const rejected = [];
+    const failed = fixture({ persistReference: async () => ({ status: "failed" }),
+        publishAcceptedReference: async value => rejected.push(value) });
+    await failed.orchestrator.run(baseContext());
+    assert.equal(rejected.length, 0);
+});
+
 test("fetch, canonical and persistence failures remain diagnostics", async () => {
     const cases = [
         [fixture({ fetchReferencePage: async () => { throw new Error("offline"); } }), "fetch_failed"],

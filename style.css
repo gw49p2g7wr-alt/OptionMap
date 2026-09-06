@@ -1054,6 +1054,7 @@ canvas {
     }
 }
 
+.iv-contract-switch,
 .iv-range-switch {
     display: flex;
     flex-wrap: wrap;
@@ -1061,6 +1062,7 @@ canvas {
     margin-bottom: 14px;
 }
 
+.iv-contract-button,
 .iv-range-button {
     border: 1px solid #b9c7d8;
     border-radius: 999px;
@@ -1071,15 +1073,24 @@ canvas {
     font-weight: 600;
 }
 
+.iv-contract-button.active,
 .iv-range-button.active {
     border-color: #315f9d;
     background: #315f9d;
     color: #fff;
 }
 
+.iv-contract-button:disabled,
 .iv-range-button:disabled {
     cursor: not-allowed;
     opacity: 0.45;
+}
+
+.qri-iv-range-center-note {
+    min-height: 1.2em;
+    margin: -6px 0 10px;
+    color: #66788d;
+    font-size: 0.82rem;
 }
 
 .qri-iv-metadata,

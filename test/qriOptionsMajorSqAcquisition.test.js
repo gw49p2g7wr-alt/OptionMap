@@ -196,6 +196,32 @@ test("persistence uses the existing reference_history contract", async () => {
     ["reference_history", "live", "2026-12", urlFor("2026-12"), "major-1", true]);
 });
 
+test("Major-SQ session consumer runs only after accepted Formal persistence", async () => {
+    const published = [];
+    const formal = context(); let current = structuredClone(formal);
+    const target = "2026-12";
+    const orchestrator = Api.createQriMajorSqAcquisitionOrchestrator({
+        fetchReferencePage: async () => "same-major-html",
+        buildCanonical: async () => canonicalFor(target), validateCanonical: async () => true,
+        buildCache: async value => ({ contract: value.contract, sourceUrl: value.sourceUrl,
+            signature: "a".repeat(64), versionKey: "major-version",
+            fetchedAt: "2026-09-06T10:00:00Z", canonical: value }),
+        validateCache: async () => true,
+        persistReference: async () => ({ status: "unchanged" }),
+        publishAcceptedReference: async (input, guard) => published.push({ input,
+            current: guard.isCurrentRequest() }),
+        getCurrentFormalContext: () => current,
+        getCurrentLifecycleState: () => ({ disposed: false }),
+        now: () => "2026-09-06T10:00:00+09:00", createRequestId: () => "major-1"
+    });
+    assert.equal((await orchestrator.run(formal)).status, "unchanged");
+    assert.deepEqual([published.length, published[0].input.responseHtml,
+        published[0].input.targetContract, published[0].input.referenceStatus,
+        published[0].input.referenceVersionKey, published[0].current],
+    [1, "same-major-html", target, "unchanged", "major-version", true]);
+    current = null;
+});
+
 test("production runtime stays dedicated while Full Export uses only its locator", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const source = fs.readFileSync(path.join(__dirname,

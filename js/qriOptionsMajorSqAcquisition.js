@@ -212,6 +212,21 @@
             } catch (error) { return fail(ownGeneration, "persistence_failed", error); }
             if (!requestCurrent(ownGeneration, captured)) return stale(ownGeneration);
             if (persistence?.status === "saved" || persistence?.status === "unchanged") {
+                if (typeof dependencies.publishAcceptedReference === "function") {
+                    try {
+                        await dependencies.publishAcceptedReference({ responseHtml: raw,
+                            referenceCanonical: canonical, referenceCache: cache,
+                            referenceStatus: persistence.status, targetContract,
+                            referenceVersionKey: cache.versionKey,
+                            sourceUrl: targetUrl, requestId,
+                            parentMarketRefreshRequestId: captured.parentMarketRefreshRequestId,
+                            formalPublicationGeneration: captured.formalPublicationGeneration,
+                            acquisitionGeneration: ownGeneration,
+                            fetchedAt: cache.fetchedAt, completedAt: dependencies.now()
+                        }, { isCurrentRequest: () => requestCurrent(ownGeneration, captured) });
+                    } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
+                }
+                if (!requestCurrent(ownGeneration, captured)) return stale(ownGeneration);
                 successes.add(successKey);
                 return publish({ status: persistence.status, reason: persistence.reason || null,
                     completedAt: dependencies.now(), persistenceStatus: persistence.status,

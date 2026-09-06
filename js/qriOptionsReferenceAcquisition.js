@@ -198,11 +198,41 @@
             } catch (error) { return finishFailure(ownGeneration, "persistence_failed", error); }
             if (!requestCurrent(ownGeneration, captured)) return finishStale(ownGeneration);
             if (persistence?.status === "saved") {
+                if (typeof dependencies.publishAcceptedReference === "function") {
+                    try {
+                        await dependencies.publishAcceptedReference({ responseHtml: raw,
+                            referenceCanonical: canonical, referenceCache: cache,
+                            referenceStatus: "saved", targetContract,
+                            referenceVersionKey: cache.versionKey,
+                            sourceUrl: target.url, requestId,
+                            parentMarketRefreshRequestId: captured.parentMarketRefreshRequestId,
+                            formalPublicationGeneration: captured.formalPublicationGeneration,
+                            acquisitionGeneration: ownGeneration,
+                            fetchedAt: cache.fetchedAt, completedAt: dependencies.now()
+                        }, { isCurrentRequest: () => requestCurrent(ownGeneration, captured) });
+                    } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
+                }
+                if (!requestCurrent(ownGeneration, captured)) return finishStale(ownGeneration);
                 successes.add(successKey);
                 return publish({ status: "saved", reason: null, completedAt: dependencies.now(),
                     persistenceStatus: "saved", persisted: true, unchanged: false });
             }
             if (persistence?.status === "unchanged") {
+                if (typeof dependencies.publishAcceptedReference === "function") {
+                    try {
+                        await dependencies.publishAcceptedReference({ responseHtml: raw,
+                            referenceCanonical: canonical, referenceCache: cache,
+                            referenceStatus: "unchanged", targetContract,
+                            referenceVersionKey: cache.versionKey,
+                            sourceUrl: target.url, requestId,
+                            parentMarketRefreshRequestId: captured.parentMarketRefreshRequestId,
+                            formalPublicationGeneration: captured.formalPublicationGeneration,
+                            acquisitionGeneration: ownGeneration,
+                            fetchedAt: cache.fetchedAt, completedAt: dependencies.now()
+                        }, { isCurrentRequest: () => requestCurrent(ownGeneration, captured) });
+                    } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
+                }
+                if (!requestCurrent(ownGeneration, captured)) return finishStale(ownGeneration);
                 successes.add(successKey);
                 return publish({ status: "unchanged", reason: persistence.reason || null,
                     completedAt: dependencies.now(), persistenceStatus: "unchanged",
