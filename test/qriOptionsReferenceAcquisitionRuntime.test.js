@@ -5,6 +5,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Runtime = require("../js/qriOptionsReferenceAcquisitionRuntime.js");
 const Acquisition = require("../js/qriOptionsReferenceAcquisition.js");
+const MajorSq = require("../js/qriOptionsMajorSqAcquisition.js");
+const Selector = require("../js/qriOptionIvContractSelector.js");
+const GraphSource = require("../js/qriIvGraphSourceState.js");
+const Iv = require("../js/qriOptionIv.js");
 
 const deferred = () => {
     let resolve; let reject;
@@ -167,6 +171,97 @@ test("saved and unchanged both suppress same-day duplicate fetch", async () => {
         await tick();
         assert.deepEqual(fetched, ["/10"]);
     }
+});
+
+test("production wiring restores exact history on same-day skip without live session injection", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const adapter = html.slice(html.indexOf("function initializeQriReferenceAcquisitionRuntime"),
+        html.indexOf("function validateQriPayload"));
+    assert.match(adapter, /restoreAcceptedIvHistory:\s*\(memo, guard\)\s*=>\s*restoreQriReferenceIvHistory\("next"/);
+    assert.match(adapter, /restoreAcceptedIvHistory:\s*\(memo, guard\)\s*=>\s*restoreQriReferenceIvHistory\("major_sq"/);
+    const restore = html.slice(html.indexOf("async function restoreQriReferenceIvHistory"),
+        html.indexOf("window.getQriOptionIvHistoryPersistenceState"));
+    assert.match(restore, /qriOptionIvHistoryRestore\.restore/);
+    assert.doesNotMatch(restore, /publishQriReferenceIvSession|persist|beginSession/);
+    assert.match(restore, /guard\?\.isCurrentRequest\?\.\(\) !== true/);
+});
+
+test("active Formal version changes re-establish both exact history roles without refetch", async () => {
+    const baseUrl = "https://svc.qri.jp/jpx/nkopm/";
+    const ivCanonicalFor = contract => Iv.parseQriOptionIvPage(
+        `<dt>最終更新時刻</dt><dd>2026/09/07 08:00</dd>
+        <dt>取引日</dt><dd>2026/09/07</dd><dt>取引最終日</dt><dd>2026/12/10</dd>
+        <a href="?gengetsu=${contract.replace("-", "")}&amp;lang=ja">CSV</a>
+        <table><tr class="row-num">${Array.from({ length: 17 }, (_value, index) =>
+            `<td>${index === 5 ? "20%" : index === 8 ? "40,000" : index === 11 ? "21%" : "-"}</td>`
+        ).join("")}</tr></table>`, contract === "2026-10" ? `${baseUrl}1` : `${baseUrl}2`);
+    let current = { parentMarketRefreshRequestId: "market-1", formalPublicationGeneration: 1,
+        formalCompletionVerified: true, sourceClass: "formal_live", identityVerified: true,
+        acquisitionVerified: true, openInterestStatus: "available", activeContract: "2026-09",
+        formalTradingDate: "2026-09-07", activeCanonicalVersionKey: "active-v1",
+        activeSourceUrl: baseUrl, availableContracts: [
+            { contract: "2026-09", label: "9月限", url: baseUrl, active: true },
+            { contract: "2026-10", label: "10月限", url: `${baseUrl}1`, active: false },
+            { contract: "2026-12", label: "12月限", url: `${baseUrl}2`, active: false }] };
+    let lifecycle = { generation: 1, disposed: false };
+    const fetched = []; const historySources = {};
+    const referenceSession = { sources: { next: { available: false, contract: null },
+        major_sq: { available: false, contract: null } } };
+    const canonicalFor = url => { const contract = url === `${baseUrl}1` ? "2026-10" : "2026-12";
+        const label = contract === "2026-10" ? "10月限" : "12月限"; return { sourceUrl: url,
+        contract, gengetsu: contract.replace("-", ""), contractLabel: label,
+        tradingDate: "2026-09-07", availableContracts: [
+            { contract, label, url, active: true }],
+        openInterestStatus: "available", records: [{
+            contract, optionType: "call", strike: 40000, published: true, value: 1 }] }; };
+    const dependencies = role => ({
+        fetchReferencePage: async url => (fetched.push(url), url),
+        buildCanonical: async url => canonicalFor(url), validateCanonical: async () => true,
+        buildCache: async canonical => ({ contract: canonical.contract,
+            sourceUrl: canonical.sourceUrl, signature: "a".repeat(64),
+            versionKey: `qri|${canonical.contract}`, canonical }),
+        validateCache: async () => true, persistReference: async () => ({ status: "saved" }),
+        restoreAcceptedIvHistory: async (memo, guard) => {
+            assert.equal(guard.isCurrentRequest(), true);
+            historySources[role] = { available: true, role, origin: "history",
+                sourceClass: "formal_history", formalStatus: "verified",
+                contract: memo.targetContract, tradingDate: memo.referenceTradingDate,
+                versionKey: `iv|${memo.targetContract}`,
+                canonical: ivCanonicalFor(memo.targetContract) };
+        },
+        getCurrentFormalContext: () => current, getCurrentLifecycleState: () => lifecycle,
+        now: () => "2026-09-07T09:00:00+09:00", createRequestId: () => `${role}-request`
+    });
+    const next = Acquisition.createQriReferenceAcquisitionOrchestrator(dependencies("next"));
+    const major = MajorSq.createQriMajorSqAcquisitionOrchestrator(dependencies("major_sq"));
+    assert.equal((await next.run(current)).status, "saved");
+    const initialMajor = await major.run(current);
+    assert.equal(initialMajor.status, "saved", JSON.stringify(initialMajor));
+    for (const version of ["active-v2", "active-v3"]) {
+        lifecycle = { generation: lifecycle.generation + 1, disposed: false };
+        current = { ...current, parentMarketRefreshRequestId: `market-${lifecycle.generation}`,
+            formalPublicationGeneration: lifecycle.generation,
+            activeCanonicalVersionKey: version };
+        historySources.next = null; historySources.major_sq = null;
+        assert.equal((await next.run(current)).reason, "already_succeeded_for_trading_date");
+        assert.equal((await major.run(current)).reason, "already_succeeded_for_trading_date");
+        const choices = Selector.buildChoices({ defaultContract: "2026-09",
+            activeRuntime: { available: true, sourceStatus: "acquired", origin: "live",
+                contract: "2026-09", versionKey: version, canonical: { contract: "2026-09" } },
+            referenceSources: referenceSession.sources, historySources });
+        assert.deepEqual(choices.map(choice => choice.role), ["active", "next", "major_sq"]);
+        for (const role of ["next", "major_sq"]) {
+            const resolved = GraphSource.buildQriIvGraphSourceState({ selectionMode: "specific",
+                selectedContract: historySources[role].contract,
+                activeContract: historySources[role].contract,
+                historySource: historySources[role], liveStatus: "pending" });
+            assert.deepEqual([resolved.sourceKind, resolved.metadata.candidateOrigin],
+                ["history", "history"]);
+        }
+        assert.equal(referenceSession.sources.next.available, false);
+        assert.equal(referenceSession.sources.major_sq.available, false);
+    }
+    assert.deepEqual(fetched, [`${baseUrl}1`, `${baseUrl}2`]);
 });
 
 test("contract roll uses the new active contract's immediate successor", async () => {

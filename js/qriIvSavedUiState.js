@@ -76,6 +76,7 @@
             tradingDateText: formatTradingDate(sourceMeta.tradingDate || graphMeta.tradingDate),
             pageUpdatedAtText: formatJst(sourceMeta.pageUpdatedAt || graphMeta.pageUpdatedAt),
             fetchedAtText: formatJst(sourceMeta.fetchedAt),
+            confirmedAtText: formatJst(sourceMeta.confirmedAt),
             rangeText: rangeText(mode, graphViewModel)
         };
     }
@@ -106,7 +107,8 @@
             graphAvailable: graphInfo.graphAvailable,
             rangeMode: mode,
             liveStatus: text(source.liveStatus),
-            savedReason: sourceKind === "saved" ? text(source.reason) : null,
+            savedReason: ["saved", "history"].includes(sourceKind)
+                ? text(source.reason) : null,
             graphState: graphInfo.graphState
         };
 
@@ -127,7 +129,7 @@
                 sideMessages: clone(graphInfo.sideMessages), diagnostics });
         }
 
-        if (sourceKind !== "saved") {
+        if (!["saved", "history"].includes(sourceKind)) {
             return deepFreeze({ uiStateVersion: UI_STATE_VERSION, visible: true,
                 sourceKind: "unavailable", state: "unavailable", statusLabel: null,
                 message: "IVデータを表示できません", severity: "neutral",
@@ -137,13 +139,15 @@
 
         const allMissing = graph && graphInfo.graphAvailable === false &&
             graphInfo.graphState === "empty";
+        const history = sourceKind === "history";
         const fallback = sourceState === "saved_fallback";
         const message = allMissing
             ? "保存済みIVはありますが、この範囲にはIV公表データがありません"
-            : fallback ? "IV取得に失敗しました。保存済みIVを表示しています"
+            : history ? "保存済みIV（正式履歴）を表示しています"
+                : fallback ? "IV取得に失敗しました。保存済みIVを表示しています"
                 : "保存済みIVを表示中 — 最新IVを確認中…";
         return deepFreeze({ uiStateVersion: UI_STATE_VERSION, visible: true,
-            sourceKind: "saved", state: sourceState, statusLabel: "保存済みIV",
+            sourceKind, state: sourceState, statusLabel: "保存済みIV",
             message, severity: fallback ? "caution" : "neutral",
             showSavedBadge: true, ...meta,
             graphAvailable: graphInfo.graphAvailable,

@@ -31,7 +31,7 @@ function canonicalFor(contract, overrides = {}) {
 }
 function harness({ formal = context(), canonical, validateCanonical = true,
     validateCache = true, persistence = { status: "saved" },
-    persistAcceptedIvHistory, publishAcceptedReference } = {}) {
+    persistAcceptedIvHistory, publishAcceptedReference, restoreAcceptedIvHistory } = {}) {
     let current = structuredClone(formal); let lifecycle = { generation: null, disposed: false };
     const fetched = []; const persisted = [];
     const target = Api.nextMajorSqContract(formal.activeContract);
@@ -46,6 +46,7 @@ function harness({ formal = context(), canonical, validateCanonical = true,
         persistReference: async (cache, options) => (persisted.push({ cache, options }), persistence),
         persistAcceptedIvHistory,
         publishAcceptedReference,
+        restoreAcceptedIvHistory,
         getCurrentFormalContext: () => current,
         getCurrentLifecycleState: () => lifecycle,
         now: () => "2026-09-06T10:00:00+09:00", createRequestId: () => "major-1"
@@ -53,6 +54,49 @@ function harness({ formal = context(), canonical, validateCanonical = true,
     return { orchestrator, fetched, persisted,
         setCurrent: value => { current = value; }, setLifecycle: value => { lifecycle = value; } };
 }
+
+test("same-day Major-SQ skip restores only its exact immutable success memo", async () => {
+    const restored = []; const formal = context();
+    const x = harness({ formal, restoreAcceptedIvHistory: async (memo, guard) => {
+        restored.push({ memo, current: guard.isCurrentRequest(), frozen: Object.isFrozen(memo) });
+    } });
+    assert.equal((await x.orchestrator.run(formal)).status, "saved");
+    const second = await x.orchestrator.run(formal);
+    assert.equal(second.reason, "already_succeeded_for_trading_date");
+    assert.deepEqual(restored, [{ memo: { role: "major_sq", activeContract: "2026-09",
+        activeVersionKey: "active-v1", targetContract: "2026-12",
+        referenceTradingDate: "2026-09-04", targetUrl: urlFor("2026-12"),
+        versionKey: "qri-options-v2|2026-12|v1" }, current: true, frozen: true }]);
+    assert.equal(x.fetched.length, 1);
+});
+
+test("Major-SQ success memo is not reused across date, target or URL changes", async () => {
+    for (const mutate of [
+        value => { value.formalTradingDate = "2026-09-05"; },
+        value => { value.activeContract = "2026-10"; },
+        value => { value.availableContracts[1].url = `${urlFor("2026-12")}?changed`; }
+    ]) {
+        const restored = []; const formal = context();
+        const x = harness({ formal, restoreAcceptedIvHistory: memo => restored.push(memo) });
+        await x.orchestrator.run(formal); const changed = structuredClone(formal); mutate(changed);
+        x.setCurrent(changed); await x.orchestrator.run(changed);
+        assert.equal(restored.length, 0);
+    }
+});
+
+test("Major-SQ same-day restore accepts a refreshed active Formal version", async () => {
+    const restored = []; const formal = context();
+    const x = harness({ formal, restoreAcceptedIvHistory: memo => restored.push(memo) });
+    await x.orchestrator.run(formal);
+    const refreshed = structuredClone(formal);
+    refreshed.activeCanonicalVersionKey = "active-v2";
+    x.setCurrent(refreshed);
+    const result = await x.orchestrator.run(refreshed);
+    assert.equal(result.reason, "already_succeeded_for_trading_date");
+    assert.equal(x.fetched.length, 1);
+    assert.equal(restored.length, 1);
+    assert.equal(restored[0].activeVersionKey, "active-v1");
+});
 
 test("quarter target is derived from the active contract including year rollover", () => {
     assert.deepEqual([["2026-09", "2026-12"], ["2026-10", "2026-12"],

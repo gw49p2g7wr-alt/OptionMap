@@ -29,6 +29,15 @@ function saved(data = canonical(), extra = {}) {
             fetchedAt: "2026-08-25T06:00:00Z" },
         diagnostics: { integrityVerified: true }, ...extra };
 }
+function history(data = canonical(), role = "active", extra = {}) {
+    return { available: true, origin: "history", sourceClass: "formal_history",
+        formalStatus: "verified", role, contract: data.contract,
+        tradingDate: data.tradingDate, canonical: data, signature: "history-signature",
+        versionKey: "history-version", fetchedAt: "2026-08-25T06:30:00Z",
+        confirmedAt: "2026-08-25T06:31:00Z", snapshotDate: "2026-08-25",
+        freshness: { status: "saved", reason: "formal_history", origin: "history",
+            displayEligible: true, calculationEligible: "undetermined" }, ...extra };
+}
 function build(extra = {}) {
     return Source.buildQriIvGraphSourceState({ selectionMode: "auto",
         activeContract: "2026-09", liveStatus: "pending", ...extra });
@@ -41,6 +50,21 @@ test("auto selects matching live and always prefers it over saved", () => {
         ["live", "live_available", "active", "2026-09"]);
     assert.equal(result.metadata.candidateOrigin, "live");
     assert.equal(result.calculationEligible, "existing_policy");
+});
+test("verified history sits below live and above active last-valid", () => {
+    const restored = build({ historySource: history(), bootShadowState: saved() });
+    const liveResult = build({ activeRuntime: live(), historySource: history(),
+        bootShadowState: saved(), liveStatus: "success" });
+    assert.deepEqual([restored.sourceKind, restored.state, restored.metadata.candidateOrigin,
+        restored.calculationEligible],
+    ["history", "history_available", "history", "undetermined"]);
+    assert.equal(liveResult.sourceKind, "live");
+});
+test("invalid or mismatched history falls through to active last-valid", () => {
+    for (const historySource of [history(canonical(), "active", { formalStatus: "invalid" }),
+        history(canonical(), "active", { contract: "2026-12" })]) {
+        assert.equal(build({ historySource, bootShadowState: saved() }).sourceKind, "saved");
+    }
 });
 test("auto pending and failed select matching saved with distinct states", () => {
     for (const [liveStatus, state] of [["pending", "saved_pending"],
@@ -177,7 +201,7 @@ test("inputs are unchanged and source has no forbidden connections", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/qriIvGraphSourceState.js"), "utf8");
     assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|setItem|removeItem/);
     assert.doesNotMatch(source, /\bfetch\s*\(|ipcRenderer|document\.|querySelector|Chart/);
-    assert.doesNotMatch(source, /GraphViewModel|OptionMapCurrentPrice|OverallV2|History/);
+    assert.doesNotMatch(source, /GraphViewModel|OptionMapCurrentPrice|OverallV2/);
     assert.doesNotMatch(source, /input\.(currentPrice|savedPrice)/);
     assert.doesNotMatch(source, /setTimeout|setInterval|currentQriOptionIv/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");

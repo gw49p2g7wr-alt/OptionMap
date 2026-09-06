@@ -29,6 +29,15 @@ function boot(data = canonical(), extra = {}) {
             fetchedAt: "2026-08-24T11:14:28.539Z" },
         diagnostics: { integrityVerified: true }, ...extra };
 }
+function history(data = canonical()) {
+    return { available: true, origin: "history", sourceClass: "formal_history",
+        formalStatus: "verified", role: "active", contract: data.contract,
+        tradingDate: data.tradingDate, canonical: data, versionKey: "history-version",
+        signature: "history-signature", fetchedAt: "2026-08-25T06:30:00Z",
+        confirmedAt: "2026-08-25T06:31:00Z", snapshotDate: "2026-08-25",
+        freshness: { status: "saved", reason: "formal_history", origin: "history",
+            displayEligible: true, calculationEligible: "undetermined" } };
+}
 function input(extra = {}) {
     return { selection: { mode: "auto" }, activeContract: "2026-09",
         runtimeState: { active: null, selected: null }, bootShadowState: boot(),
@@ -49,6 +58,19 @@ test("saved pending passes source canonical directly and defaults to all", () =>
     assert.deepEqual([result.source.sourceKind, result.rangePolicy.rangeMode,
         result.viewModel.metadata.contract, result.uiState.showSavedBadge],
     ["saved", "all", saved.contract, true]);
+});
+test("history source is display-only, defaults to all and keeps saved UI semantics", () => {
+    const result = Runtime.buildQriIvGraphRuntimeState(input({ historySource: history() }));
+    assert.deepEqual([result.source.sourceKind, result.rangePolicy.rangeMode,
+        result.uiState.statusLabel, result.uiState.message,
+        result.source.calculationEligible],
+    ["history", "all", "保存済みIV", "保存済みIV（正式履歴）を表示しています",
+        "undetermined"]);
+});
+test("live source supersedes an available history source", () => {
+    const result = Runtime.buildQriIvGraphRuntimeState(input({ historySource: history(),
+        runtimeState: { active: live(), selected: null }, liveStatus: "success" }));
+    assert.equal(result.source.sourceKind, "live");
 });
 test("saved radius is allowed only after explicit selection with matching automatic live price", () => {
     for (const mode of ["plus_minus_3000", "plus_minus_5000"]) {

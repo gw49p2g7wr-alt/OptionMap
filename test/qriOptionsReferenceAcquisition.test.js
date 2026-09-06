@@ -22,7 +22,7 @@ const referenceCanonical = overrides => ({ contract: "2026-10", sourceUrl: targe
 
 function fixture(overrides = {}) {
     let context = baseContext(); let lifecycleGeneration = 1;
-    const calls = { fetch: [], build: 0, validate: 0, cache: 0, persist: [] };
+    const calls = { fetch: [], build: 0, validate: 0, cache: 0, persist: [], restore: [] };
     const fetchResolvers = [];
     const deps = {
         fetchReferencePage: async url => { calls.fetch.push(url); return { html: "sample", url }; },
@@ -33,6 +33,8 @@ function fixture(overrides = {}) {
         validateCache: async () => true,
         persistReference: async (cache, options) => { calls.persist.push({ cache, options });
             return { status: "saved" }; },
+        restoreAcceptedIvHistory: async (memo, guard) => calls.restore.push({ memo,
+            current: guard.isCurrentRequest() }),
         getCurrentFormalContext: () => context,
         getCurrentLifecycleState: () => ({ generation: lifecycleGeneration, disposed: false }),
         now: (() => { let tick = 0; return () => `2026-08-28T08:00:0${tick++}.000Z`; })(),
@@ -89,6 +91,48 @@ test("one successful target per active trading date skips later runs", async () 
     const second = await x.orchestrator.run(baseContext());
     assert.equal(second.reason, "already_succeeded_for_trading_date");
     assert.equal(x.calls.fetch.length, 1);
+    assert.deepEqual(x.calls.restore, [{ memo: { role: "next", activeContract: "2026-09",
+        activeVersionKey: "active-v1", targetContract: "2026-10",
+        referenceTradingDate: "2026-08-28", targetUrl, versionKey: "reference-v1" },
+    current: true }]);
+});
+
+test("same-day memo mismatch fails closed without history restore", async () => {
+    for (const mutate of [
+        value => { value.formalTradingDate = "2026-08-29"; },
+        value => { value.availableContracts[1].contract = "2026-11"; },
+        value => { value.availableContracts[1].url = `${targetUrl}?changed`; }
+    ]) {
+        const x = fixture(); await x.orchestrator.run(baseContext());
+        x.setLifecycleGeneration(2);
+        const changed = baseContext(); mutate(changed); x.setContext(changed);
+        await x.orchestrator.run(changed);
+        assert.equal(x.calls.restore.length, 0);
+    }
+});
+
+test("same-day restore remains eligible when only active Formal version changes", async () => {
+    const x = fixture(); await x.orchestrator.run(baseContext());
+    x.setLifecycleGeneration(2);
+    const refreshed = baseContext();
+    refreshed.activeCanonicalVersionKey = "active-v2";
+    x.setContext(refreshed);
+    const result = await x.orchestrator.run(refreshed);
+    assert.equal(result.reason, "already_succeeded_for_trading_date");
+    assert.equal(x.calls.fetch.length, 1);
+    assert.equal(x.calls.restore.length, 1);
+    assert.equal(x.calls.restore[0].memo.activeVersionKey, "active-v1");
+    assert.equal(x.calls.restore[0].current, true);
+});
+
+test("same-day restore becoming stale cannot publish current skip state", async () => {
+    let release;
+    const x = fixture({ restoreAcceptedIvHistory: async () =>
+        new Promise(resolve => { release = resolve; }) });
+    await x.orchestrator.run(baseContext()); x.setLifecycleGeneration(2);
+    const pending = x.orchestrator.run(baseContext()); await Promise.resolve();
+    x.orchestrator.invalidate("new_market_refresh"); release({ status: "available" });
+    assert.equal((await pending).status, "stale");
 });
 
 test("canonical identity, future contract and OI are verified", async () => {

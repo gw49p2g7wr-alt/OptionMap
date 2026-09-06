@@ -50,13 +50,21 @@
             total: count("call") + count("put") };
     }
 
+    function historyAvailable(source, expectedContract) {
+        return source?.available === true && source.origin === "history" &&
+            source.sourceClass === "formal_history" && source.formalStatus === "verified" &&
+            validCanonical(source.canonical) && source.contract === source.canonical.contract &&
+            source.tradingDate === source.canonical.tradingDate &&
+            (!expectedContract || source.contract === expectedContract);
+    }
+
     function rangePolicy(sourceKind) {
         return sourceKind === "live" ? {
             defaultRange: "plus_minus_3000",
             allowLivePriceNavigation: true,
             allowSavedPriceNavigation: false,
             requireCurrentPriceForRadius: true
-        } : sourceKind === "saved" ? {
+        } : ["saved", "history"].includes(sourceKind) ? {
             defaultRange: "all",
             allowLivePriceNavigation: true,
             allowSavedPriceNavigation: false,
@@ -88,6 +96,8 @@
                 tradingDate: canonical?.tradingDate ?? null,
                 pageUpdatedAt: canonical?.pageUpdatedAt ?? null,
                 fetchedAt: values.fetchedAt ?? null,
+                confirmedAt: values.confirmedAt ?? null,
+                snapshotDate: values.snapshotDate ?? null,
                 candidateOrigin: values.candidateOrigin ?? null
             },
             rangePolicy: rangePolicy(values.sourceKind),
@@ -105,6 +115,7 @@
         const active = input.activeRuntime || null;
         const selected = input.selectedRuntime || null;
         const boot = input.bootShadowState || null;
+        const history = input.historySource || null;
         const saved = boot?.candidate || null;
         const savedCanonical = saved?.canonical || boot?.canonical || null;
         const savedAvailable = !!saved && saved.origin === "cache" &&
@@ -117,6 +128,8 @@
                 ? runtimeAvailable(selected, selectedContract)
                 : runtimeAvailable(active, activeContract),
             savedAvailable,
+            historyAvailable: historyAvailable(history, mode === "specific"
+                ? selectedContract : activeContract),
             savedDisplayEligible: boot?.displayEligible === true,
             savedShadowStatus: boot?.status ?? null,
             integrityVerified: boot?.diagnostics?.integrityVerified === true,
@@ -133,6 +146,16 @@
                     calculationEligible: selected.calculationEligible ?? "undetermined",
                     fetchedAt: selected.fetchedAt, candidateOrigin: "live",
                     selectionReason: "matching_selected_live", contractMatched: true }, facts);
+            }
+            if (selectedContract && facts.historyAvailable) {
+                return output({ available: true, sourceKind: "history",
+                    state: "history_available", canonical: history.canonical,
+                    contract: history.contract, channel: history.role,
+                    freshness: history.freshness, displayEligible: true,
+                    calculationEligible: "undetermined", fetchedAt: history.fetchedAt,
+                    confirmedAt: history.confirmedAt, snapshotDate: history.snapshotDate,
+                    candidateOrigin: "history", selectionReason: "matching_formal_history",
+                    contractMatched: true }, facts);
             }
             return output({ available: false, sourceKind: "unavailable",
                 state: "selected_unavailable",
@@ -155,6 +178,17 @@
                 calculationEligible: active.calculationEligible ?? "undetermined",
                 fetchedAt: active.fetchedAt, candidateOrigin: "live",
                 selectionReason: "matching_active_live", contractMatched: true }, facts);
+        }
+
+        if (facts.historyAvailable) {
+            return output({ available: true, sourceKind: "history",
+                state: "history_available", canonical: history.canonical,
+                contract: history.contract, channel: history.role,
+                freshness: history.freshness, displayEligible: true,
+                calculationEligible: "undetermined", fetchedAt: history.fetchedAt,
+                confirmedAt: history.confirmedAt, snapshotDate: history.snapshotDate,
+                candidateOrigin: "history", selectionReason: "matching_formal_history",
+                contractMatched: true }, facts);
         }
 
         if (boot?.status === "superseded" || boot?.reason === "replaced_by_live") {
@@ -199,5 +233,5 @@
     }
 
     return Object.freeze({ SOURCE_STATE_VERSION, buildQriIvGraphSourceState,
-        availableCounts });
+        availableCounts, historyAvailable });
 });

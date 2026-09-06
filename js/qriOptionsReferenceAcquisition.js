@@ -79,7 +79,7 @@
         let generation = 0;
         let disposed = false;
         let state = emptyState();
-        const successes = new Set();
+        const successMemos = new Map();
         const publish = patch => {
             state = freeze({ ...state, ...clone(patch) });
             return getState();
@@ -144,8 +144,32 @@
             }
             const successKey = [captured.activeContract, captured.formalTradingDate,
                 target.url].join("|");
-            if (successes.has(successKey)) return finishSkip(ownGeneration,
-                "already_succeeded_for_trading_date", { requestId, targetUrl: target.url });
+            const successMemo = successMemos.get(successKey) || null;
+            if (successMemo) {
+                const manifestContract = text(captured.availableContracts[target.index]?.contract);
+                const memoCurrent = successMemo.role === "next" &&
+                    successMemo.activeContract === captured.activeContract &&
+                    successMemo.targetUrl === target.url &&
+                    successMemo.referenceTradingDate === captured.formalTradingDate &&
+                    (!manifestContract || manifestContract === successMemo.targetContract) &&
+                    requestCurrent(ownGeneration, captured);
+                if (memoCurrent && typeof dependencies.restoreAcceptedIvHistory === "function") {
+                    try {
+                        await dependencies.restoreAcceptedIvHistory(freeze(clone(successMemo)), {
+                            isCurrentRequest: () => requestCurrent(ownGeneration, captured)
+                        });
+                    } catch (_error) { /* Exact history restore is fail-closed and read-only. */ }
+                }
+                if (!requestCurrent(ownGeneration, captured)) {
+                    return finishStale(ownGeneration, "stale_parent");
+                }
+                return finishSkip(ownGeneration, "already_succeeded_for_trading_date", {
+                    requestId, targetUrl: target.url,
+                    targetContract: memoCurrent ? successMemo.targetContract : null,
+                    referenceTradingDate: memoCurrent ? successMemo.referenceTradingDate : null,
+                    versionKey: memoCurrent ? successMemo.versionKey : null
+                });
+            }
             publish({ status: "fetching", requestId, targetUrl: target.url });
             let raw;
             try { raw = await dependencies.fetchReferencePage(target.url); }
@@ -225,7 +249,10 @@
                     } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
                 }
                 if (!requestCurrent(ownGeneration, captured)) return finishStale(ownGeneration);
-                successes.add(successKey);
+                successMemos.set(successKey, freeze({ role: "next",
+                    activeContract: captured.activeContract,
+                    activeVersionKey: captured.activeCanonicalVersionKey, targetContract,
+                    referenceTradingDate, targetUrl: target.url, versionKey: cache.versionKey }));
                 return publish({ status: "saved", reason: null, completedAt: dependencies.now(),
                     persistenceStatus: "saved", persisted: true, unchanged: false });
             }
@@ -257,7 +284,10 @@
                     } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
                 }
                 if (!requestCurrent(ownGeneration, captured)) return finishStale(ownGeneration);
-                successes.add(successKey);
+                successMemos.set(successKey, freeze({ role: "next",
+                    activeContract: captured.activeContract,
+                    activeVersionKey: captured.activeCanonicalVersionKey, targetContract,
+                    referenceTradingDate, targetUrl: target.url, versionKey: cache.versionKey }));
                 return publish({ status: "unchanged", reason: persistence.reason || null,
                     completedAt: dependencies.now(), persistenceStatus: "unchanged",
                     persisted: false, unchanged: true });

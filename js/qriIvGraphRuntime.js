@@ -43,7 +43,7 @@ function (sourceApi, viewModelApi, uiApi) {
             return { rangeMode, currentPrice: Number(currentPrice?.value),
                 radiusEnabled: true, fallbackReason: null };
         }
-        if (source.sourceKind !== "saved") {
+        if (!["saved", "history"].includes(source.sourceKind)) {
             return { rangeMode: "all", currentPrice: null,
                 radiusEnabled: false, fallbackReason: null };
         }
@@ -66,6 +66,7 @@ function (sourceApi, viewModelApi, uiApi) {
             activeRuntime: input.runtimeState?.active,
             selectedRuntime: input.runtimeState?.selected,
             bootShadowState: input.bootShadowState,
+            historySource: input.historySource,
             liveStatus: input.liveStatus
         });
         const policy = effectiveRange(source, input.requestedRange,

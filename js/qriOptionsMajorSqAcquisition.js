@@ -109,7 +109,7 @@
             if (typeof dependencies[name] !== "function") throw new TypeError(`missing_dependency:${name}`);
         }
         let generation = 0; let disposed = false; let state = freeze(emptyState());
-        const successes = new Set();
+        const successMemos = new Map();
         const publish = patch => (state = freeze({ ...state, ...clone(patch) }), getState());
         const getState = () => freeze(clone(state));
         const lifecycleCurrent = ownGeneration => {
@@ -164,8 +164,30 @@
             }
             const successKey = [captured.activeContract, captured.formalTradingDate,
                 targetContract, targetUrl].join("|");
-            if (successes.has(successKey)) return skip(ownGeneration,
-                "already_succeeded_for_trading_date", { requestId, targetContract, targetUrl });
+            const successMemo = successMemos.get(successKey) || null;
+            if (successMemo) {
+                const memoCurrent = successMemo.role === "major_sq" &&
+                    successMemo.activeContract === captured.activeContract &&
+                    successMemo.targetContract === targetContract &&
+                    successMemo.referenceTradingDate === captured.formalTradingDate &&
+                    successMemo.targetUrl === targetUrl &&
+                    requestCurrent(ownGeneration, captured);
+                if (memoCurrent && typeof dependencies.restoreAcceptedIvHistory === "function") {
+                    try {
+                        await dependencies.restoreAcceptedIvHistory(freeze(clone(successMemo)), {
+                            isCurrentRequest: () => requestCurrent(ownGeneration, captured)
+                        });
+                    } catch (_error) { /* Exact history restore is fail-closed and read-only. */ }
+                }
+                if (!requestCurrent(ownGeneration, captured)) {
+                    return stale(ownGeneration, "stale_parent");
+                }
+                return skip(ownGeneration, "already_succeeded_for_trading_date", {
+                    requestId, targetContract, targetUrl,
+                    referenceTradingDate: memoCurrent ? successMemo.referenceTradingDate : null,
+                    versionKey: memoCurrent ? successMemo.versionKey : null
+                });
+            }
             publish({ status: "fetching", requestId, targetUrl });
             let raw;
             try { raw = await dependencies.fetchReferencePage(targetUrl); }
@@ -239,7 +261,10 @@
                     } catch (_error) { /* IV session publication is fail-closed and non-authoritative. */ }
                 }
                 if (!requestCurrent(ownGeneration, captured)) return stale(ownGeneration);
-                successes.add(successKey);
+                successMemos.set(successKey, freeze({ role: "major_sq",
+                    activeContract: captured.activeContract,
+                    activeVersionKey: captured.activeCanonicalVersionKey, targetContract,
+                    referenceTradingDate, targetUrl, versionKey: cache.versionKey }));
                 return publish({ status: persistence.status, reason: persistence.reason || null,
                     completedAt: dependencies.now(), persistenceStatus: persistence.status,
                     persisted: persistence.status === "saved", unchanged: persistence.status === "unchanged" });
