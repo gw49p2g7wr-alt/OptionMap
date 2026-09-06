@@ -15,7 +15,8 @@
     ]);
     const REQUIRED_SECTION_KEYS = Object.freeze([
         "marketSnapshot", "overallV2", "morning", "importantLevels",
-        "qriOptions", "qriOptionsNextContract", "qriHistoryComparison", "weeklyFutures", "weeklyOptions",
+        "qriOptions", "qriOptionsNextContract", "qriOptionsMajorSqNextContract",
+        "qriHistoryComparison", "weeklyFutures", "weeklyOptions",
         "participants", "intelligence"
     ]);
     const TOP_LEVEL_KEYS = Object.freeze([

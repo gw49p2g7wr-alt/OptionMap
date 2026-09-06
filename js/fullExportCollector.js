@@ -360,6 +360,84 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
             records, warnings: [] } });
     }
 
+    async function createQriMajorSqNextContractSection(configuration) {
+        const locator = clone(configuration.getQriMajorSqFormalHistoryLocator?.() || null);
+        if (!object(locator)) return unavailable("major_sq_locator_unavailable",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsMajorSqNextContract", null, { locator: null, revision: null }));
+        if (!["saved", "unchanged"].includes(locator.status)) {
+            return unavailable(`major_sq_acquisition_${text(locator.status) || "unavailable"}`,
+                "qri-nikkei225-options", freshnessFor(configuration,
+                    "qriOptionsMajorSqNextContract", null, { locator, revision: null }));
+        }
+        const targetContract = text(locator.targetContract);
+        const tradingDate = validDate(locator.referenceTradingDate)
+            ? locator.referenceTradingDate : null;
+        const targetUrl = text(locator.targetUrl);
+        const versionKey = text(locator.versionKey);
+        if (!targetContract || !tradingDate || !targetUrl || !versionKey) {
+            return unavailable("major_sq_locator_invalid", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsMajorSqNextContract", null,
+                    { locator, revision: null }));
+        }
+        let loaded;
+        try { loaded = clone(await configuration.readQriHistory?.()); }
+        catch (_error) { return unavailable("major_sq_history_read_failed",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsMajorSqNextContract", null, { locator, revision: null })); }
+        const validation = await (configuration.validateQriHistory ||
+            qriHistoryApi?.validateHistory)?.(loaded?.history);
+        if (loaded?.status !== "ready" || validation?.valid !== true) {
+            return unavailable("major_sq_history_invalid", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsMajorSqNextContract", null,
+                    { locator, revision: null }), "invalid");
+        }
+        const entries = loaded.history.entries.filter(item => item.entryKey ===
+            `${targetContract}|${tradingDate}`);
+        const entry = entries.length === 1 ? entries[0] : null;
+        const activeRevisions = entry?.revisions?.filter(item =>
+            item.versionKey === entry.activeVersionKey) || [];
+        const revision = activeRevisions.length === 1 ? activeRevisions[0] : null;
+        const canonical = revision?.canonical;
+        const locatorMatched = entry?.contract === targetContract &&
+            entry?.sourceDateKey === tradingDate && entry?.activeVersionKey === versionKey &&
+            revision?.versionKey === versionKey && revision?.contract === targetContract &&
+            revision?.tradingDate === tradingDate && revision?.sourceUrl === targetUrl &&
+            canonical?.contract === targetContract && canonical?.tradingDate === tradingDate &&
+            canonical?.sourceUrl === targetUrl && canonical?.sourceUrl === revision?.sourceUrl &&
+            canonical?.pageUpdatedAt === revision?.pageUpdatedAt &&
+            text(revision?.signature) !== null;
+        if (!locatorMatched) return unavailable("major_sq_identity_mismatch",
+            "qri-nikkei225-options", freshnessFor(configuration,
+                "qriOptionsMajorSqNextContract", null, { locator, revision: null }));
+        let signature = null;
+        try { signature = await qriOptionsApi?.createSignature?.(canonical); }
+        catch (_error) { signature = null; }
+        if (!signature || signature !== revision.signature) {
+            return unavailable("major_sq_signature_mismatch", "qri-nikkei225-options",
+                freshnessFor(configuration, "qriOptionsMajorSqNextContract", null,
+                    { locator, revision: null }), "invalid");
+        }
+        const snapshotDate = qriHistoryApi?.effectiveSnapshotDate?.(revision) ||
+            revision.snapshotDate || null;
+        const sectionFreshness = freshnessFor(configuration,
+            "qriOptionsMajorSqNextContract", revision.pageUpdatedAt, { locator, revision });
+        const records = clone(canonical.records);
+        return envelope({ authority: { source: "qri-nikkei225-options",
+            sourceClass: "formal_history", origin: "history", formalStatus: "verified",
+            versionKey: revision.versionKey, signature: revision.signature },
+        asOf: { tradingDate: revision.tradingDate, sourceDate: entry.sourceDateKey,
+            snapshotDate, pageUpdatedAt: revision.pageUpdatedAt,
+            fetchedAt: revision.fetchedAt, confirmedAt: revision.confirmedAt },
+        freshness: sectionFreshness,
+        summary: { contract: revision.contract, tradingDate: revision.tradingDate,
+            openInterestStatus: revision.openInterestStatus,
+            callAggregate: aggregatePublishedRecords(records, "call"),
+            putAggregate: aggregatePublishedRecords(records, "put") },
+        details: { versionKey: revision.versionKey, signature: revision.signature,
+            records, warnings: [] } });
+    }
+
     function createImportantLevelsSection(configuration, mobile, qriSection) {
         const levels = mobile?.payload?.nearestLevels;
         if (qriSection.status !== "available" || !object(levels)) {
@@ -527,6 +605,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
             const morning = createMorningSection(configuration);
             const qri = await createQriSections(configuration);
             const qriOptionsNextContract = await createQriNextContractSection(configuration);
+            const qriOptionsMajorSqNextContract =
+                await createQriMajorSqNextContractSection(configuration);
             const importantLevels = createImportantLevelsSection(
                 configuration, mobile, qri.qriOptions);
             const weeklyFutures = await createWeeklyFuturesSection(configuration);
@@ -536,6 +616,7 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi) {
             const sections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,
                 qriOptionsNextContract,
+                qriOptionsMajorSqNextContract,
                 qriHistoryComparison: qri.qriHistoryComparison,
                 weeklyFutures, weeklyOptions, participants, intelligence };
             const freshnessIssues = Object.entries(sections)

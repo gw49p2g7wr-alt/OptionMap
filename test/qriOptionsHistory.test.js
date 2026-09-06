@@ -346,7 +346,7 @@ test("reference persistence is storage-only and production calls it only through
         html.indexOf("function initializeQriReferenceAcquisitionRuntime"),
         html.indexOf("function validateQriPayload"));
     assert.match(referenceWiring, /persistReferenceContractCache/);
-    assert.equal((html.match(/persistReferenceContractCache/g) || []).length, 1);
+    assert.equal((html.match(/persistReferenceContractCache/g) || []).length, 2);
 });
 
 test("renderer wiring persists only in fetchQriData and leaves specific path disconnected", () => {

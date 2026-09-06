@@ -102,6 +102,24 @@
                 validation: true, signatureValid: true, calculationEligible: "eligible" });
         }
 
+        function qriOptionsMajorSqNextContract(context) {
+            const locator = context?.locator;
+            const revision = context?.revision;
+            if (!object(locator) || !["saved", "unchanged"].includes(locator.status) ||
+                !object(revision) || locator.targetContract !== revision.contract ||
+                locator.referenceTradingDate !== revision.tradingDate ||
+                locator.targetUrl !== revision.sourceUrl ||
+                locator.versionKey !== revision.versionKey || !revision.signature) {
+                return unavailable("major_sq_locator_unavailable");
+            }
+            return daily({ sourceType: "qri_options", origin: "history", hasData: true,
+                dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
+                fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
+                lastAttemptedAt: locator.completedAt || revision.confirmedAt || null,
+                lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
+                validation: true, signatureValid: true, calculationEligible: "eligible" });
+        }
+
         function weeklySource(name) {
             const state = configuration.getWeeklyDataState?.(name);
             if (!object(state)) return unavailable();
@@ -150,6 +168,9 @@
             if (name === "marketSnapshot") return marketSnapshot();
             if (name === "qriOptions") return qriOptions();
             if (name === "qriOptionsNextContract") return qriOptionsNextContract(context);
+            if (name === "qriOptionsMajorSqNextContract") {
+                return qriOptionsMajorSqNextContract(context);
+            }
             if (name === "importantLevels") return projectedQri();
             if (name === "weeklyFutures" || name === "weeklyOptions") return weeklySource(name);
             if (name === "participants") return participants();

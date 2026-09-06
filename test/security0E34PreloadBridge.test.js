@@ -139,10 +139,10 @@ test("renderer fail-fast validates exact bridge before XLSX and startup work", (
   assert.match(html.slice(bridge, xlsx), /typeof optionMapBridge\[key\] !== "function"/);
 });
 
-test("all 19 renderer callsites use the narrow bridge with no raw Electron access", () => {
+test("all 20 renderer callsites use the narrow bridge with no raw Electron access", () => {
   const calls = html.match(/optionMapBridge\.(?:fetchQriOptionPage|fetchJpxPage|fetchOpenInterestListing|fetchParticipantListing|downloadJpxExcel)\(/g) || [];
-  assert.equal(calls.length, 19);
-  assert.equal((html.match(/optionMapBridge\.fetchQriOptionPage\(/g) || []).length, 4);
+  assert.equal(calls.length, 20);
+  assert.equal((html.match(/optionMapBridge\.fetchQriOptionPage\(/g) || []).length, 5);
   assert.equal((html.match(/optionMapBridge\.fetchJpxPage\(/g) || []).length, 2);
   assert.equal((html.match(/optionMapBridge\.fetchOpenInterestListing\(/g) || []).length, 3);
   assert.equal((html.match(/optionMapBridge\.fetchParticipantListing\(/g) || []).length, 1);

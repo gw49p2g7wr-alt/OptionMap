@@ -1249,6 +1249,7 @@
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
 <script src="js/qriOptionsReferenceAcquisition.js"></script>
+<script src="js/qriOptionsMajorSqAcquisition.js"></script>
 <script src="js/qriOptionsReferenceAcquisitionRuntime.js"></script>
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
@@ -1562,6 +1563,8 @@ window.OptionMapFullExportUi.configure({
             getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
             getQriReferenceAcquisitionState: () =>
                 window.getQriReferenceAcquisitionState?.() || null,
+            getQriMajorSqFormalHistoryLocator: () =>
+                window.getQriMajorSqFormalHistoryLocator?.() || null,
             readQriHistory: () => window.OptionMapQriOptionsHistoryStore.loadHistory(),
             readWeeklyFuturesActiveVersions: () => window.OptionMapWeeklyFuturesHistory
                 .getActiveVersions(weeklyFuturesHistory),
@@ -1599,6 +1602,8 @@ window.OptionMapFullExportUi.configure({
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
 let qriReferenceAcquisitionRuntime = null;
+let qriMajorSqAcquisitionRuntime = null;
+let qriMajorSqAcquisitionOrchestrator = null;
 let qriOptionsHistoryComparisonSequence = 0;
 let qriOptionsFormalComparisonPublication = null;
 
@@ -4462,6 +4467,65 @@ function initializeQriReferenceAcquisitionRuntime() {
 window.getQriReferenceAcquisitionState = () =>
     initializeQriReferenceAcquisitionRuntime().getState();
 
+function initializeQriMajorSqAcquisitionRuntime() {
+    if (qriMajorSqAcquisitionRuntime) return qriMajorSqAcquisitionRuntime;
+    const lifecycle = { getState: () => qriMajorSqAcquisitionRuntime?.getLifecycleState() ||
+        { generation: 0, disposed: false } };
+    const buildFormalContext = ({ requestId, formalCompletionVerified }) => {
+        const state = window.getQriFormalIdentityFact?.();
+        const fact = state?.status === "available" && state.requestId === requestId
+            ? state.fact : null;
+        return { parentMarketRefreshRequestId: requestId,
+            formalPublicationGeneration: state?.publicationGeneration ?? null,
+            formalCompletionVerified: formalCompletionVerified === true,
+            sourceClass: fact?.sourceClass || null,
+            identityVerified: fact?.identityVerified === true,
+            acquisitionVerified: fact?.acquisitionVerified === true,
+            openInterestStatus: fact ? "available" : null,
+            activeContract: fact?.contract || null,
+            formalTradingDate: fact?.tradingDate || null,
+            activeCanonicalVersionKey: fact?.canonicalVersionKey || null,
+            activeSourceUrl: qriOptionsDisplayLiveState?.canonical?.sourceUrl || null,
+            availableContracts: qriContractManifest?.availableContracts
+                ? JSON.parse(JSON.stringify(qriContractManifest.availableContracts)) : null };
+    };
+    qriMajorSqAcquisitionOrchestrator = window.OptionMapQriOptionsMajorSqAcquisition
+        .createQriMajorSqAcquisitionOrchestrator({
+            fetchReferencePage: async url => {
+                const response = await optionMapBridge.fetchQriOptionPage(url);
+                if (!response?.success) throw new Error(response?.error || "major_sq_fetch_failed");
+                if (response.sourceUrl !== url) throw new Error("major_sq_source_url_mismatch");
+                return response.html;
+            },
+            buildCanonical: (html, { sourceUrl }) =>
+                window.OptionMapQriOptions.parseQriOptionsPage(html, sourceUrl),
+            validateCanonical: canonical => window.OptionMapQriOptions.validateCanonical(
+                canonical, { allowUnresolvedContracts: true }),
+            buildCache: canonical => window.OptionMapQriOptions.createCacheV2(
+                canonical, new Date().toISOString()),
+            validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
+            persistReference: (cache, context) =>
+                qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            getCurrentFormalContext: () => buildFormalContext({
+                requestId: qriMajorSqAcquisitionRuntime?.getState().runtime.activeRequestId,
+                formalCompletionVerified: qriMajorSqAcquisitionRuntime?.getState()
+                    .runtime.formalCompletedRequestId != null }),
+            getCurrentLifecycleState: () => lifecycle.getState(),
+            now: () => new Date().toISOString(),
+            createRequestId: () => window.createFetchRequestId("qriMajorSqReference")
+        });
+    qriMajorSqAcquisitionRuntime = window.OptionMapQriOptionsReferenceAcquisitionRuntime
+        .createRuntime({ orchestrator: qriMajorSqAcquisitionOrchestrator, buildFormalContext });
+    return qriMajorSqAcquisitionRuntime;
+}
+
+window.getQriMajorSqAcquisitionState = () =>
+    initializeQriMajorSqAcquisitionRuntime().getState();
+window.getQriMajorSqFormalHistoryLocator = () => {
+    initializeQriMajorSqAcquisitionRuntime();
+    return qriMajorSqAcquisitionOrchestrator.getFormalHistoryLocator();
+};
+
 function runAutomaticFirstSuccessCapture(requestId) {
     return window.OptionMapMorningBaselineV4CaptureRuntime?.captureAutomatic({
         mode: "automatic_first_success", requestId,
@@ -6045,6 +6109,7 @@ function refreshAllMarketData() {
 
     const requestId = window.createFetchRequestId("marketRefresh");
     initializeQriReferenceAcquisitionRuntime().beginMarketRefresh(requestId);
+    initializeQriMajorSqAcquisitionRuntime().beginMarketRefresh(requestId);
     window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
     window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     const startedAt = new Date().toISOString();
@@ -6100,6 +6165,7 @@ function refreshAllMarketData() {
             ?.then(() => window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.())
             .catch(error => console.warn("正式朝基準の自動保存を完了できませんでした:", error));
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
+        initializeQriMajorSqAcquisitionRuntime().completeFormalRender(requestId);
     });
 
     return marketRefreshPromise;
