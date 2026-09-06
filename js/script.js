@@ -4143,6 +4143,7 @@ const optionMapJudgmentState = {
     option: {
         available: false,
         judgment: null,
+        reason: null,
         metadata: null
     }
 };
@@ -4374,13 +4375,16 @@ function createOptionComponentInputV2() {
         ) === true;
 
     if (source?.available !== true || !sourceDate || !bindingCurrent) {
+        const unavailableReason =
+            window.OptionMapQriOptionOpenInterestComparisonDiagnostics
+                ?.formatReason(source?.reason);
         return {
             available: false,
             reason: source?.available === true && sourceDate && !bindingCurrent
                 ? "QRI正式identityとの一致を確認できません"
                 : source?.available === true
                 ? "QRI建玉の基準日を確認できません"
-                : "オプション市場データが利用できません"
+                : unavailableReason || "オプション市場データが利用できません"
         };
     }
 
@@ -4981,6 +4985,7 @@ function invalidateOptionMarketJudgment() {
     optionMapJudgmentState.option = {
         available: false,
         judgment: null,
+        reason: null,
         metadata: null
     };
 
@@ -5219,6 +5224,21 @@ function applyComparisonSnapshot(
         return false;
     }
 
+    const comparisonAssessment =
+        window.OptionMapQriOptionOpenInterestComparisonDiagnostics
+            ?.assess({
+                current: {
+                    labels: allJpxOpenInterestLabels,
+                    callOpenInterest: allJpxCallValues,
+                    putOpenInterest: allJpxPutValues
+                },
+                comparison: {
+                    labels: snapshot.labels,
+                    callOpenInterest: snapshot.callOpenInterest,
+                    putOpenInterest: snapshot.putOpenInterest
+                }
+            }) || null;
+
     invalidateOptionMarketJudgment();
     comparisonSnapshot = snapshot;
     comparisonSelectionMode =
@@ -5284,7 +5304,8 @@ function applyComparisonSnapshot(
 
     renderDifferenceRankings(
         callDifferenceData,
-        putDifferenceData
+        putDifferenceData,
+        comparisonAssessment
     );
 
     return true;
@@ -8748,7 +8769,8 @@ function calculateOptionMarketJudgment({
 
 function renderDifferenceRankings(
     callDifferenceData,
-    putDifferenceData
+    putDifferenceData,
+    comparisonAssessment = null
 ) {
     const callIncrease = [...callDifferenceData]
         .filter(item => item.diff > 0)
@@ -9079,6 +9101,11 @@ optionMapJudgmentState.option = {
     judgment: optionMarketJudgment.available === true
         ? optionMarketJudgment
         : null,
+    reason: optionMarketJudgment.available === true
+        ? null
+        : formalQriIdentity
+            ? comparisonAssessment?.reason || null
+            : null,
     metadata: {
         comparisonSourceDate:
             comparisonSnapshot?.sourceDate || null,
@@ -9098,7 +9125,9 @@ optionMapJudgmentState.option = {
                 ? lastJpxFetchedAt.toISOString()
                 : null,
         currentPrice: numericCurrentPrice,
-        formalQriIdentity
+        formalQriIdentity,
+        comparisonDiagnostics:
+            comparisonAssessment?.diagnostics || null
     }
 };
 
