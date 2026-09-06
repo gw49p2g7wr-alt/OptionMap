@@ -1866,26 +1866,90 @@ canvas {
 }
 
 .snapshot-list-card summary {
-    cursor: pointer;
     font-size: 1.25rem;
     font-weight: 700;
+}
+
+/* Collapsible sections share one visible, native-details disclosure contract. */
+.container details > summary {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    box-sizing: border-box;
+    min-height: 44px;
+    padding-left: 34px;
+    border-radius: 8px;
+    cursor: pointer;
     list-style: none;
-  }
-  
-  .snapshot-list-card summary::-webkit-details-marker {
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.container details > summary::-webkit-details-marker {
     display: none;
-  }
-  
-  .snapshot-list-card summary::before {
+}
+
+.container details > summary::before {
+    position: absolute;
+    top: 50%;
+    left: 10px;
     content: "▶";
-    display: inline-block;
-    margin-right: 0.5rem;
-    transition: transform 0.2s ease;
-  }
-  
-  .snapshot-list-card[open] summary::before {
-    transform: rotate(90deg);
-  }
+    color: #52657a;
+    font-size: 0.78rem;
+    line-height: 1;
+    transform: translateY(-50%);
+}
+
+.container details[open] > summary::before {
+    content: "▼";
+}
+
+.container details > summary:hover {
+    background: rgba(49, 95, 157, 0.07);
+    background: color-mix(in srgb,
+        var(--ui-category-bg, #e7edf5) 62%, transparent);
+}
+
+.container details > summary:focus-visible {
+    outline: 3px solid rgba(49, 95, 157, 0.52);
+    outline-offset: 2px;
+}
+
+.container details[open] > summary {
+    background: rgba(49, 95, 157, 0.05);
+    background: color-mix(in srgb,
+        var(--ui-category-bg, #e7edf5) 48%, transparent);
+    box-shadow: inset 0 -1px 0 rgba(74, 92, 118, 0.18);
+}
+
+/* Nested diagnostics retain the same affordance with a quieter hierarchy. */
+.container details details > summary {
+    color: #66717f;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.container details details > summary::before {
+    color: #7c8795;
+    font-size: 0.68rem;
+}
+
+.container details details[open] > summary {
+    background: rgba(102, 113, 127, 0.05);
+    box-shadow: inset 0 -1px 0 rgba(102, 113, 127, 0.12);
+}
+
+@media (max-width: 550px) {
+    .container details > summary {
+        min-height: 44px;
+        padding-left: 30px;
+    }
+
+    .container details > summary::before {
+        left: 8px;
+    }
+}
 
   /* OptionMap Intelligence 進捗表示 */
 .intelligence-progress {
