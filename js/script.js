@@ -3904,6 +3904,8 @@ const saveJpxSnapshotButton =
 const snapshotSaveStatus =
     document.getElementById("snapshotSaveStatus");
 
+let snapshotMemoFocusRestoreSourceDate = null;
+
     const savedSnapshotList =
     document.getElementById("savedSnapshotList");
 
@@ -6430,6 +6432,7 @@ console.log("🏦 JPM抽出前データ =", jpmData);
 
         item.className =
             "saved-snapshot-item";
+        item.dataset.snapshotSourceDate = snapshot.sourceDate || "";
 
         const date =
             new Date(snapshot.sourceDate);
@@ -6595,6 +6598,7 @@ const editMemoButton =
     item.querySelector(".edit-snapshot-memo-button");
 
 if (editMemoButton) {
+    editMemoButton.dataset.snapshotSourceDate = snapshot.sourceDate || "";
     editMemoButton.addEventListener("click", function () {
         const existingEditor =
             item.querySelector(".snapshot-memo-editor");
@@ -6611,6 +6615,10 @@ if (editMemoButton) {
         textarea.value = snapshot.memo || "";
         textarea.rows = 8;
         textarea.style.width = "100%";
+        textarea.setAttribute(
+            "aria-label",
+            `${date.toLocaleString("ja-JP")}のスナップショットメモ`
+        );
 
         const saveButton = document.createElement("button");
         saveButton.type = "button";
@@ -6628,9 +6636,11 @@ if (editMemoButton) {
             "afterend",
             editor
         );
+        textarea.focus();
 
         saveButton.addEventListener("click", function () {
             snapshot.memo = textarea.value;
+            snapshotMemoFocusRestoreSourceDate = snapshot.sourceDate || null;
 
             localStorage.setItem(
                 storageKey,
@@ -6642,6 +6652,7 @@ if (editMemoButton) {
 
         cancelButton.addEventListener("click", function () {
             editor.remove();
+            editMemoButton.focus();
         });
     });
 }
@@ -6662,6 +6673,15 @@ if (compareButton) {
 
         savedSnapshotList.appendChild(item);
     });
+
+    if (snapshotMemoFocusRestoreSourceDate) {
+        const sourceDate = snapshotMemoFocusRestoreSourceDate;
+        snapshotMemoFocusRestoreSourceDate = null;
+        const editButton = Array.from(savedSnapshotList.querySelectorAll(
+            ".edit-snapshot-memo-button"
+        )).find(button => button.dataset.snapshotSourceDate === sourceDate);
+        editButton?.focus();
+    }
 }
 
 const cumulativeBrokerSelect =

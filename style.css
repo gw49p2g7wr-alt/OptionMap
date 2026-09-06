@@ -809,7 +809,8 @@ input:disabled {
 
 button:focus-visible,
 select:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
     outline: 3px solid rgba(49, 95, 157, 0.52);
     outline-offset: 2px;
 }
@@ -1431,6 +1432,7 @@ canvas {
 
 .show-snapshot-button {
     flex-shrink: 0;
+    min-height: 40px;
     padding: 8px 16px;
     border: 1px solid #244a82;
     border-radius: 8px;

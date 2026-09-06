@@ -110,19 +110,19 @@
 
         <div class="input-column">
             <div class="card">
-                <h2 class="ui-category-title">夜間データ
+                <h2 id="nightDataLabel" class="ui-category-title">夜間データ
                     <span class="ui-category-badge category-futures-badge">先物</span>
                     <span class="ui-attribute-badge attribute-participant">参加者別</span>
                 </h2>
-                <textarea id="nightData"></textarea>
+                <textarea id="nightData" aria-labelledby="nightDataLabel"></textarea>
             </div>
     
             <div class="card">
-                <h2 class="ui-category-title">日中データ
+                <h2 id="dayDataLabel" class="ui-category-title">日中データ
                     <span class="ui-category-badge category-futures-badge">先物</span>
                     <span class="ui-attribute-badge attribute-participant">参加者別</span>
                 </h2>
-                <textarea id="dayData"></textarea>
+                <textarea id="dayData" aria-labelledby="dayDataLabel"></textarea>
             </div>
     
             <button id="clearInputButton" type="button">
@@ -132,17 +132,18 @@
     
         <div class="input-column">
             <div class="card">
-                <h2 class="ui-category-title">オプションデータ（週次）
+                <h2 id="optionDataLabel" class="ui-category-title">オプションデータ（週次）
                     <span class="ui-category-badge category-options-badge">オプション</span>
                 </h2>
-                <textarea id="optionData"></textarea>
+                <textarea id="optionData" aria-labelledby="optionDataLabel"></textarea>
             </div>
     
             <div class="card">
-                <h2 class="ui-category-title">指数先物建玉（週次）
+                <h2 id="futureOpenInterestDataLabel" class="ui-category-title">指数先物建玉（週次）
                     <span class="ui-category-badge category-futures-badge">先物</span>
                 </h2>
-                <textarea id="futureOpenInterestData"></textarea>
+                <textarea id="futureOpenInterestData"
+                    aria-labelledby="futureOpenInterestDataLabel"></textarea>
             </div>
     
             <button id="clearWeeklyButton" type="button">
@@ -164,10 +165,10 @@
             <span class="ui-category-badge">システム</span>
         </h2>
       
-        <label>勢力図</label>
+        <label for="brokerTemplate">勢力図</label>
         <textarea id="brokerTemplate" rows="3"></textarea>
       
-        <label>方向感コメント</label>
+        <label for="directionTemplate">方向感コメント</label>
         <textarea id="directionTemplate" rows="3"></textarea>
       
         <button id="saveAiTemplateButton">
@@ -195,6 +196,8 @@
                 <option value="nikkei225" disabled>日経平均 現物（準備中）</option>
                 <option value="nikkei225-mini" disabled>日経225ミニ先物 期近（準備中）</option>
             </select>
+
+            <label for="currentPriceInput">現在値</label>
         
             <input
                 type="number"
@@ -208,7 +211,7 @@
                 現在値を反映
             </button>
         
-            <span id="currentPriceStatus">
+            <span id="currentPriceStatus" role="status">
                 現在値：70,000円
             </span>
 
@@ -281,6 +284,8 @@
                 今日のJPXデータを保存
             </button>
 
+            <span id="snapshotSaveStatus" role="status"></span>
+
         </div>
 
         <details class="snapshot-list-card ui-category-panel category-mixed">
@@ -315,12 +320,14 @@
                     過去データを取得
                 </button>
             
-                <span id="historicalDataStatus"></span>
+                <span id="historicalDataStatus" role="status"></span>
             </div>
 
             <div class="cumulative-chart-controls">
+                <label for="cumulativeBrokerSelect">証券会社</label>
                 <select id="cumulativeBrokerSelect"></select>
 
+                  <label for="cumulativePeriodSelect">集計期間</label>
                   <select id="cumulativePeriodSelect">
                     <option value="20" selected>直近20営業日</option>
                     <option value="1m">1か月</option>
@@ -4890,8 +4897,13 @@ qriIvCurvePanel?.addEventListener("toggle", () => {
 qriIvContractSwitch?.addEventListener("click", event => {
     const button = event.target.closest("[data-iv-contract-role]");
     if (!button || button.disabled) return;
-    qriIvContractSelection = button.dataset.ivContractRole;
+    const selectedRole = button.dataset.ivContractRole;
+    qriIvContractSelection = selectedRole;
     renderQriIvGraph();
+    const selectedButton = Array.from(qriIvContractSwitch.querySelectorAll(
+        "[data-iv-contract-role]"
+    )).find(item => item.dataset.ivContractRole === selectedRole);
+    if (selectedButton && !selectedButton.disabled) selectedButton.focus();
 });
 
 qriIvRangeButtons.forEach(button => button.addEventListener("click", () => {

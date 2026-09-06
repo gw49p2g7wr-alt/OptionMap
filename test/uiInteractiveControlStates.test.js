@@ -20,8 +20,8 @@ test("disabled button select and input share muted non-pointer feedback", () => 
     assert.match(css, /\.iv-contract-button:disabled,\s*\.iv-range-button:disabled\s*\{[^}]*cursor:\s*not-allowed/s);
 });
 
-test("button select and input use one visible keyboard focus contract", () => {
-    assert.match(css, /button:focus-visible,\s*select:focus-visible,\s*input:focus-visible\s*\{[^}]*outline:\s*3px[^}]*outline-offset:\s*2px/s);
+test("button select input and textarea use one visible keyboard focus contract", () => {
+    assert.match(css, /button:focus-visible,\s*select:focus-visible,\s*input:focus-visible,\s*textarea:focus-visible\s*\{[^}]*outline:\s*3px[^}]*outline-offset:\s*2px/s);
 });
 
 test("chart mode initial active state and runtime aria-pressed stay synchronized", () => {
