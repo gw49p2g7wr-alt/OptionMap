@@ -157,8 +157,9 @@ test("automatic capture is side-effect isolated and production hook remains fire
     assert.ok(publication >= 0 && render > publication && automatic > render && reference > automatic);
     assert.doesNotMatch(html.slice(automatic - 80, automatic + 80), /await\s+window\.OptionMapMorning/);
 });
-test("automatic UI distinguishes saved waiting and after-window states", () => {
+test("automatic UI separates formal storage authority from the capture window", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/mobileSummaryPreview.js"), "utf8");
-    assert.match(source, /自動保存済み/); assert.match(source, /正式朝基準：条件待ち/);
-    assert.match(source, /自動保存時間 05:00〜09:00/);
+    assert.match(source, /getMorningBaselineV4RestoreRuntimeState/);
+    assert.match(source, /morningBaselineV4AutomaticWindowStatus/);
+    assert.doesNotMatch(source, /outside_window_after[\s\S]{0,200}本日は保存されていません/);
 });

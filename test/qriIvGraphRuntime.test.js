@@ -29,9 +29,9 @@ function boot(data = canonical(), extra = {}) {
             fetchedAt: "2026-08-24T11:14:28.539Z" },
         diagnostics: { integrityVerified: true }, ...extra };
 }
-function history(data = canonical()) {
+function history(data = canonical(), role = "active") {
     return { available: true, origin: "history", sourceClass: "formal_history",
-        formalStatus: "verified", role: "active", contract: data.contract,
+        formalStatus: "verified", role, contract: data.contract,
         tradingDate: data.tradingDate, canonical: data, versionKey: "history-version",
         signature: "history-signature", fetchedAt: "2026-08-25T06:30:00Z",
         confirmedAt: "2026-08-25T06:31:00Z", snapshotDate: "2026-08-25",
@@ -42,7 +42,8 @@ function input(extra = {}) {
     return { selection: { mode: "auto" }, activeContract: "2026-09",
         runtimeState: { active: null, selected: null }, bootShadowState: boot(),
         liveStatus: "pending", requestedRange: "plus_minus_3000",
-        rangeUserSelected: false, currentPrice: { value: 40000, mode: "automatic",
+        rangeUserSelected: false, currentPrice: { value: 40000,
+            source: "qri-nikkei225-futures", mode: "automatic",
             contract: "26年09月限" }, ...extra };
 }
 
@@ -51,6 +52,20 @@ test("live source uses the existing graph view model with default radius", () =>
         runtimeState: { active: live(), selected: null }, liveStatus: "success" }));
     assert.deepEqual([result.source.sourceKind, result.rangePolicy.rangeMode,
         result.viewModel.available], ["live", "plus_minus_3000", true]);
+});
+test("active next and Major-SQ live sources keep both radius ranges enabled", () => {
+    for (const contract of ["2026-09", "2026-10", "2026-12"]) {
+        for (const mode of ["plus_minus_3000", "plus_minus_5000"]) {
+            const result = Runtime.buildQriIvGraphRuntimeState(input({
+                activeContract: contract,
+                runtimeState: { active: live(canonical("20%", "21%",
+                    contract.replace("-", ""))), selected: null },
+                liveStatus: "success", requestedRange: mode, rangeUserSelected: true
+            }));
+            assert.deepEqual([result.source.sourceKind, result.rangePolicy.rangeMode,
+                result.rangePolicy.radiusEnabled], ["live", mode, true]);
+        }
+    }
 });
 test("saved pending passes source canonical directly and defaults to all", () => {
     const saved = canonical(); const result = Runtime.buildQriIvGraphRuntimeState(input({
@@ -80,15 +95,48 @@ test("saved radius is allowed only after explicit selection with matching automa
             [mode, 40000]);
     }
 });
-test("manual mismatched and missing prices safely return saved graph to all", () => {
-    const prices = [{ value: 40000, mode: "manual", contract: "26年09月限" },
-        { value: 40000, mode: "automatic", contract: "26年12月限" }, null];
+test("next and Major-SQ history use the active-contract common underlying price", () => {
+    for (const [role, contract] of [["next", "2026-10"], ["major_sq", "2026-12"]]) {
+        for (const mode of ["plus_minus_3000", "plus_minus_5000"]) {
+            const historySource = history(canonical("20%", "21%",
+                contract.replace("-", "")), role);
+            const result = Runtime.buildQriIvGraphRuntimeState(input({
+                activeContract: contract,
+                historySource,
+                requestedRange: mode, rangeUserSelected: true
+            }));
+            assert.deepEqual([result.source.sourceKind, result.source.channel,
+                result.source.calculationEligible, result.rangePolicy.rangeMode,
+                result.rangePolicy.radiusEnabled],
+            ["history", role, "undetermined", mode, true]);
+            assert.equal(historySource.formalStatus, "verified");
+            assert.equal("currentPrice" in result.source.canonical, false);
+        }
+    }
+});
+test("manual invalid missing and disallowed prices safely return history to all", () => {
+    const prices = [
+        { value: 40000, source: "qri-nikkei225-futures", mode: "manual",
+            contract: "26年09月限" },
+        { value: 0, source: "qri-nikkei225-futures", mode: "automatic",
+            contract: "26年09月限" },
+        { value: 40000, source: "manual", mode: "automatic", contract: "26年09月限" },
+        { value: 40000, source: "qri-nikkei225-futures", mode: "automatic", contract: null },
+        null
+    ];
     for (const currentPrice of prices) {
-        const result = Runtime.buildQriIvGraphRuntimeState(input({ rangeUserSelected: true,
-            currentPrice }));
+        const result = Runtime.buildQriIvGraphRuntimeState(input({ historySource: history(),
+            rangeUserSelected: true, currentPrice }));
         assert.deepEqual([result.rangePolicy.rangeMode, result.rangePolicy.radiusEnabled],
             ["all", false]);
     }
+});
+test("renderer maps history radius eligibility to disabled without changing selection semantics", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const wiring = html.slice(html.indexOf("function renderQriIvGraph()"),
+        html.indexOf('qriIvCurvePanel?.addEventListener("toggle"'));
+    assert.match(wiring, /button\.disabled = \["saved", "history"\]\.includes\(composed\.source\.sourceKind\)[\s\S]*!composed\.rangePolicy\.radiusEnabled/);
+    assert.match(wiring, /button\.classList\.toggle\("active", selected\)[\s\S]*button\.setAttribute\("aria-pressed", String\(selected\)\)/);
 });
 test("specific never uses active saved while matching selected live still works", () => {
     const unavailable = Runtime.buildQriIvGraphRuntimeState(input({ selection:

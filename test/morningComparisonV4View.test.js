@@ -50,6 +50,14 @@ test("unavailable runtime never exposes stale comparison values", () => {
     assert.equal(model.available, false); assert.equal(model.score, null);
     assert.equal(model.price, null); assert.deepEqual(model.components, []);
 });
+test("restore diagnostic reason selects concise non-applicable wording", () => {
+    const contract = View.createViewModel(runtime({ status: "unavailable", available: false,
+        reason: "restore_not_applicable", restoreReason: "contract_mismatch" }));
+    assert.equal(contract.reason, "保存済み正式朝基準は、現在の限月では利用できません");
+    const generic = View.createViewModel(runtime({ status: "unavailable", available: false,
+        reason: "restore_not_applicable", restoreReason: null }));
+    assert.equal(generic.reason, "保存済み朝基準は現在の正式scopeに適用できません");
+});
 test("delta and relation presentation preserves existing taxonomy", () => {
     assert.equal(View.scoreMovement(1), "買い方向へ +1");
     assert.equal(View.scoreMovement(-1), "売り方向へ -1");

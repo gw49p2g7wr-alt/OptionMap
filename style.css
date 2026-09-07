@@ -2349,6 +2349,20 @@ canvas {
     gap: 8px;
     margin: 10px 0;
 }
+.mobile-morning-baseline {
+    margin: 10px 0;
+    padding: 12px;
+    border: 1px solid #d8dee8;
+    border-radius: 8px;
+    background: #fafbfc;
+}
+.mobile-morning-baseline h5 { margin: 0; }
+.morning-baseline-secondary-action {
+    padding: 7px 12px;
+    font-size: .85rem;
+    background: #eef1f5;
+    color: #344054;
+}
 
 .full-export-controls {
     display: flex;

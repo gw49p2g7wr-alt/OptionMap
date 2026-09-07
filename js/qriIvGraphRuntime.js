@@ -30,10 +30,11 @@ function (sourceApi, viewModelApi, uiApi) {
         const label = candidate.match(/^(\d{2})年(0?[1-9]|1[0-2])月限$/);
         return label ? `20${label[1]}-${String(Number(label[2])).padStart(2, "0")}` : null;
     }
-    function matchingLivePrice(currentPrice, contract) {
+    function matchingCommonUnderlyingPrice(currentPrice) {
         const value = Number(currentPrice?.value);
         return currentPrice?.mode === "automatic" && Number.isFinite(value) && value > 0 &&
-            canonicalContract(currentPrice.contract) === contract ? value : null;
+            currentPrice?.source === "qri-nikkei225-futures" &&
+            canonicalContract(currentPrice.contract) !== null ? value : null;
     }
     function effectiveRange(source, requestedRange, rangeUserSelected, currentPrice) {
         if (source.sourceKind === "live") {
@@ -47,7 +48,7 @@ function (sourceApi, viewModelApi, uiApi) {
             return { rangeMode: "all", currentPrice: null,
                 radiusEnabled: false, fallbackReason: null };
         }
-        const price = matchingLivePrice(currentPrice, source.contract);
+        const price = matchingCommonUnderlyingPrice(currentPrice);
         if (rangeUserSelected === true && RADIUS_MODES.has(requestedRange) && price !== null) {
             return { rangeMode: requestedRange, currentPrice: price,
                 radiusEnabled: true, fallbackReason: null };
@@ -89,6 +90,6 @@ function (sourceApi, viewModelApi, uiApi) {
         });
     }
 
-    return Object.freeze({ RUNTIME_VERSION, canonicalContract, matchingLivePrice,
+    return Object.freeze({ RUNTIME_VERSION, canonicalContract, matchingCommonUnderlyingPrice,
         effectiveRange, buildQriIvGraphRuntimeState });
 });

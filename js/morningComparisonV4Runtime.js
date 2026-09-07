@@ -104,7 +104,7 @@ function (baselineApi, comparisonApi, collectorApi) {
             publishedAt: null, requestId: null, scopeId: null, formalTradingDate: null,
             contract: null, selectedBaselineId: null, baselineIdentity: null,
             currentIdentity: null, sourceGenerations: null,
-            formalSnapshotInputFingerprint: null, comparison: null,
+            formalSnapshotInputFingerprint: null, restoreReason: null, comparison: null,
             diagnostics: diagnosticsBase() });
 
         function unavailable(reason, context = {}, diagnostics = diagnosticsBase()) {
@@ -120,6 +120,7 @@ function (baselineApi, comparisonApi, collectorApi) {
                 sourceGenerations: clone(context.sourceGenerations || null),
                 formalSnapshotInputFingerprint:
                     context.formalSnapshotInputFingerprint || null,
+                restoreReason: context.restoreReason || null,
                 comparison: null, diagnostics: freeze(clone(diagnostics)) });
             return freeze({ published: true, status: state.status, reason,
                 generation: publicationGeneration });
@@ -140,7 +141,8 @@ function (baselineApi, comparisonApi, collectorApi) {
             diagnostics.selectedActiveRevision =
                 startRestore?.diagnostics?.selectedActiveRevision === true;
             const invalidRestore = restoreReason(startRestore);
-            if (invalidRestore) return unavailable(invalidRestore, {}, diagnostics);
+            if (invalidRestore) return unavailable(invalidRestore,
+                { restoreReason: startRestore?.reason || null }, diagnostics);
 
             const baseline = clone(startRestore.baseline);
             const baselineIdentity = snapshotIdentity(baseline, startRestore.selectedScopeId);
@@ -240,6 +242,7 @@ function (baselineApi, comparisonApi, collectorApi) {
                 currentIdentity: clone(context.currentIdentity),
                 sourceGenerations: clone(context.sourceGenerations),
                 formalSnapshotInputFingerprint: context.formalSnapshotInputFingerprint,
+                restoreReason: null,
                 comparison: clone(comparison), diagnostics: freeze(clone(diagnostics)) });
             return freeze({ published: true, status: state.status,
                 generation: publicationGeneration });

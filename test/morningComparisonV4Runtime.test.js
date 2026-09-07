@@ -139,6 +139,13 @@ for (const [name, mutate, reason] of [
 test("logic mismatch remains comparison fail-closed", async () => { const f = await fixture();
     f.collected.builderInput.overallV2Context.logicVersion = "other"; await f.runtime.publish();
     assert.equal(f.runtime.getState().reason, "logic_version_mismatch"); });
+test("non-applicable restore retains its original diagnostic reason", async () => {
+    const f = await fixture(); f.restore.value.applicabilityStatus = "not_applicable";
+    f.restore.value.reason = "contract_mismatch"; await f.runtime.publish();
+    const state = f.runtime.getState();
+    assert.equal(state.reason, "restore_not_applicable");
+    assert.equal(state.restoreReason, "contract_mismatch");
+});
 test("refresh in progress fails before collect", async () => { const f = await fixture();
     const runtime = Runtime.createRuntime({ getRestoreState: () => f.restore.value,
         collect: async () => { throw new Error("must not collect"); }, isRefreshInProgress: () => true });

@@ -69,16 +69,12 @@
         container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
         text("morningComparisonV4Status", model.status);
         text("morningComparisonV4Reason", model.reason || "同じ取引日の朝基準と現在を比較しています");
-        const automatic = window.getMorningBaselineV4AutomaticCaptureOutcome?.() || null;
-        const automaticTime = automatic?.capturedAt ? new Intl.DateTimeFormat("ja-JP", {
-            timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false
-        }).format(new Date(automatic.capturedAt)) : null;
-        const automaticLabel = automatic?.saved ? `正式朝基準：${automaticTime} 自動保存済み` :
-            automatic?.windowStatus === "outside_window_after" ?
-                "正式朝基準：本日は保存されていません（自動保存時間 05:00〜09:00）" :
-                automatic?.status === "already_saved" || automatic?.status === "duplicate" ?
-                    "正式朝基準：保存済み" : "正式朝基準：条件待ち";
-        text("morningBaselineV4AutomaticStatus", automaticLabel);
+        const formalStatus = window.OptionMapMorningBaselineV4StatusView?.createViewModel(
+            window.getMorningBaselineV4RestoreRuntimeState?.() || null,
+            window.getMorningBaselineV4AutomaticCaptureOutcome?.() || null);
+        text("morningBaselineV4AutomaticStatus", formalStatus?.storageLabel || "正式朝基準：状態確認待ち");
+        text("morningBaselineV4AutomaticWindowStatus", formalStatus?.automaticLabel ||
+            "自動保存：状態確認待ち");
         text("morningComparisonV4CapturedAt", model.capturedAt);
         text("morningComparisonV4Score", model.score ?
             `朝 ${model.score.baselineLabel} ${model.score.baseline} → 現在 ${model.score.currentLabel} ${model.score.current}` : "—");
@@ -444,9 +440,9 @@
             generatedAt: new Date().toISOString(), marketDate });
         if (!result.available) {
             text("morningBaselineSaveStatus", result.reason === "morning_baseline_corrupted"
-                ? "朝基準：保存データが壊れているため利用できません"
-                : result.baseline ? `朝基準：保存済み（現在の比較対象外）— ${reasonLabel(result.reason)}`
-                    : "朝基準：未設定");
+                ? "スマホ版朝基準：保存データが壊れているため利用できません"
+                : result.baseline ? `スマホ版朝基準：保存済み（現在の比較対象外）— ${reasonLabel(result.reason)}`
+                    : "スマホ版朝基準：未設定");
             return;
         }
         const baseline = result.baseline;
@@ -454,8 +450,8 @@
         const format = value => new Date(value).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const session = active.baselineDay ? ` / 運用日 ${active.baselineDay} / 比較時間内 / 市場日 ${marketDate}` : "";
         text("morningBaselineSaveStatus", baseline.revisions.length > 1
-            ? `朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質 ${morningQualityLabel(active.dataQuality.status)}`
-            : `朝基準：${format(active.capturedAt)}に保存済み / 品質 ${morningQualityLabel(active.dataQuality.status)}${session}`);
+            ? `スマホ版朝基準：現在 ${format(active.capturedAt)} / 最初 ${format(baseline.firstCapturedAt)} / 品質：${morningQualityLabel(active.dataQuality.status)}`
+            : `スマホ版朝基準：${format(active.capturedAt)}に保存済み / 品質：${morningQualityLabel(active.dataQuality.status)}${session}`);
     }
 
     async function saveMorningBaseline() {
@@ -494,22 +490,12 @@
             const saved = await window.OptionMapMorningBaseline.saveCandidate(
                 existingResult.baseline, candidate, summary.marketDate, { allowUpdate });
             await window.OptionMapMorningBaselineStorage.save(saved.baseline);
-            let v4Result = null;
-            try {
-                v4Result = await window.OptionMapMorningBaselineV4CaptureRuntime?.captureManual({
-                    mode: "manual", userInitiated: true, requestedAt: new Date().toISOString()
-                }) || null;
-            } catch (v4Error) {
-                console.warn("Morning v4の保存に失敗しました。従来の朝基準保存は維持します:", v4Error);
-            }
             await update();
             const legacyMessage = saved.status === "unchanged"
-                ? "同じ内容のためrevisionは追加しませんでした。" : "今日の朝基準を保存しました。";
-            const v4Message = v4Result?.status === "saved" ? " Morning v4も保存しました。"
-                : v4Result?.status === "duplicate" ? " Morning v4は同一内容のため保存不要です。"
-                    : v4Result ? " Morning v4は現在保存できません。" : "";
-            text("morningBaselineSaveMessage", legacyMessage + v4Message);
-            return { success: true, status: saved.status, morningV4: clone(v4Result) };
+                ? "スマホ版朝基準は同じ内容のためrevisionを追加しませんでした。" :
+                    "スマホ版朝基準を保存しました。";
+            text("morningBaselineSaveMessage", legacyMessage);
+            return { success: true, status: saved.status };
         } catch (error) {
             text("morningBaselineSaveMessage", error.message);
             return { success: false, reason: error.message };

@@ -160,7 +160,7 @@
         </div>
     </details>
 
-    <div class="card ui-category-panel category-system">
+    <div class="card ui-category-panel category-system" hidden>
         <h2 class="ui-category-title">📝 AIコメント設定
             <span class="ui-category-badge">システム</span>
         </h2>
@@ -539,19 +539,26 @@
                         <span class="ui-category-badge">検証表示</span>
                     </summary>
                     <p id="mobileSummaryPreviewStatus">正式stateの更新完了待ちです。</p>
-                    <div class="morning-baseline-controls">
-                        <button id="saveMorningBaselineButton" type="button">☀️ 今日の朝基準として保存</button>
-                        <strong id="morningBaselineSaveStatus">朝基準：未設定</strong>
-                        <span id="morningBaselineSaveMessage" role="status"></span>
-                    </div>
+                    <section class="mobile-morning-baseline"
+                        aria-labelledby="mobileMorningBaselineTitle">
+                        <h5 id="mobileMorningBaselineTitle">スマホ版朝基準</h5>
+                        <div class="morning-baseline-controls">
+                            <strong id="morningBaselineSaveStatus">スマホ版朝基準：未設定</strong>
+                            <button id="saveMorningBaselineButton" class="morning-baseline-secondary-action"
+                                type="button">スマホ版朝基準を手動保存</button>
+                            <span id="morningBaselineSaveMessage" role="status"></span>
+                        </div>
+                    </section>
                     <section id="morningComparisonV4Formal" class="morning-v4-formal is-unavailable"
                         aria-labelledby="morningComparisonV4Title">
                         <div class="morning-v4-formal-header">
-                            <h5 id="morningComparisonV4Title">朝基準からの正式比較</h5>
+                            <h5 id="morningComparisonV4Title">Formal Morning v4</h5>
                             <strong id="morningComparisonV4Status">利用不可</strong>
                         </div>
+                        <p>朝基準からの正式比較</p>
                         <p id="morningComparisonV4Reason">正式比較の公開待ちです</p>
                         <p id="morningBaselineV4AutomaticStatus">正式朝基準：条件待ち</p>
+                        <p id="morningBaselineV4AutomaticWindowStatus">自動保存：条件待ち（05:00〜09:00）</p>
                         <div class="mobile-summary-preview-grid morning-v4-formal-grid">
                             <div class="mobile-summary-card"><span>朝基準</span>
                                 <strong id="morningComparisonV4CapturedAt">—</strong></div>
@@ -1320,6 +1327,7 @@
 <script src="js/morningComparisonV4.js"></script>
 <script src="js/morningComparisonV4Runtime.js"></script>
 <script src="js/morningComparisonV4View.js"></script>
+<script src="js/morningBaselineV4StatusView.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
@@ -1343,6 +1351,7 @@
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/overallV2OptionQriBinding.js"></script>
 <script src="js/qriOptionOpenInterestComparisonDiagnostics.js"></script>
+<script src="js/jpxSnapshotSafety.js"></script>
 <script src="js/script.js"></script>
 <script src="js/fullExportSecurity.js"></script>
 <script src="js/fullExport.js"></script>
@@ -2908,6 +2917,7 @@ async function handleHistoricalDataClick() {
 
     const currentDate = new Date(startDate + "T00:00:00");
     const lastDate = new Date(endDate + "T00:00:00");
+    const counts = { saved: 0, skipped: 0, failed: 0 };
 
     while (currentDate <= lastDate) {
         const dateStr =
@@ -2920,12 +2930,19 @@ async function handleHistoricalDataClick() {
 
         console.log("📅 過去データ巡回 =", dateStr);
 
-        const checkResult = await optionMapBridge.downloadJpxExcel(
-            urls.dayAuctionUrl
-        );
+        let checkResult;
+        try {
+            checkResult = await optionMapBridge.downloadJpxExcel(urls.dayAuctionUrl);
+        } catch (error) {
+            console.error("❌ 過去データ掲載確認失敗 =", dateStr, error);
+            counts.failed += 1;
+            currentDate.setDate(currentDate.getDate() + 1);
+            continue;
+        }
 
         if (!checkResult.success) {
             console.log("⏭️ データなし・スキップ =", dateStr);
+            counts.skipped += 1;
             currentDate.setDate(currentDate.getDate() + 1);
             continue;
         }
@@ -2969,9 +2986,11 @@ async function handleHistoricalDataClick() {
                 }
             };
             const storageKey = "optionMapJpxSnapshots";
-            const savedSnapshots = JSON.parse(
+            const parsedSnapshots = window.OptionMapJpxSnapshotSafety.parseSnapshotList(
                 localStorage.getItem(storageKey) || "[]"
             );
+            if (!parsedSnapshots.ok) throw new Error("保存済みsnapshot listが不正です");
+            const savedSnapshots = parsedSnapshots.value;
             const existingIndex = savedSnapshots.findIndex(snapshot =>
                 snapshot.sourceDate.slice(0, 10) === dateStr
             );
@@ -2985,7 +3004,8 @@ async function handleHistoricalDataClick() {
             console.log("💾 過去snapshot作成 =", historicalSnapshot);
 
             if (existingIndex >= 0) {
-                savedSnapshots[existingIndex] = historicalSnapshot;
+                savedSnapshots[existingIndex] = window.OptionMapJpxSnapshotSafety
+                    .mergeHistoricalSnapshot(savedSnapshots[existingIndex], historicalSnapshot);
             } else {
                 savedSnapshots.push(historicalSnapshot);
             }
@@ -2999,8 +3019,10 @@ async function handleHistoricalDataClick() {
                 storageKey,
                 JSON.stringify(savedSnapshots)
             );
+            counts.saved += 1;
             console.log("✅ 過去snapshot保存完了 =", dateStr);
         } catch (error) {
+            counts.failed += 1;
             console.error(
                 "❌ 過去4種類解析失敗 =",
                 dateStr,
@@ -3014,8 +3036,8 @@ async function handleHistoricalDataClick() {
 
     console.log("✅ 日付巡回完了");
     renderSavedSnapshots();
-    historicalDataStatus.textContent =
-        `${startDate} ～ ${endDate} の取得・保存が完了しました`;
+    historicalDataStatus.textContent = window.OptionMapJpxSnapshotSafety
+        .formatBackfillStatus(counts);
 }
 
 function extractQriSourceDate(html) {

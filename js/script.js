@@ -5673,9 +5673,11 @@ async function renderSavedSnapshots() {
     const renderRequestId = ++weeklySnapshotRenderRequestId;
 
     try {
-        savedSnapshots = JSON.parse(
+        const parsedSnapshots = window.OptionMapJpxSnapshotSafety.parseSnapshotList(
             localStorage.getItem(storageKey) || "[]"
         );
+        if (!parsedSnapshots.ok) throw new Error("保存済みsnapshot listが不正です");
+        savedSnapshots = parsedSnapshots.value;
 
         const weeklySnapshots =
             await getFormalWeeklyFuturesHistoryCandidates();
@@ -6458,74 +6460,10 @@ console.log("🏦 JPM抽出前データ =", jpmData);
         const date =
             new Date(snapshot.sourceDate);
 
-        const savedAt =
-            new Date(snapshot.savedAt);
-
-        const dataCount =
-            Array.isArray(snapshot.labels)
-                ? snapshot.labels.length
-                : 0;
-
-                item.innerHTML = `
-                <div>
-                    <div class="saved-snapshot-date">
-                        ${index + 1}.　
-                        ${date.toLocaleString("ja-JP", {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                        })}
-                    </div>
-            
-                <div class="snapshot-tags">
-                         ${(snapshot.tags || [])
-                             .map(tag => `<span class="snapshot-tag">${tag}</span>`)
-                             .join("")}
-                </div>
-
-                ${snapshot.memo ? `
-                    <div class="snapshot-memo">
-                        📝 ${snapshot.memo}
-                    </div>
-                ` : ""}
-                
-                <button
-                    type="button"
-                    class="edit-snapshot-memo-button"
-                    data-index="${index}"
-                >
-                    メモを編集
-                </button>
-
-                    <div class="saved-snapshot-detail">
-                        ${dataCount.toLocaleString()}価格帯
-                        ・保存：
-                        ${savedAt.toLocaleString("ja-JP", {
-                            month: "numeric",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                        })}
-                    </div>
-                </div>
-            
-                <button
-                    type="button"
-                    class="show-snapshot-button"
-                >
-                    表示
-                </button>
-        
-                <button
-                    type="button"
-                    class="compare-snapshot-button"
-                >
-                    比較
-</button>
-
-`;
+                /* User-authored memo and tags must only enter the DOM via textContent. */
+                const safeContent = window.OptionMapJpxSnapshotSafety
+                    .buildSnapshotItemContent(document, snapshot, index);
+                while (safeContent.firstChild) item.appendChild(safeContent.firstChild);
 
             
 
@@ -6854,10 +6792,15 @@ if (cumulativePeriodSelect) {
 
     const storageKey = "optionMapJpxSnapshots";
 
-    const savedSnapshots =
-        JSON.parse(
-            localStorage.getItem(storageKey) || "[]"
-        );
+    const parsedSnapshots = window.OptionMapJpxSnapshotSafety.parseSnapshotList(
+        localStorage.getItem(storageKey) || "[]"
+    );
+    if (!parsedSnapshots.ok) {
+        if (snapshotSaveStatus) snapshotSaveStatus.textContent =
+            "保存済みデータが不正なため保存できませんでした";
+        return;
+    }
+    const savedSnapshots = parsedSnapshots.value;
 
     // 同じ元データ日時なら重複保存せず更新
     const existingIndex =
@@ -6915,7 +6858,8 @@ if (cumulativePeriodSelect) {
     }
 
     if (existingIndex >= 0) {
-        savedSnapshots[existingIndex] = snapshot;
+        savedSnapshots[existingIndex] = window.OptionMapJpxSnapshotSafety
+            .mergeManualSnapshot(savedSnapshots[existingIndex], snapshot);
     } else {
         savedSnapshots.push(snapshot);
     }

@@ -28,8 +28,8 @@ function runtime() {
 
 test("Morning header maps complete to 良好 without changing internal status", () => {
     const preview = read("js/mobileSummaryPreview.js");
-    assert.match(preview, /品質 \$\{morningQualityLabel\(active\.dataQuality\.status\)\}/);
-    assert.doesNotMatch(preview, /品質 \$\{active\.dataQuality\.status\}/);
+    assert.match(preview, /スマホ版朝基準：[\s\S]*品質：\$\{morningQualityLabel\(active\.dataQuality\.status\)\}/);
+    assert.doesNotMatch(preview, /品質：\$\{active\.dataQuality\.status\}/);
     const value = runtime();
     View.createViewModel(value);
     assert.equal(value.comparison.dataQuality.currentStatus, "complete");

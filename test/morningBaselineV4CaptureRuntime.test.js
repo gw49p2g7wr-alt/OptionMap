@@ -151,11 +151,11 @@ test("runtime touches only fixed v4 key and has no forbidden connections", async
     assert.equal(storage.writes.every(([key]) => key === Storage.STORAGE_KEY), true);
     const source = fs.readFileSync(path.join(__dirname, "../js/morningBaselineV4CaptureRuntime.js"), "utf8");
     assert.doesNotMatch(source, /indexedDB|\bfetch\s*\(|setTimeout|setInterval|MobileSummary|optionMapMobileMorning|bootRestore|migration/); });
-test("existing save button keeps legacy save first and adds isolated v4 capture", () => {
+test("user-facing save button is Mobile v3 only and cannot capture Formal v4", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/mobileSummaryPreview.js"), "utf8");
     const legacy = source.indexOf("OptionMapMorningBaselineStorage.save(saved.baseline)");
     const v4 = source.indexOf("OptionMapMorningBaselineV4CaptureRuntime?.captureManual");
-    assert.ok(legacy >= 0 && v4 > legacy); assert.match(source, /legacyMessage/);
+    assert.ok(legacy >= 0); assert.equal(v4, -1); assert.match(source, /legacyMessage/);
 });
 test("successful capture notifies restore runtime without changing save semantics", async () => {
     let notified = null; const value = runtime(); value.instance = Runtime.createRuntime({
