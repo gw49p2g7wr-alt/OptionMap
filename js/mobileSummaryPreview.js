@@ -6,6 +6,8 @@
     let latestQri = null;
     let latestSummary = null;
     let latestBaselineResolution = null;
+    let latestPresentation = null;
+    let updateSequence = 0;
     let saveInProgress = false;
 
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -51,10 +53,20 @@
         states.forEach(item => element.classList.toggle(`is-${item}`, item === state));
     };
 
-    function renderFormalComparisonV4() {
+    function captureFormalComparisonV4(runtimeState = window.getMorningComparisonV4RuntimeState?.() || null) {
         const adapter = window.OptionMapMorningComparisonV4View;
         if (!adapter?.createViewModel) return null;
-        const model = adapter.createViewModel(window.getMorningComparisonV4RuntimeState?.() || null);
+        return adapter.createViewModel(runtimeState);
+    }
+
+    function captureFormalStatusV4() {
+        return window.OptionMapMorningBaselineV4StatusView?.createViewModel(
+            window.getMorningBaselineV4RestoreRuntimeState?.() || null,
+            window.getMorningBaselineV4AutomaticCaptureOutcome?.() || null,
+            window.getMorningBaselineV4SchedulerState?.() || null) || null;
+    }
+
+    function applyFormalComparisonV4(model, formalStatus = captureFormalStatusV4()) {
         const container = document.getElementById("morningComparisonV4Formal");
         if (!container) return model;
         container.classList.toggle("is-available", model.available);
@@ -69,9 +81,6 @@
         container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
         text("morningComparisonV4Status", model.status);
         text("morningComparisonV4Reason", model.reason || "同じ取引日の朝基準と現在を比較しています");
-        const formalStatus = window.OptionMapMorningBaselineV4StatusView?.createViewModel(
-            window.getMorningBaselineV4RestoreRuntimeState?.() || null,
-            window.getMorningBaselineV4AutomaticCaptureOutcome?.() || null);
         text("morningBaselineV4AutomaticStatus", formalStatus?.storageLabel || "正式朝基準：状態確認待ち");
         text("morningBaselineV4AutomaticWindowStatus", formalStatus?.automaticLabel ||
             "自動保存：状態確認待ち");
@@ -109,6 +118,15 @@
         })()] : []));
         if (!model.available) document.getElementById("morningComparisonV4Details")?.removeAttribute("open");
         return model;
+    }
+
+    function renderFormalComparisonV4() {
+        // Once a verified summary is on screen, Formal is part of that immutable
+        // presentation bundle. Runtime callbacks may request another render, but
+        // must not partially replace the displayed generation.
+        if (latestPresentation) return clone(latestPresentation.formalModel);
+        return applyFormalComparisonV4(captureFormalComparisonV4(
+            window.getMorningComparisonV4RuntimeState?.() || null));
     }
 
     const elapsedLabel = milliseconds => {
@@ -264,6 +282,7 @@
     async function createInput(qri, comparison = null) {
         const state = window.getMobileSummaryRendererState?.();
         if (!state) throw new Error("renderer_state_unavailable");
+        const overallAuthority = captureOverallAuthority();
         const canonical = qri?.canonicalV2 || null;
         let qriSignature = null;
         let versionKey = null;
@@ -284,17 +303,73 @@
         const morningBaseline = await window.OptionMapMorningBaselineStorage
             .resolveApplicable({ generatedAt, marketDate, qriTradingDate: canonical.tradingDate,
                 contract: canonical.contract });
-        latestBaselineResolution = clone(morningBaseline);
-        return { generatedAt, marketDate,
+        const input = { generatedAt, marketDate,
         producer: { appVersion: "1.0.0", platform: navigator.platform || null },
         overallV2: state.overallV2, currentPrice: state.currentPrice,
         qri: { available: Boolean(canonical), canonical, activeContract: canonical?.contract || null,
             versionKey, pageUpdatedAt: canonical?.pageUpdatedAt || null, fetchedAt: qri?.fetchedAt || null,
             usingFallback: state.qriOpenInterest?.usingFallback === true }, sourceVersions,
         morningBaseline,
-        freshness: state.freshness, comparison,
+        freshness: state.freshness, comparison, baselineResolution: clone(morningBaseline),
         observationState: { overallV2: state.overallV2, currentPrice: state.currentPrice,
             qriOpenInterest: state.qriOpenInterest } };
+        assertOverallAuthority(input, overallAuthority);
+        input.renderAuthority = overallAuthority;
+        return input;
+    }
+
+    const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+    function captureOverallAuthority() {
+        const state = window.getOverallV2FormalEnvelope?.() || null;
+        const envelope = state?.status === "available" ? state.envelope : null;
+        if (!envelope?.identityVerified || envelope.formalApplied !== true || !envelope.inputFingerprint ||
+            !Number.isSafeInteger(envelope.publicationGeneration) || !envelope.requestId)
+            throw new Error("overall_v2_render_authority_unavailable");
+        return clone({ publicationGeneration: envelope.publicationGeneration,
+            requestId: envelope.requestId, inputFingerprint: envelope.inputFingerprint,
+            result: envelope.result, optionSourceIdentity: envelope.optionSourceIdentity,
+            weeklySourceIdentity: envelope.weeklySourceIdentity });
+    }
+
+    function assertOverallAuthority(input, authority) {
+        if (!sameJson(input.overallV2, authority.result))
+            throw new Error("overall_v2_result_identity_mismatch");
+        const qri = input.sourceVersions.find(item => item.source === "qri-options");
+        const weekly = input.sourceVersions.find(item => item.source === "weekly-futures-history");
+        if (authority.optionSourceIdentity && qri?.versionKey !==
+            authority.optionSourceIdentity.canonicalVersionKey)
+            throw new Error("overall_v2_qri_identity_mismatch");
+        if (authority.weeklySourceIdentity && weekly?.versionKey !==
+            authority.weeklySourceIdentity.currentVersionKey)
+            throw new Error("overall_v2_weekly_identity_mismatch");
+    }
+
+    function assertCurrentOverallAuthority(expected) {
+        const current = captureOverallAuthority();
+        if (current.publicationGeneration !== expected.publicationGeneration ||
+            current.requestId !== expected.requestId ||
+            current.inputFingerprint !== expected.inputFingerprint ||
+            !sameJson(current.result, expected.result))
+            throw new Error("stale_overall_v2_authority_rejected");
+    }
+
+    function commitPresentation(bundle) {
+        const panel = document.getElementById("mobileSummaryPreviewPanel");
+        latestBaselineResolution = clone(bundle.baselineResolution);
+        render(bundle.summary);
+        renderMorningBaselineState(bundle.summary.marketDate, bundle.baselineResolution);
+        applyFormalComparisonV4(bundle.formalModel, bundle.formalStatus);
+        if (panel) {
+            panel.dataset.summaryId = bundle.summary.summaryId;
+            panel.dataset.summarySignature = bundle.summary.signature;
+            panel.dataset.summaryGeneratedAt = bundle.summary.generatedAt;
+            panel.dataset.overallPublicationGeneration = String(
+                bundle.overallAuthority.publicationGeneration);
+            panel.dataset.overallInputFingerprint = bundle.overallAuthority.inputFingerprint;
+        }
+        latestSummary = clone(bundle.summary);
+        latestPresentation = clone(bundle);
     }
 
     async function resolveFormalQriReference(summary) {
@@ -381,6 +456,7 @@
     }
 
     async function update(qriPayload) {
+        const ownSequence = ++updateSequence;
         if (qriPayload) latestQri = clone(qriPayload);
         try {
             const input = await createInput(latestQri);
@@ -405,9 +481,16 @@
             }
             const finalInput = clone(input); finalInput.comparison = comparison;
             const summary = comparison ? await window.OptionMapMobileSummary.buildMobileSummary(finalInput) : initial;
-            latestSummary = summary;
-            render(summary);
-            await renderMorningBaselineState(summary.marketDate);
+            const validation = await window.OptionMapMobileSummary.validateMobileSummary(summary);
+            if (!validation.valid) throw new Error(`mobile_summary_invalid:${validation.errors.join(",")}`);
+            assertCurrentOverallAuthority(input.renderAuthority);
+            if (ownSequence !== updateSequence) throw new Error("stale_presentation_rejected");
+            const bundle = { summary: clone(summary), overallAuthority: clone(input.renderAuthority),
+                baselineResolution: clone(input.baselineResolution),
+                formalModel: clone(captureFormalComparisonV4()),
+                formalStatus: clone(captureFormalStatusV4()) };
+            // No await is permitted inside this commit: all cards change in one JS turn.
+            commitPresentation(bundle);
             const formalQri = await resolveFormalQriReference(summary);
             await window.OptionMapMarketObservation?.persistBestEffort({
                 summary, rendererState: input.observationState,
@@ -430,14 +513,22 @@
             text("mobileSummaryPreviewStatus", latestSummary
                 ? `更新失敗（前回の正常previewを維持）: ${error.message}`
                 : `生成できません: ${error.message}`);
+            if (latestSummary) {
+                const overall = latestSummary.payload?.overallV2;
+                text("mobileSummaryPreviewOverall", overall?.available
+                    ? `前回生成値：${overall.directionLabel} (${overall.direction > 0 ? "+" : ""}${overall.direction})`
+                    : "前回生成値：総合判定v2 利用不可");
+                text("mobileSummaryPreviewOverallGeneratedAt",
+                    `更新失敗・${generatedAtJst(latestSummary.generatedAt)}`);
+            }
             console.warn("MobileSummary previewの更新に失敗しました:", error);
             return { success: false, error: error.message };
         }
     }
 
-    async function renderMorningBaselineState(marketDate) {
-        const result = latestBaselineResolution || await window.OptionMapMorningBaselineStorage.resolveApplicable({
-            generatedAt: new Date().toISOString(), marketDate });
+    function renderMorningBaselineState(marketDate, baselineResolution = latestBaselineResolution) {
+        const result = baselineResolution;
+        if (!result) return;
         if (!result.available) {
             text("morningBaselineSaveStatus", result.reason === "morning_baseline_corrupted"
                 ? "スマホ版朝基準：保存データが壊れているため利用できません"
