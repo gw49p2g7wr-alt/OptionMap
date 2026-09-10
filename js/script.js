@@ -7763,29 +7763,97 @@ function createDifferenceData(
     });
 }
 
+function createReasonSemanticKey(reason) {
+    if (!reason || typeof reason !== "object") return null;
+    const optionType = reason.optionType;
+    const changeType = reason.changeType;
+    const strike = Number(reason.strike);
+    if (!["CALL", "PUT"].includes(optionType) ||
+        !["increase", "decrease"].includes(changeType) ||
+        !Number.isFinite(strike)) return null;
+    return `open_interest|${optionType}|${changeType}|${strike}`;
+}
+
+function groupDiagnosisReasons(reasons) {
+    const groups = new Map();
+    reasons.filter(reason => reason).forEach((reason, index) => {
+        const semanticKey = createReasonSemanticKey(reason) ||
+            `legacy|${typeof reason === "string" ? reason : reason.text || ""}|${index}`;
+        const candidate = typeof reason === "object" ? { ...reason } : {
+            text: reason, priority: 0, optionType: "", changeType: "",
+            strike: null, diff: null, distance: null
+        };
+        const existing = groups.get(semanticKey);
+        if (!existing) {
+            groups.set(semanticKey, { semanticKey, representative: candidate,
+                firstIndex: index, evidenceCount: 1 });
+            return;
+        }
+        existing.evidenceCount += 1;
+        if ((candidate.priority ?? 0) > (existing.representative.priority ?? 0))
+            existing.representative = candidate;
+    });
+    return [...groups.values()]
+        .sort((a, b) => (b.representative.priority ?? 0) -
+            (a.representative.priority ?? 0) || a.firstIndex - b.firstIndex);
+}
+
+function groupDiagnosisReasonsForPresentation(reasons) {
+    const semanticGroups = groupDiagnosisReasons(reasons);
+    const optionGroups = new Map();
+    const presentationGroups = [];
+    semanticGroups.forEach(group => {
+        const optionType = group.representative.optionType;
+        if (!["CALL", "PUT"].includes(optionType)) {
+            presentationGroups.push({ optionType: null, mixed: false,
+                priority: group.representative.priority ?? 0, firstIndex: group.firstIndex,
+                facts: [group] });
+            return;
+        }
+        if (!optionGroups.has(optionType)) optionGroups.set(optionType, {
+            optionType, mixed: false, priority: group.representative.priority ?? 0,
+            firstIndex: group.firstIndex, facts: [] });
+        const optionGroup = optionGroups.get(optionType);
+        optionGroup.facts.push(group);
+        optionGroup.priority = Math.max(optionGroup.priority, group.representative.priority ?? 0);
+        optionGroup.firstIndex = Math.min(optionGroup.firstIndex, group.firstIndex);
+        optionGroup.mixed = new Set(optionGroup.facts.map(item =>
+            item.representative.changeType)).size > 1;
+    });
+    presentationGroups.push(...optionGroups.values());
+    return presentationGroups.sort((a, b) => b.priority - a.priority ||
+        a.firstIndex - b.firstIndex);
+}
+
+function renderDiagnosisReasonPhrase(reason) {
+    const semanticKey = createReasonSemanticKey(reason);
+    if (!semanticKey) return typeof reason?.text === "string" ? reason.text.trim() : "";
+    const change = reason.changeType === "increase" ? "増加" : "減少";
+    const nearby = (reason.priority ?? 0) >= 5 && Number.isFinite(reason.distance) &&
+        reason.distance <= 300;
+    const magnitude = !nearby && (reason.priority ?? 0) >= 4 ? "大幅な" : "";
+    return `${nearby ? "現在値付近での" : ""}${reason.optionType}建玉の${magnitude}${change}`;
+}
+
+function renderDiagnosisPresentationGroup(group) {
+    if (group?.mixed && ["CALL", "PUT"].includes(group.optionType))
+        return `${group.optionType}建玉は価格帯によって増減が混在`;
+    return renderDiagnosisReasonPhrase(group?.facts?.[0]?.representative);
+}
+
+function formatOptionDemandLevel(marketLevel) {
+    return ({
+        "強気": "買い寄り",
+        "やや強気": "やや買い寄り",
+        "中立": "中立",
+        "やや弱気": "やや売り寄り",
+        "弱気": "売り寄り"
+    })[marketLevel] || "判定不能";
+}
+
 function createDiagnosisSentence(reasons, marketLevel) {
-    // 文字列とオブジェクトの両方に対応
-    const reasonTexts = reasons
-        .filter(reason => reason)
-        .sort((a, b) => {
-            const priorityA =
-                typeof a === "object" ? a.priority ?? 0 : 0;
-
-            const priorityB =
-                typeof b === "object" ? b.priority ?? 0 : 0;
-
-            return priorityB - priorityA;
-        })
-        .map(reason => {
-            return typeof reason === "object"
-                ? reason.text
-                : reason;
-        })
-        .filter(text => typeof text === "string" && text.trim() !== "");
-
-    // 同じ理由が重複した場合は1つにする
-    const uniqueReasons = [...new Set(reasonTexts)]
-        .slice(0, 3);
+    const presentationGroups = groupDiagnosisReasonsForPresentation(reasons).slice(0, 3);
+    const uniqueReasons = presentationGroups.map(renderDiagnosisPresentationGroup).filter(Boolean);
 
     if (uniqueReasons.length === 0) {
         if (marketLevel.includes("強気")) {
@@ -7799,72 +7867,34 @@ function createDiagnosisSentence(reasons, marketLevel) {
         return "強気材料と弱気材料が拮抗しており、方向感はまだ明確ではありません。";
     }
 
-    // 表示用に少し自然な表現へ整える
-    const formattedReasons = uniqueReasons.map(text => {
-        return text
-            .replace(
-                "現在値付近でCALL建玉が増加",
-                "現在値付近でのCALL建玉増加"
-            )
-            .replace(
-                "現在値付近でPUT建玉が減少",
-                "現在値付近でのPUT建玉減少"
-            )
-            .replace(
-                "現在値付近でPUT建玉が増加",
-                "現在値付近でのPUT建玉増加"
-            )
-            .replace(
-                "現在値付近でCALL建玉が減少",
-                "現在値付近でのCALL建玉減少"
-            )
-            .replace(
-                "CALL建玉が大きく増加",
-                "CALL建玉の大幅な増加"
-            )
-            .replace(
-                "PUT建玉が大きく増加",
-                "PUT建玉の大幅な増加"
-            )
-            .replace(
-                "CALL建玉が大きく減少",
-                "CALL建玉の大幅な減少"
-            )
-            .replace(
-                "PUT建玉が大きく減少",
-                "PUT建玉の大幅な減少"
-            )
-            .replace(
-                "CALL建玉増加",
-                "CALL建玉の増加"
-            )
-            .replace(
-                "PUT建玉増加",
-                "PUT建玉の増加"
-            )
-            .replace(
-                "CALL建玉減少",
-                "CALL建玉の減少"
-            )
-            .replace(
-                "PUT建玉減少",
-                "PUT建玉の減少"
-            );
-    });
+    const mixedGroups = presentationGroups.filter(group => group.mixed);
+    if (mixedGroups.length > 0) {
+        const singleReasons = presentationGroups.filter(group => !group.mixed)
+            .map(renderDiagnosisPresentationGroup).filter(Boolean);
+        const mixedSubject = mixedGroups.length === 1 ? `${mixedGroups[0].optionType}建玉` :
+            `${mixedGroups.map(group => group.optionType).join("建玉と")}建玉`;
+        const facts = singleReasons.length > 0 ? `${singleReasons.join("と")}が見られます。一方、` : "";
+        const conclusion = marketLevel.includes("強気")
+            ? "全体として上方向への意識がやや強まっています。"
+            : marketLevel.includes("弱気")
+                ? "全体として下方向への警戒がやや強まっています。"
+                : "方向感はまだ明確ではありません。";
+        return `${facts}${mixedSubject}は価格帯によって増減が混在しており、${conclusion}`;
+    }
 
     let joinedReasons = "";
 
-    if (formattedReasons.length === 1) {
-        joinedReasons = formattedReasons[0];
+    if (uniqueReasons.length === 1) {
+        joinedReasons = uniqueReasons[0];
     }
-    else if (formattedReasons.length === 2) {
+    else if (uniqueReasons.length === 2) {
         joinedReasons =
-            `${formattedReasons[0]}と${formattedReasons[1]}`;
+            `${uniqueReasons[0]}と${uniqueReasons[1]}`;
     }
     else {
         joinedReasons =
-            `${formattedReasons[0]}、${formattedReasons[1]}、` +
-            `${formattedReasons[2]}`;
+            `${uniqueReasons[0]}、${uniqueReasons[1]}、` +
+            `${uniqueReasons[2]}`;
     }
 
     if (marketLevel.includes("強気")) {
@@ -8071,42 +8101,6 @@ else {
     
     }
 
-    const findReason = (
-        optionType,
-        changeType
-    ) =>
-        allItems
-            .filter(reason =>
-                reason.optionType === optionType &&
-                reason.changeType === changeType
-            )
-            .sort((a, b) => {
-                const priorityDifference =
-                    (b.priority ?? 0) -
-                    (a.priority ?? 0);
-
-                if (priorityDifference !== 0) {
-                    return priorityDifference;
-                }
-
-                return (
-                    Math.abs(b.diff ?? 0) -
-                    Math.abs(a.diff ?? 0)
-                );
-            })[0] || null;
-
-    const callIncrease =
-        findReason("CALL", "increase");
-
-    const callDecrease =
-        findReason("CALL", "decrease");
-
-    const putIncrease =
-        findReason("PUT", "increase");
-
-    const putDecrease =
-        findReason("PUT", "decrease");
-
     const formatReason = reason => {
         if (
             !reason ||
@@ -8150,105 +8144,41 @@ else {
     };
 
     const sentences = [];
-
-    if (callIncrease && putDecrease) {
-        sentences.push(
-            `${formatReason(callIncrease)}。`
-        );
-
-        sentences.push(
-            `${formatReason(putDecrease)}。`
-        );
-
-        sentences.push(
-            "CALL増加とPUT減少が重なっており、上方向を意識した建玉変化です。"
-        );
-    }
-    else if (callDecrease && putIncrease) {
-        sentences.push(
-            `${formatReason(callDecrease)}。`
-        );
-
-        sentences.push(
-            `${formatReason(putIncrease)}。`
-        );
-
-        sentences.push(
-            "CALL減少とPUT増加が重なっており、下方向への警戒を示す建玉変化です。"
-        );
-    }
-    else if (callIncrease && putIncrease) {
-        sentences.push(
-            `${formatReason(callIncrease)}。`
-        );
-
-        sentences.push(
-            `${formatReason(putIncrease)}。`
-        );
-
-        sentences.push(
-            "CALL・PUTともに増加しているため、市場参加者の見方が分かれています。"
-        );
-    }
-    else if (callDecrease && putDecrease) {
-        sentences.push(
-            `${formatReason(callDecrease)}。`
-        );
-
-        sentences.push(
-            `${formatReason(putDecrease)}。`
-        );
-
-        sentences.push(
-            "CALL・PUTともに減少しており、ポジション整理が進んでいる可能性があります。"
-        );
-    }
-    else {
-        const strongestReason =
-            [...allItems]
-                .filter(reason =>
-                    Number.isFinite(reason.strike) &&
-                    Number.isFinite(reason.diff)
-                )
-                .sort((a, b) =>
-                    Math.abs(b.diff) -
-                    Math.abs(a.diff)
-                )[0];
-
-        if (strongestReason) {
-            sentences.push(
-                `${formatReason(strongestReason)}。`
-            );
-        }
-
-        sentences.push(
-            "建玉には変化が見られますが、明確な方向性を示す組み合わせではありません。"
-        );
-    }
+    const presentationGroups = groupDiagnosisReasonsForPresentation(allItems).slice(0, 3);
+    presentationGroups.forEach(group => {
+        group.facts.forEach(fact => {
+            const detail = formatReason(fact.representative);
+            if (detail) sentences.push(`${detail}。`);
+        });
+        if (group.mixed) sentences.push(
+            `${group.optionType}建玉は価格帯によって増減が混在しています。`);
+    });
+    if (presentationGroups.length === 0) sentences.push(
+        "建玉には変化が見られますが、明確な方向性を示す組み合わせではありません。");
 
     if (marketLevel === "強気") {
         sentences.push(
-            "複数の強気材料が重なっているため、現時点では強気と判断します。"
+            "複数の買い材料が重なっているため、オプション需給は買い寄りです。"
         );
     }
     else if (marketLevel === "やや強気") {
         sentences.push(
-            "ただし決定的な偏りではないため、現時点ではやや強気と判断します。"
+            "ただし決定的な偏りではなく、オプション需給はやや買い寄りです。"
         );
     }
     else if (marketLevel === "弱気") {
         sentences.push(
-            "複数の弱気材料が重なっているため、現時点では弱気と判断します。"
+            "複数の売り材料が重なっているため、オプション需給は売り寄りです。"
         );
     }
     else if (marketLevel === "やや弱気") {
         sentences.push(
-            "ただし決定的な偏りではないため、現時点ではやや弱気と判断します。"
+            "ただし決定的な偏りではなく、オプション需給はやや売り寄りです。"
         );
     }
     else {
         sentences.push(
-            "強気材料と弱気材料が混在しているため、現時点では中立と判断します。"
+            "買い材料と売り材料が混在しているため、オプション需給は中立です。"
         );
     }
 
@@ -8609,7 +8539,7 @@ function calculateOptionMarketJudgment({
     }
 
     diagnosisReason = createDiagnosisSentence(
-        selectedDiagnosisReasons,
+        [...bullishReasons, ...bearishReasons],
         marketLevel
     );
 
@@ -9104,6 +9034,7 @@ const aiComment = createAIComment(
 );
 
 const summary = [];
+const optionDemandLevel = formatOptionDemandLevel(marketLevel);
 
 let badgeClass = "neutral";
 
@@ -9116,7 +9047,7 @@ else if (marketLevel === "弱気") {
 
 summary.unshift(
     `<span class="market-badge ${badgeClass}">
-        ${marketIcon} 市場診断：${marketLevel}
+        ${marketIcon} オプション需給診断：${optionDemandLevel}
      </span>`
 );
 summary.splice(
@@ -9134,8 +9065,8 @@ summary.splice(
 
 const diagnosisHtml = `
 <div class="market-diagnosis ${marketLevel}">
-    <div class="title">${marketIcon} 市場診断</div>
-    <div class="level">${marketLevel}</div>
+    <div class="title">${marketIcon} オプション需給診断</div>
+    <div class="level">${optionDemandLevel}</div>
 </div>
 `;
 

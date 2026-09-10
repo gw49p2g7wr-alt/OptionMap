@@ -31,7 +31,7 @@ test("formal runtime becomes a detached immutable user-facing model", () => {
     assert.equal(Object.isFrozen(model.identity), true);
     assert.match(model.capturedAt, /2026\/08\/28/);
     assert.deepEqual(model.score, { baseline: "-37", current: "-30", baselineLabel: "売り優勢",
-        currentLabel: "売り優勢", delta: "+7", movement: "買い方向へ +7",
+        currentLabel: "売り優勢", delta: "+7", movement: "朝から買い方向へ +7",
         scale: "-100（売り最大）／0（中立）／+100（買い最大）／確率ではありません" });
     assert.deepEqual(model.price, { baseline: "65,950\u2060円", current: "66,120\u2060円",
         delta: "+170円", percent: "+0.26%" });
@@ -59,9 +59,9 @@ test("restore diagnostic reason selects concise non-applicable wording", () => {
     assert.equal(generic.reason, "保存済み朝基準は現在の正式scopeに適用できません");
 });
 test("delta and relation presentation preserves existing taxonomy", () => {
-    assert.equal(View.scoreMovement(1), "買い方向へ +1");
-    assert.equal(View.scoreMovement(-1), "売り方向へ -1");
-    assert.equal(View.scoreMovement(0), "変化なし");
+    assert.equal(View.scoreMovement(1), "朝から買い方向へ +1");
+    assert.equal(View.scoreMovement(-1), "朝から売り方向へ -1");
+    assert.equal(View.scoreMovement(0), "朝から変化なし");
     assert.equal(View.relation("opposite_direction"), "需給変化と価格変化：逆方向");
     assert.equal(View.relation("zero_involved"), "需給変化と価格変化：変化なしを含む");
     assert.equal(View.relation("unavailable"), "需給変化と価格変化：比較不可");
@@ -73,7 +73,7 @@ test("component and DataQuality facts pass through without zero filling", () => 
     changed.comparison.weeklyComponent = { available: false };
     const model = View.createViewModel(changed);
     assert.deepEqual(model.components[0], { label: "オプション需給寄与", available: true,
-        baseline: "-12.5", current: "0", delta: "+12.5", movement: "買い方向へ +12.5" });
+        baseline: "-12.5", current: "0", delta: "+12.5", movement: "朝から買い方向へ +12.5" });
     assert.deepEqual(model.components[1], { label: "週次先物需給", available: false,
         baseline: "—", current: "—", delta: "—", movement: "利用不可" });
     assert.deepEqual(model.dataQuality, { current: "良好", baseline: "一部データ不足",

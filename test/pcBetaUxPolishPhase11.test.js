@@ -38,9 +38,9 @@ test("Morning header maps complete to 良好 without changing internal status", 
 test("formal component direction and delta use one-decimal presentation", () => {
     const model = View.createViewModel(runtime());
     assert.deepEqual(model.components[0], { label: "オプション需給寄与", available: true,
-        baseline: "-12.5", current: "+25", delta: "+37.5", movement: "買い方向へ +37.5" });
+        baseline: "-12.5", current: "+25", delta: "+37.5", movement: "朝から買い方向へ +37.5" });
     assert.deepEqual(model.components[1], { label: "週次先物需給", available: true,
-        baseline: "-67.6", current: "-67.6", delta: "0", movement: "変化なし" });
+        baseline: "-67.6", current: "-67.6", delta: "0", movement: "朝から変化なし" });
 });
 
 test("component formatting does not mutate Comparison precision", () => {

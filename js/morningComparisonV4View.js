@@ -14,7 +14,7 @@
     }
     const signed = value => finite(value) ? `${value > 0 ? "+" : ""}${value}` : "—";
     const scoreMovement = value => !finite(value) ? "比較不可" : value > 0
-        ? `買い方向へ +${value}` : value < 0 ? `売り方向へ ${value}` : "変化なし";
+        ? `朝から買い方向へ +${value}` : value < 0 ? `朝から売り方向へ ${value}` : "朝から変化なし";
     const quality = value => ({ complete: "良好", partial: "一部データ不足" })[value] || "利用不可";
     const transition = value => ({ unchanged: "変化なし", improved: "改善",
         degraded: "低下", changed_unclassified: "構成変化あり" })[value] || "比較不可";
