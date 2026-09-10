@@ -13,7 +13,7 @@
     const PURPOSE = "index_only_not_authoritative_data";
     const SECTION_ORDER = Object.freeze([
         "marketSnapshot", "overallV2", "qriOptions", "qriOptionsNextContract",
-        "qriOptionsMajorSqNextContract", "qriHistoryComparison", "weeklyFutures",
+        "qriOptionsMajorSqNextContract", "qriOptionIv", "qriHistoryComparison", "weeklyFutures",
         "weeklyOptions", "participants", "morning", "importantLevels", "intelligence"
     ]);
     const READING_PURPOSES = Object.freeze({
@@ -22,6 +22,7 @@
         qriOptions: "active_contract_formal_details",
         qriOptionsNextContract: "next_contract_formal_details",
         qriOptionsMajorSqNextContract: "major_sq_contract_formal_details",
+        qriOptionIv: "three_contract_formal_iv_inventory",
         qriHistoryComparison: "formal_qri_history_comparison",
         weeklyFutures: "formal_weekly_futures_details",
         weeklyOptions: "formal_weekly_options_details",
@@ -120,6 +121,18 @@
             currentSourceDate: field(summary, "currentTradingDate") };
     }
 
+    function qriOptionIv(sections) {
+        const name = "qriOptionIv";
+        const section = sectionAt(sections, name);
+        const roles = object(section?.summary?.roles) ? section.summary.roles : {};
+        const project = role => ({ status: field(role, "status"),
+            contract: field(role, "contract"), tradingDate: field(role, "tradingDate"),
+            freshnessStatus: field(role?.freshness, "status"), payloadId: field(role, "payloadId") });
+        return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
+            reason: reason(section), roles: { active: project(roles.active),
+                next: project(roles.next), majorSq: project(roles.major_sq) } };
+    }
+
     function datedSource(sections, name) {
         const section = sectionAt(sections, name);
         return { ...sourceBase(section, name),
@@ -147,6 +160,7 @@
         };
         for (const name of SECTION_ORDER) {
             const section = sectionAt(source.sections, name);
+            if (!section) continue;
             if (["partial", "unavailable", "invalid"].includes(status(section))) {
                 add({ section: name, sourcePointer: pointer(name), issueType: "section_status",
                     status: status(section), reason: reason(section) });
@@ -156,6 +170,21 @@
                     issueType: "freshness", status: freshnessStatus(section),
                     reason: freshnessReason(section) });
             }
+        }
+        const ivSection = sectionAt(source.sections, "qriOptionIv");
+        const ivRoles = object(ivSection?.summary?.roles) ? ivSection.summary.roles : {};
+        for (const role of ["active", "next", "major_sq"]) {
+            const roleValue = object(ivRoles[role]) ? ivRoles[role] : null;
+            if (["unavailable", "invalid"].includes(field(roleValue, "status"))) {
+                add({ section: `qriOptionIv.${role}`, sourcePointer: pointer("qriOptionIv"),
+                    issueType: "role_status", status: field(roleValue, "status"),
+                    reason: field(roleValue, "reason") });
+            }
+            const roleFreshness = field(roleValue?.freshness, "status");
+            if (roleValue && roleFreshness !== "fresh") add({
+                section: `qriOptionIv.${role}`, sourcePointer: pointer("qriOptionIv"),
+                issueType: "freshness", status: roleFreshness,
+                reason: field(roleValue.freshness, "reason") });
         }
         const freshnessIssues = Array.isArray(source.compactSummary?.freshnessIssues)
             ? source.compactSummary.freshnessIssues : [];
@@ -206,6 +235,7 @@
                 next: qriSource(source.sections, "qriOptionsNextContract"),
                 majorSq: qriSource(source.sections, "qriOptionsMajorSqNextContract")
             },
+            qriOptionIv: qriOptionIv(source.sections),
             qriHistoryComparison: qriComparison(source.sections),
             weekly: {
                 futures: datedSource(source.sections, "weeklyFutures"),
@@ -213,7 +243,8 @@
                 participants: datedSource(source.sections, "participants")
             },
             morning: morning(source.sections), dataQuality: dataQuality(source),
-            readingOrder: SECTION_ORDER.map(name => ({ section: name,
+            readingOrder: SECTION_ORDER.filter(name => sectionAt(source.sections, name))
+                .map(name => ({ section: name,
                 pointer: pointer(name), purpose: READING_PURPOSES[name] }))
         };
         const result = { status: "available", reason: null,

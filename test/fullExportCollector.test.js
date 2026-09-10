@@ -167,7 +167,8 @@ async function collect(overrides = {}) {
 test("全section available/partial fixtureからvalid Full Exportを構築", async () => {
     const result = await collect();
     assert.equal(fullExport.validateFullExport(result).valid, true);
-    assert.deepEqual(Object.keys(result.sections), [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary"]);
+    assert.deepEqual(Object.keys(result.sections),
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "qriOptionIv"]);
     assert.equal(result.sections.participants.status, "partial");
     assert.equal(result.sections.aiSummary.status, "available");
     assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
@@ -181,6 +182,12 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
         result.sections.qriOptionsNextContract.summary?.contract || null);
     assert.equal(result.sections.aiSummary.summary.qriContracts.majorSq.contract,
         result.sections.qriOptionsMajorSqNextContract.summary?.contract || null);
+    assert.equal(result.sections.qriOptionIv.status, "unavailable");
+    assert.equal(result.sections.aiSummary.summary.qriOptionIv.sourcePointer,
+        "/sections/qriOptionIv");
+    assert.equal(JSON.stringify(result.compactSummary).includes("qriOptionIv"), false);
+    assert.equal(result.compactSummary.freshnessIssues.some(issue =>
+        issue.section === "qriOptionIv"), false);
 });
 
 test("production形状のsourceなしlive current-price factを正常受理", async () => {
@@ -471,6 +478,7 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     const result = await collect({ readParticipants: async () => { throw new Error("read failed"); } });
     assert.equal(result.sections.participants.status, "unavailable");
     assert.equal(result.sections.participants.reason, "participant_read_failed");
-    assert.deepEqual(Object.keys(result.sections), [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary"]);
+    assert.deepEqual(Object.keys(result.sections),
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "qriOptionIv"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

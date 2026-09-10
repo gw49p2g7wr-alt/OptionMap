@@ -127,13 +127,20 @@ function (ivApi, historyApi, storeApi) {
                 return publish(role, { generation, status: "unavailable",
                     reason: "revision_identity_mismatch", context, source: null, completedAt: now() });
             }
-            const confirmedAt = roleConfirmations.map(item => item.confirmedAt).sort().at(-1);
+            const matchingRoleConfirmation = clone([...roleConfirmations]
+                .sort((left, right) => left.confirmedAt.localeCompare(right.confirmedAt) ||
+                    left.requestId.localeCompare(right.requestId)).at(-1));
+            const confirmedAt = matchingRoleConfirmation.confirmedAt;
             const source = freeze({ available: true, origin: "history",
                 sourceClass: "formal_history", formalStatus: "verified", role,
+                revisionFormalStatus: revision.formalStatus,
                 contract: revision.contract, tradingDate: revision.tradingDate,
                 versionKey: revision.versionKey, signature: revision.signature,
+                sourceUrl: revision.sourceUrl, pageUpdatedAt: revision.pageUpdatedAt,
+                lastTradingDate: revision.lastTradingDate,
                 canonical: clone(revision.canonical), fetchedAt: revision.fetchedAt,
                 confirmedAt, snapshotDate: revision.snapshotDate,
+                matchingRoleConfirmation,
                 freshness: { status: "saved", reason: "formal_history", origin: "history",
                     displayEligible: true, calculationEligible: "undetermined" } });
             return publish(role, { generation, status: "available", reason: null,

@@ -9,12 +9,15 @@
     const qriOptionsApi = commonJs ? require("./qriOptions.js") : root?.OptionMapQriOptions;
     const aiSummaryApi = commonJs ? require("./fullExportAiSummary.js") :
         root?.OptionMapFullExportAiSummary;
+    const qriOptionIvApi = commonJs ? require("./fullExportQriOptionIv.js") :
+        root?.OptionMapFullExportQriOptionIv;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
-        aiSummaryApi);
+        aiSummaryApi, qriOptionIvApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
-function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi) {
+function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
+    qriOptionIvApi) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -616,18 +619,18 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             const weeklyOptions = await createWeeklyOptionsSection(configuration);
             const participants = await createParticipantSection(configuration);
             const intelligence = await createIntelligenceSection(configuration);
-            const sections = { marketSnapshot, overallV2, morning, importantLevels,
+            const coreSections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,
                 qriOptionsNextContract,
                 qriOptionsMajorSqNextContract,
                 qriHistoryComparison: qri.qriHistoryComparison,
                 weeklyFutures, weeklyOptions, participants, intelligence };
-            const freshnessIssues = Object.entries(sections)
+            const freshnessIssues = Object.entries(coreSections)
                 .filter(([, section]) => section.freshness?.status !== "fresh")
                 .map(([section, value]) => ({ section, status: value.freshness?.status || null,
                     reason: value.freshness?.reason || null }));
             const sourceWarnings = Array.isArray(mobile?.warnings) ? clone(mobile.warnings) : [];
-            const availabilityWarnings = Object.entries(sections)
+            const availabilityWarnings = Object.entries(coreSections)
                 .filter(([, section]) => ["unavailable", "invalid"].includes(section.status))
                 .map(([section, value]) => ({ code: `${section}_${value.status}`,
                     section, reason: value.reason }));
@@ -649,6 +652,18 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
                         reason: importantLevels.reason, upper: null, lower: null },
                 qriHighlights: clone(qri.qriHistoryComparison.summary?.highlights || []),
                 freshnessIssues, warnings: clone(warnings) };
+            const qriOptionIv = await qriOptionIvApi?.collectQriOptionIv?.({
+                getRestoreState: configuration.getQriOptionIvHistoryRestoreState,
+                getRuntimeState: configuration.getQriOptionIvRuntimeState,
+                getReferenceSessionState: configuration.getQriOptionIvReferenceSessionState,
+                getPersistenceState: configuration.getQriOptionIvHistoryPersistenceState,
+                getFormalIdentityState: configuration.getQriFormalIdentity,
+                evaluateLiveFreshness: (role, source) => freshnessFor(configuration,
+                    role === "active" ? "qriOptions" : role === "next"
+                        ? "qriOptionsNextContract" : "qriOptionsMajorSqNextContract",
+                    source?.canonical?.pageUpdatedAt, { role, ivSource: source })
+            }) || unavailable("formal_iv_revision_unavailable", "qri-nikkei225-option-iv");
+            const sections = { ...coreSections, qriOptionIv };
             const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
                 exportMeta: { generatedAt, timeZone: "Asia/Tokyo", profile: "full",
                     appVersion: options.appVersion || null, readOnly: true },

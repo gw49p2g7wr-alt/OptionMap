@@ -39,6 +39,19 @@ function source() {
         summary: null, details: null });
     sections.qriHistoryComparison = envelope("qriHistoryComparison", { summary: {
         previousTradingDate: "2026-09-04", currentTradingDate: "2026-09-07" } });
+    sections.qriOptionIv = envelope("qriOptionIv", { status: "partial",
+        reason: "formal_iv_roles_partial", freshness: { status: "mixed",
+            reason: "multiple_role_freshness" }, summary: { roles: {
+                active: { status: "available", reason: null, contract: "2026-09",
+                    tradingDate: "2026-09-07", payloadId: "iv-active",
+                    freshness: { status: "fresh", reason: "current" } },
+                next: { status: "available", reason: null, contract: "2026-10",
+                    tradingDate: "2026-09-07", payloadId: "iv-next",
+                    freshness: { status: "saved", reason: "formal_history" } },
+                major_sq: { status: "unavailable", reason: "formal_iv_revision_unavailable",
+                    contract: null, tradingDate: null, payloadId: null,
+                    freshness: { status: "unavailable", reason: "role_unavailable" } }
+            } } });
     sections.weeklyFutures = envelope("weeklyFutures", { asOf: {
         tradingDate: null, sourceDate: "2026-08-28", snapshotDate: null,
         pageUpdatedAt: null, fetchedAt: null, confirmedAt: null } });
@@ -97,6 +110,9 @@ test("Formal section values are copied with group provenance without promotion",
     assert.equal(result.summary.qriContracts.majorSq.status, "unavailable");
     assert.equal(result.summary.qriContracts.majorSq.contract, null);
     assert.equal(result.summary.qriHistoryComparison.previousSourceDate, "2026-09-04");
+    assert.equal(result.summary.qriOptionIv.sourcePointer, "/sections/qriOptionIv");
+    assert.equal(result.summary.qriOptionIv.roles.next.payloadId, "iv-next");
+    assert.equal(result.summary.qriOptionIv.roles.majorSq.status, "unavailable");
     assert.equal(result.summary.weekly.futures.sourceDate, "2026-08-28");
 });
 
@@ -118,6 +134,10 @@ test("data quality keeps section status and freshness separate and deduplicates 
         issue.issueType === "freshness" && issue.status === "stale" &&
         issue.reason === "saved_last_valid").length, 1);
     assert.equal(issues.some(issue => Object.hasOwn(issue, "severity")), false);
+    assert.ok(issues.some(issue => issue.section === "qriOptionIv.next" &&
+        issue.issueType === "freshness" && issue.status === "saved"));
+    assert.ok(issues.some(issue => issue.section === "qriOptionIv.major_sq" &&
+        issue.issueType === "role_status" && issue.status === "unavailable"));
     assert.equal(result.summary.dataQuality.warnings[0].sourcePointer, "/warnings/0");
 });
 
@@ -125,13 +145,13 @@ test("reading order is fixed and every source pointer resolves", () => {
     const input = source();
     const result = AiSummary.buildFullExportAiSummary(input);
     assert.deepEqual(result.summary.readingOrder.map(item => item.section),
-        AiSummary.SECTION_ORDER);
+        AiSummary.SECTION_ORDER.filter(name => input.sections[name]));
     for (const item of result.summary.readingOrder) {
         assert.ok(resolvePointer(input, item.pointer));
     }
     for (const item of [result.summary.market, result.summary.overallV2,
         ...Object.values(result.summary.qriContracts), result.summary.qriHistoryComparison,
-        ...Object.values(result.summary.weekly), result.summary.morning]) {
+        result.summary.qriOptionIv, ...Object.values(result.summary.weekly), result.summary.morning]) {
         assert.equal(resolvePointer(input, item.sourcePointer), input.sections[item.sourceSection]);
     }
 });

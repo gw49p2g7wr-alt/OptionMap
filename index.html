@@ -1356,6 +1356,7 @@
 <script src="js/fullExportSecurity.js"></script>
 <script src="js/fullExport.js"></script>
 <script src="js/fullExportAiSummary.js"></script>
+<script src="js/fullExportQriOptionIv.js"></script>
 <script src="js/fullExportCollector.js"></script>
 <script src="js/fullExportUi.js"></script>
 
@@ -1597,6 +1598,13 @@ window.OptionMapFullExportUi.configure({
             getMorningRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
             getMorningComparisonState: () => window.getMorningComparisonV4RuntimeState?.() || null,
             getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
+            getQriOptionIvRuntimeState: () => window.getCurrentQriOptionIv?.() || null,
+            getQriOptionIvReferenceSessionState: () =>
+                window.getQriReferenceIvSessionState?.() || null,
+            getQriOptionIvHistoryPersistenceState: () =>
+                window["getQriOptionIvHistoryPersistenceState"]?.() || null,
+            getQriOptionIvHistoryRestoreState: () =>
+                window.getQriOptionIvHistoryRestoreState?.() || null,
             getQriReferenceAcquisitionState: () =>
                 window.getQriReferenceAcquisitionState?.() || null,
             getQriMajorSqFormalHistoryLocator: () =>

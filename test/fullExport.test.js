@@ -108,6 +108,24 @@ test("unknown future sectionを共通envelopeのまま許容する", () => {
     assert.equal(result.sections.wallMovement.details, null);
 });
 
+test("qriOptionIvはoptional additiveで旧v1とrequired keysを変更しない", () => {
+    const legacyInput = fixture();
+    const legacy = fullExport.buildFullExport(legacyInput);
+    const requiredBefore = ["marketSnapshot", "overallV2", "morning", "importantLevels",
+        "qriOptions", "qriOptionsNextContract", "qriOptionsMajorSqNextContract",
+        "qriHistoryComparison", "weeklyFutures", "weeklyOptions", "participants", "intelligence"];
+    assert.deepEqual(fullExport.REQUIRED_SECTION_KEYS, requiredBefore);
+    assert.equal(legacy.schemaVersion, "optionmap-full-export-v1");
+    assert.equal(fullExport.validateFullExport(legacy).valid, true);
+    const additiveInput = fixture();
+    additiveInput.sections.qriOptionIv = section({ summary: { valueUnit: "percent_points" },
+        details: { roles: [], payloads: [] } });
+    const additive = fullExport.buildFullExport(additiveInput);
+    assert.equal(additive.schemaVersion, legacy.schemaVersion);
+    assert.deepEqual(additive.compactSummary, legacy.compactSummary);
+    assert.equal(fullExport.validateFullExport(additive).valid, true);
+});
+
 test("必須unavailable sectionを省略せずnullと0を区別する", () => {
     const input = fixture();
     input.sections.participants = section({ status: "unavailable", reason: "history_missing",
@@ -171,7 +189,8 @@ test("公開URLはallowlistかつcredential/query/fragmentなしだけ許可す�
 test("aiSummary内の固定RFC 6901 pointerだけをlocal pathと区別する", () => {
     assert.equal(security.inspectFullExportSecurity({ sections: { aiSummary: { details: {
         authoritativeRoot: "/sections", sourcePointer: "/sections/qriOptions",
-        pointer: "/sections/overallV2/freshness" } } } }).valid, true);
+        pointer: "/sections/overallV2/freshness",
+        iv: { sourcePointer: "/sections/qriOptionIv" } } } } }).valid, true);
     for (const value of ["/etc/passwd", "/sections/unknown", "/sections/qriOptions/details"]) {
         assert.equal(security.inspectFullExportSecurity({ sections: { aiSummary: {
             sourcePointer: value } } }).valid, false);
