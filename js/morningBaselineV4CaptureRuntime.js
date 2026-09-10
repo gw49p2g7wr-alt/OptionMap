@@ -9,12 +9,17 @@
     const api = factory(storageApi, policyApi, storeApi);
     if (commonJs) module.exports = api;
     if (root) {
+        const notifyCaptureSuccess = api.createCaptureSuccessNotifier({
+            reloadAfterCapture: result =>
+                root.OptionMapMorningBaselineV4RestoreRuntime?.reloadAfterCapture?.(result),
+            publishComparison: () => root.publishMorningComparisonV4Runtime?.(),
+            renderComparison: () => root.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.()
+        });
         root.OptionMapMorningBaselineV4CaptureRuntime = api.createRuntime({
             storage: root.localStorage,
             collect: options => root.collectMorningBaselineV4ReadOnly?.(options),
             isRefreshInProgress: () => root.isMarketRefreshInProgress?.() === true,
-            notifyCaptureSuccess: result =>
-                root.OptionMapMorningBaselineV4RestoreRuntime?.reloadAfterCapture?.(result)
+            notifyCaptureSuccess
         });
         root.getMorningBaselineV4CaptureRuntimeState =
             root.OptionMapMorningBaselineV4CaptureRuntime.getState;
@@ -39,6 +44,16 @@ function (storageApi, policyApi, storeApi) {
         const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(serialized));
         return [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, "0")).join(""); }
     const same = (left, right) => canonical(left) === canonical(right);
+    function createCaptureSuccessNotifier(configuration = {}) {
+        const reloadAfterCapture = configuration.reloadAfterCapture;
+        const publishComparison = configuration.publishComparison;
+        const renderComparison = configuration.renderComparison;
+        return async result => {
+            await reloadAfterCapture?.(result);
+            try { await publishComparison?.(); }
+            finally { renderComparison?.(); }
+        };
+    }
     function diagnostics() { return { collectorReady: false, policyEligible: false,
         policyAction: null, sourceStableBeforeWrite: false, storageStableBeforeWrite: false,
         setItemCount: 0, readBackValidated: false, savedBaselineActive: false,
@@ -150,6 +165,8 @@ function (storageApi, policyApi, storeApi) {
                 state.diagnostics.storageStableBeforeWrite = storageStable;
                 if (!storageStable) return finish(state, { reason: "storage_changed_during_capture" });
                 if (refresh()) return finish(state, { reason: "refresh_in_progress" });
+                if (automatic && !windowState(now()).eligible)
+                    return finish(state, { reason: "window_closed_before_persist" });
                 const stored = await store.saveContainer(plan.proposedContainer);
                 state.diagnostics.setItemCount = stored?.writeCount || 0;
                 if (!stored?.saved) return finish(state, { reason: "storage_write_failed" });
@@ -191,6 +208,7 @@ function (storageApi, policyApi, storeApi) {
             const persistenceReasons = ["storage_write_failed", "storage_readback_failed",
                 "existing_storage_invalid", "storage_changed_during_capture"];
             const staleReasons = ["source_changed_during_capture", "refresh_in_progress"];
+            staleReasons.push("window_closed_before_persist");
             const invalidScopeReasons = ["session_unverified", "scope_identity_mismatch",
                 "storage_identity_mismatch"];
             const classifiedStatus = overrides.status || (result?.saved === true ? "saved" :
@@ -259,5 +277,6 @@ function (storageApi, policyApi, storeApi) {
         return Object.freeze({ captureManual, captureAutomatic, getState, getAutomaticOutcome,
             evaluateAutomaticWindow: windowState });
     }
-    return Object.freeze({ RUNTIME_VERSION, AUTOMATIC_OUTCOME_KEY, createRuntime });
+    return Object.freeze({ RUNTIME_VERSION, AUTOMATIC_OUTCOME_KEY,
+        createCaptureSuccessNotifier, createRuntime });
 });

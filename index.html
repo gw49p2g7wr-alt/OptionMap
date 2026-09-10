@@ -1328,6 +1328,8 @@
 <script src="js/morningComparisonV4Runtime.js"></script>
 <script src="js/morningComparisonV4View.js"></script>
 <script src="js/morningBaselineV4StatusView.js"></script>
+<script src="js/morningBaselineV4TargetedRefresh.js"></script>
+<script src="js/morningBaselineV4Scheduler.js"></script>
 <script src="js/storage/currentPriceLastValidStore.js"></script>
 <script src="js/currentPriceLastValidRestore.js"></script>
 <script src="js/storage/currentPriceLastValidReadOnlyStore.js"></script>
@@ -4599,13 +4601,6 @@ window.getQriMajorSqFormalHistoryLocator = () => {
     return qriMajorSqAcquisitionOrchestrator.getFormalHistoryLocator();
 };
 
-function runAutomaticFirstSuccessCapture(requestId) {
-    return window.OptionMapMorningBaselineV4CaptureRuntime?.captureAutomatic({
-        mode: "automatic_first_success", requestId,
-        requestedAt: new Date().toISOString()
-    });
-}
-
 function validateQriPayload(payload) {
     if (
         !payload ||
@@ -5329,6 +5324,41 @@ qriContractSelect?.addEventListener("change", () => {
 window.getQriContractSelectionState = () => JSON.parse(JSON.stringify({
     selection: qriContractSelectionState, manifest: qriContractManifest
 }));
+
+let formalBaselineRetryScheduler = null;
+function initializeFormalBaselineRetryScheduler() {
+    if (formalBaselineRetryScheduler) return formalBaselineRetryScheduler;
+    const targeted = window.OptionMapMorningBaselineV4TargetedRefresh.createCoordinator({
+        refreshQri: ({ requestId }) => fetchQriData({ requestId }),
+        refreshWeekly: ({ requestId }) => fetchWeeklyData({ requestId }),
+        publishOverall: () => window.renderOptionMapOverallJudgmentV2?.(),
+        evaluateRestore: () => window.evaluateMorningBaselineV4Applicability?.(),
+        getFormalRequestIds: () => {
+            const qri = window.getQriFormalIdentityFact?.();
+            const weekly = window.getWeeklyFormalIdentityFact?.();
+            return {
+                qri: qri?.status === "available" && qri.fact?.sourceClass === "formal_live"
+                    ? qri.fact.requestId : null,
+                weekly: weekly?.status === "available" && weekly.fact?.sourceClass === "formal_history"
+                    ? weekly.fact.requestContext?.requestId : null
+            };
+        },
+        isUserRefreshActive: () => marketRefreshPromise !== null
+    });
+    formalBaselineRetryScheduler = window.OptionMapMorningBaselineV4Scheduler.createScheduler({
+        getRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
+        evaluateRestore: () => window.evaluateMorningBaselineV4Applicability?.(),
+        captureAutomatic: context => window.OptionMapMorningBaselineV4CaptureRuntime
+            ?.captureAutomatic(context),
+        targetedRefresh: (input, guard) => targeted.run(input, guard),
+        isUserRefreshActive: () => marketRefreshPromise !== null,
+        createRequestId: sequence => window.createFetchRequestId(`morningV4Retry-${sequence}`),
+        onStateChange: () => window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.()
+    });
+    window.getMorningBaselineV4SchedulerState = formalBaselineRetryScheduler.getState;
+    window.addEventListener("beforeunload", () => formalBaselineRetryScheduler?.dispose(), { once: true });
+    return formalBaselineRetryScheduler;
+}
 
 async function fetchQriData({ requestId } = {}) {
     const source = "qri";
@@ -6421,9 +6451,6 @@ function refreshAllMarketData() {
         marketRefreshPromise = null;
         await window.publishMorningComparisonV4Runtime?.();
         window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
-        void runAutomaticFirstSuccessCapture(requestId)
-            ?.then(() => window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.())
-            .catch(error => console.warn("正式朝基準の自動保存を完了できませんでした:", error));
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
         initializeQriMajorSqAcquisitionRuntime().completeFormalRender(requestId);
     });
@@ -6434,7 +6461,7 @@ function refreshAllMarketData() {
 window.refreshAllMarketData = refreshAllMarketData;
 window.isMarketRefreshInProgress = () => marketRefreshPromise !== null;
 
-Promise.all([
+const initialMarketBootstrap = Promise.all([
     initializeWeeklyCaches(),
     initializeParticipantCache(),
     initializeParticipantHistory(),
@@ -6446,6 +6473,10 @@ Promise.all([
         console.warn("市場データcacheの初期化に失敗しました:", error);
     })
     .finally(() => refreshAllMarketData());
+void initialMarketBootstrap.then(
+    () => initializeFormalBaselineRetryScheduler().start(),
+    () => initializeFormalBaselineRetryScheduler().start()
+);
 
 function parseLatestParticipantListing(html) {
     if (typeof html !== "string" || html.trim() === "") return null;

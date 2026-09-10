@@ -19,9 +19,11 @@ test("manual button is explicitly Mobile v3 only", () => {
     assert.match(handler, /OptionMapMorningBaselineStorage[\s\S]*\.save\(saved\.baseline\)/);
     assert.doesNotMatch(handler, /captureManual|MorningBaselineV4CaptureRuntime|morningV4/);
 });
-test("normal user UI has no Formal v4 manual capture path", () => {
+test("normal user UI has no Formal v4 manual capture path and automatic authority is the scheduler", () => {
     assert.doesNotMatch(source, /captureManual/);
-    assert.match(html, /runAutomaticFirstSuccessCapture/);
+    assert.doesNotMatch(html, /runAutomaticFirstSuccessCapture/);
+    assert.equal((html.match(/\.captureAutomatic\s*\(/g) || []).length, 1);
+    assert.match(html, /formalBaselineRetryScheduler\s*=\s*window\.OptionMapMorningBaselineV4Scheduler/);
 });
 test("existing v3 and v4 storage identities remain separate", () => {
     const legacy = fs.readFileSync(path.join(__dirname, "../js/morningBaselineStorage.js"), "utf8");

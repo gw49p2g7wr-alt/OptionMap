@@ -145,17 +145,14 @@ test("diagnostics write failure cannot roll back a successful baseline", async (
     assert.equal((await Storage.restoreMorningBaselineV4Storage(
         storage.getItem(Storage.STORAGE_KEY))).success, true);
 });
-test("automatic capture is side-effect isolated and production hook remains fire-and-forget", () => {
+test("automatic capture is side-effect isolated and production authority is the scheduler", () => {
     const runtimeSource = fs.readFileSync(path.join(__dirname,
         "../js/morningBaselineV4CaptureRuntime.js"), "utf8");
     assert.doesNotMatch(runtimeSource, /\bfetch\s*\(|setTimeout|setInterval|indexedDB/);
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    const publication = html.indexOf("await window.publishMorningComparisonV4Runtime?.()");
-    const render = html.indexOf("renderFormalComparisonV4?.()", publication);
-    const automatic = html.indexOf("runAutomaticFirstSuccessCapture", render);
-    const reference = html.indexOf("completeFormalRender(requestId)", automatic);
-    assert.ok(publication >= 0 && render > publication && automatic > render && reference > automatic);
-    assert.doesNotMatch(html.slice(automatic - 80, automatic + 80), /await\s+window\.OptionMapMorning/);
+    assert.doesNotMatch(html, /runAutomaticFirstSuccessCapture/);
+    assert.equal((html.match(/\.captureAutomatic\s*\(/g) || []).length, 1);
+    assert.match(html, /formalBaselineRetryScheduler\s*=\s*window\.OptionMapMorningBaselineV4Scheduler/);
 });
 test("automatic UI separates formal storage authority from the capture window", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/mobileSummaryPreview.js"), "utf8");

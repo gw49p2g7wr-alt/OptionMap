@@ -74,7 +74,8 @@ function runtime(options = {}) {
     let index = 0; return { storage, instance: Runtime.createRuntime({ storage,
         collect: async () => clone(values[Math.min(index++, values.length - 1)]),
         isRefreshInProgress: options.refresh || (() => false), evaluatePolicy: options.policy,
-        store: options.store, now: () => options.now || "2026-08-27T08:04:00+09:00" }) };
+        store: options.store, now: typeof options.now === "function" ? options.now :
+            () => options.now || "2026-08-27T08:04:00+09:00" }) };
 }
 const capture = instance => instance.captureManual({ mode: "manual", userInitiated: true,
     requestedAt: "2026-08-27T08:04:00+09:00" });
@@ -113,6 +114,14 @@ test("refresh starting after concurrency checks still blocks the write", async (
     const value = runtime({ refresh: () => ++calls >= 4 });
     assert.equal((await capture(value.instance)).reason, "refresh_in_progress");
     assert.equal(value.storage.writes.length, 0); });
+test("automatic capture crossing 09:00 stops before the storage write", async () => {
+    let calls = 0; const value = runtime({ now: () => ++calls < 2
+        ? "2026-08-27T08:59:59+09:00" : "2026-08-27T09:00:00+09:00" });
+    const result = await value.instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:59:59+09:00" });
+    assert.equal(result.reason, "window_closed_before_persist");
+    assert.equal(value.storage.writes.filter(([key]) => key === Storage.STORAGE_KEY).length, 0);
+});
 for (const [name, second] of [["generation", collector({ priceGeneration: 2 })],
     ["requestId", collector({ requestId: "request-2" })],
     ["source fingerprint", collector({ overall: "overall-v2" })],
@@ -150,7 +159,7 @@ test("runtime touches only fixed v4 key and has no forbidden connections", async
     assert.equal(storage.reads.every(key => key === Storage.STORAGE_KEY), true);
     assert.equal(storage.writes.every(([key]) => key === Storage.STORAGE_KEY), true);
     const source = fs.readFileSync(path.join(__dirname, "../js/morningBaselineV4CaptureRuntime.js"), "utf8");
-    assert.doesNotMatch(source, /indexedDB|\bfetch\s*\(|setTimeout|setInterval|MobileSummary|optionMapMobileMorning|bootRestore|migration/); });
+    assert.doesNotMatch(source, /indexedDB|\bfetch\s*\(|setTimeout|setInterval|optionMapMobileMorning|bootRestore|migration/); });
 test("user-facing save button is Mobile v3 only and cannot capture Formal v4", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/mobileSummaryPreview.js"), "utf8");
     const legacy = source.indexOf("OptionMapMorningBaselineStorage.save(saved.baseline)");
@@ -171,4 +180,47 @@ test("restore notification failure cannot roll back or relabel a completed save"
         now: () => "2026-08-27T08:04:00+09:00" });
     const result = await capture(instance); assert.deepEqual([result.status, result.saved,
         value.storage.writes.length], ["saved", true, 1]);
+});
+test("capture success notifier restores, republishes comparison once, then renders", async () => {
+    const calls = []; let restoreState = { applicabilityStatus: "no_baseline" };
+    let comparisonState = { status: "unavailable", restoreReason: "no_baseline" };
+    const notifier = Runtime.createCaptureSuccessNotifier({
+        reloadAfterCapture: async result => { calls.push(["restore", result.activeBaselineId]);
+            restoreState = { applicabilityStatus: "applicable", selectedBaselineId: result.activeBaselineId,
+                selectedScopeId: "morning-v4-scope|2026-09|2026-08-27|same_date_explicit" }; },
+        publishComparison: async () => { calls.push(["publish", restoreState.applicabilityStatus]);
+            comparisonState = { status: "available", restoreReason: null,
+                selectedBaselineId: restoreState.selectedBaselineId,
+                scopeId: restoreState.selectedScopeId }; },
+        renderComparison: () => calls.push(["render", comparisonState.status])
+    });
+    const value = runtime(); value.instance = Runtime.createRuntime({ storage: value.storage,
+        collect: async () => collector(), isRefreshInProgress: () => false,
+        notifyCaptureSuccess: notifier, now: () => "2026-08-27T08:04:00+09:00" });
+    assert.equal(comparisonState.status, "unavailable");
+    const result = await value.instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    const savedBaselineId = calls[0][1];
+    assert.deepEqual(calls, [["restore", savedBaselineId], ["publish", "applicable"],
+        ["render", "available"]]);
+    assert.deepEqual([result.status, comparisonState.status, comparisonState.restoreReason,
+        comparisonState.selectedBaselineId, comparisonState.scopeId], ["saved", "available", null,
+        savedBaselineId, "morning-v4-scope|2026-09|2026-08-27|same_date_explicit"]);
+    assert.equal(value.storage.writes.filter(([key]) => key === Storage.STORAGE_KEY).length, 1);
+});
+test("comparison republish failure preserves a successful baseline save", async () => {
+    const calls = []; const value = runtime();
+    const notifier = Runtime.createCaptureSuccessNotifier({
+        reloadAfterCapture: async () => calls.push("restore"),
+        publishComparison: async () => { calls.push("publish"); throw new Error("publish failed"); },
+        renderComparison: () => calls.push("render")
+    });
+    const instance = Runtime.createRuntime({ storage: value.storage, collect: async () => collector(),
+        isRefreshInProgress: () => false, notifyCaptureSuccess: notifier,
+        now: () => "2026-08-27T08:04:00+09:00" });
+    const result = await instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    assert.deepEqual([result.status, result.saved,
+        value.storage.writes.filter(([key]) => key === Storage.STORAGE_KEY).length], ["saved", true, 1]);
+    assert.deepEqual(calls, ["restore", "publish", "render"]);
 });

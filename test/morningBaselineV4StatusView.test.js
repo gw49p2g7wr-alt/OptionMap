@@ -29,6 +29,26 @@ test("invalid storage is never presented as missing", () => {
     assert.equal(model.storageStatus, "invalid");
     assert.equal(model.storageLabel, "正式朝基準：保存データを検証できません");
 });
+test("scheduler cutoff distinguishes ended-without-baseline from an ordinary missing state", () => {
+    const missing = { restoreStatus: "missing", integrityStatus: "missing",
+        applicabilityStatus: "no_baseline", reason: "no_baseline" };
+    const model = View.createViewModel(missing, null, { status: "stopped",
+        stoppedReason: "window_closed", windowState: "after" });
+    assert.equal(model.storageLabel, "正式朝基準：本日は正式朝基準を取得できませんでした");
+    assert.equal(model.automaticLabel, "自動取得：終了（05:00〜09:00）");
+});
+test("scheduler running, successful, and invalid-storage states remain factual", () => {
+    const missing = { restoreStatus: "missing", integrityStatus: "missing",
+        applicabilityStatus: "no_baseline", reason: "no_baseline" };
+    assert.equal(View.createViewModel(missing, null, { status: "running",
+        windowState: "inside" }).automaticLabel, "自動取得：09:00まで自動再試行中");
+    assert.equal(View.createViewModel(restore(), null, { status: "stopped",
+        stoppedReason: "baseline_applicable" }).automaticLabel, "自動取得：完了");
+    const invalid = { restoreStatus: "invalid", integrityStatus: "integrity_invalid",
+        reason: "integrity_invalid" };
+    assert.match(View.createViewModel(invalid, null, { status: "stopped",
+        stoppedReason: "storage_invalid" }).automaticLabel, /停止/);
+});
 test("manual formal save remains visible independently of an after-window attempt", () => {
     const model = View.createViewModel(restore(), { status: "outside_window",
         windowStatus: "outside_window_after", saved: false });
