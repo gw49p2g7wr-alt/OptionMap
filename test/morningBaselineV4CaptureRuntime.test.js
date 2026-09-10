@@ -101,6 +101,39 @@ test("duplicate is success-equivalent with zero writes", async () => { const fir
 test("collector not ready rejects without write", async () => { const value = runtime({
     collectors: [collector({ ready: false })] }); assert.equal((await capture(value.instance)).reason,
         "collector_not_ready"); assert.equal(value.storage.writes.length, 0); });
+test("automatic option identity deficiency remains retryable and performs no baseline write", async () => {
+    const unavailable = collector({ ready: false });
+    unavailable.reason = "overall_option_source_identity_missing";
+    unavailable.reasons = [unavailable.reason];
+    const value = runtime({ collectors: [unavailable] });
+    const outcome = await value.instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    assert.deepEqual([outcome.status, outcome.reason, outcome.deficiencyReason,
+        outcome.retryEligible], ["waiting_for_eligibility", "collector_not_ready",
+        "overall_option_source_identity_missing", true]);
+    assert.equal(value.storage.writes.some(([key]) => key === Storage.STORAGE_KEY), false);
+});
+test("collector exceptions use runtime taxonomy and never storage failure", async () => {
+    const storage = memoryStorage();
+    const instance = Runtime.createRuntime({ storage, collect: async () => {
+        throw new TypeError("collector failed");
+    }, isRefreshInProgress: () => false, now: () => "2026-08-27T08:04:00+09:00" });
+    const outcome = await instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    assert.deepEqual([outcome.status, outcome.reason, outcome.retryEligible],
+        ["runtime_failed", "collector_runtime_failed", true]);
+    assert.equal(storage.writes.some(([key]) => key === Storage.STORAGE_KEY), false);
+});
+test("automatic outcome retains the existing collector deficiency reason", async () => {
+    const unavailable = collector({ ready: false }); unavailable.reason = "weekly_identity_missing";
+    unavailable.reasons = [unavailable.reason]; const value = runtime({ collectors: [unavailable] });
+    const outcome = await value.instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    assert.equal(outcome.reason, "collector_not_ready");
+    assert.equal(outcome.deficiencyReason, "weekly_identity_missing");
+    assert.equal(Object.hasOwn(JSON.parse(value.storage.getItem(Runtime.AUTOMATIC_OUTCOME_KEY)),
+        "deficiencyReason"), false);
+});
 test("non-manual and non-user requests reject", async () => { const { instance, storage } = runtime();
     assert.equal((await instance.captureManual({ mode: "automatic", userInitiated: true })).reason,
         "policy_rejected"); assert.equal((await instance.captureManual({ mode: "manual",
@@ -141,10 +174,18 @@ test("policy rejection performs no write", async () => { const value = runtime({
     eligible: false, status: "rejected", action: "reject", reason: "test" }) });
     assert.equal((await capture(value.instance)).reason, "policy_rejected");
     assert.equal(value.storage.writes.length, 0); });
-test("setItem and quota failures are isolated", async () => { for (const errorName of ["Error", "QuotaExceededError"]) {
+test("setItem and quota failures are isolated", async () => { for (const [errorName, reason] of [
+    ["Error", "storage_write_failed"], ["QuotaExceededError", "quota_exceeded"]]) {
     const storage = memoryStorage(); storage.setItem = () => { const error = new Error("write");
         error.name = errorName; throw error; }; const value = runtime({ storage });
-    assert.equal((await capture(value.instance)).reason, "storage_write_failed"); } });
+    assert.equal((await capture(value.instance)).reason, reason); } });
+test("store failure reason is preserved and classified as persistence", async () => {
+    const value = runtime({ store: { saveContainer: async () => ({ saved: false,
+        reason: "quota_exceeded", writeCount: 0 }) } });
+    const outcome = await value.instance.captureAutomatic({ requestId: "request-1",
+        requestedAt: "2026-08-27T08:04:00+09:00" });
+    assert.deepEqual([outcome.status, outcome.reason], ["persistence_failed", "quota_exceeded"]);
+});
 test("invalid read-back is reported without repair", async () => { const storage = memoryStorage();
     storage.setItem = function (key, value) { this.writes.push([key, value]); Object.defineProperty(this,
         "value", { configurable: true, get: () => "{" }); };

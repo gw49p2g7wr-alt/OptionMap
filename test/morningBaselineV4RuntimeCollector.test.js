@@ -105,6 +105,14 @@ test("QRI revision missing", async () => assert.ok((await collect(x => { x.qri.f
 test("Weekly unavailable", async () => assert.equal((await collect(x => { x.weekly.status = "unavailable"; x.weekly.fact = null; })).ready, false));
 test("Weekly binding mismatch", async () => assert.equal((await collect(x => { x.overall.envelope.weeklySourceIdentity.currentVersionKey = "old"; })).ready, false));
 test("Overall unavailable", async () => assert.equal((await collect(x => { x.overall.status = "unavailable"; x.overall.envelope = null; })).ready, false));
+test("Overall option identity missing is an eligibility deficiency, not an exception", async () => {
+    const result = await collect(x => { x.overall.envelope.optionSourceIdentity = null; });
+    assert.equal(result.ready, false);
+    assert.equal(result.status, "not_ready");
+    assert.equal(result.reason, "overall_option_source_identity_missing");
+    assert.ok(result.reasons.includes("overall_identity_missing"));
+    assert.equal(result.builderInput, null);
+});
 test("Overall input mismatch", async () => assert.equal((await collect(x => { x.overall.envelope.optionSourceIdentity.canonicalVersionKey = "old"; })).ready, false));
 test("logicVersion missing", async () => assert.ok((await collect(x => { x.overall.envelope.logicVersion = null; })).reasons.includes("overall_identity_missing")));
 test("session unverified", async () => assert.ok((await collect(x => { x.currentPrice.fact.qriTradingDateMapping.mappingVerified = false; })).reasons.includes("session_unverified")));

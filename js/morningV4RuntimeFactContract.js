@@ -9,7 +9,8 @@
     const SOURCE_CLASSES = Object.freeze(["formal_live", "formal_history", "saved",
         "reference", "legacy", "manual", "restored"]);
     const REASON_ORDER = Object.freeze(["refresh_in_progress", "source_generation_changed",
-        "session_unverified", "overall_identity_missing", "overall_input_mismatch",
+        "overall_option_source_identity_missing", "session_unverified",
+        "overall_identity_missing", "overall_input_mismatch",
         "current_price_identity_missing", "qri_revision_identity_missing", "qri_not_formal",
         "weekly_identity_missing", "weekly_component_mismatch", "data_quality_missing",
         "nearest_levels_invalid", "mixed_acquisition", "contract_mismatch",
@@ -133,6 +134,8 @@
     }
 
     async function expectedOverallInputFingerprint(facts) {
+        if (!object(facts?.overallV2?.optionSourceIdentity) ||
+            !text(facts.overallV2.optionSourceIdentity.sourceFingerprint)) return null;
         return sha256({ logicVersion: facts.overallV2.logicVersion,
             qriCanonicalVersionKey: facts.qri.canonicalVersionKey,
             qriSourceFingerprint: facts.overallV2.optionSourceIdentity.sourceFingerprint,
@@ -163,6 +166,10 @@
             context.startGenerationFingerprint !== context.endGenerationFingerprint ||
             context.sourceGenerationChanged === true) add("source_generation_changed");
         if (!validMarket(facts.marketSession)) add("session_unverified");
+        if (object(facts.overallV2) &&
+            (!object(facts.overallV2.optionSourceIdentity) ||
+                !text(facts.overallV2.optionSourceIdentity.sourceFingerprint)))
+            add("overall_option_source_identity_missing");
         if (!validOverall(facts.overallV2)) add("overall_identity_missing");
         if (!validPrice(facts.currentPrice)) add("current_price_identity_missing");
         if (!object(facts.qri) || !text(facts.qri.historyEntryIdentity) ||

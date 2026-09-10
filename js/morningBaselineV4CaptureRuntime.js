@@ -75,6 +75,7 @@ function (storageApi, policyApi, storeApi) {
             return freeze(clone(lastState)); }
         function initial(requestedAt) { return { runtimeVersion: RUNTIME_VERSION, status: "rejected",
             reason: null, attemptSequence: ++sequence, requestedAt, collectorIdentity: null,
+            deficiencyReason: null,
             policyResultIdentity: null, action: "reject", saved: false,
             storageBeforeFingerprint: null, storageAfterFingerprint: null, activeBaselineId: null,
             contentSignature: null, versionKey: null, capturedAt: null,
@@ -112,13 +113,15 @@ function (storageApi, policyApi, storeApi) {
             inProgress = true;
             try {
                 if (refresh()) return finish(state, { reason: "refresh_in_progress" });
-                const collector = await collect();
+                let collector;
+                try { collector = await collect(); }
+                catch (_error) { return finish(state, { reason: "collector_runtime_failed" }); }
                 state.diagnostics.collectorReady = collector?.ready === true && collector?.status === "ready";
                 state.collectorIdentity = { collectedAt: collector?.collectedAt || null,
                     formalSnapshotInputFingerprint: collector?.formalSnapshotInputFingerprint || null,
                     sourceGenerations: clone(collector?.sourceGenerations || null) };
                 if (!state.diagnostics.collectorReady) return finish(state, {
-                    reason: "collector_not_ready" });
+                    reason: "collector_not_ready", deficiencyReason: collector?.reason || null });
                 const policyRequestedAt = now();
                 let beforeRaw; try { beforeRaw = readRaw(); }
                 catch (_error) { return finish(state, { reason: "existing_storage_invalid" }); }
@@ -148,7 +151,9 @@ function (storageApi, policyApi, storeApi) {
                     return finish(state, { reason: automatic ?
                         (policyResult?.reason || "validation_failed") : "policy_rejected" });
                 if (refresh()) return finish(state, { reason: "refresh_in_progress" });
-                const verification = await collect();
+                let verification;
+                try { verification = await collect(); }
+                catch (_error) { return finish(state, { reason: "collector_verification_failed" }); }
                 if (refresh()) return finish(state, { reason: "refresh_in_progress" });
                 const sourceStable = verification?.ready === true &&
                     same(sourceIdentity(collector), sourceIdentity(verification));
@@ -169,7 +174,8 @@ function (storageApi, policyApi, storeApi) {
                     return finish(state, { reason: "window_closed_before_persist" });
                 const stored = await store.saveContainer(plan.proposedContainer);
                 state.diagnostics.setItemCount = stored?.writeCount || 0;
-                if (!stored?.saved) return finish(state, { reason: "storage_write_failed" });
+                if (!stored?.saved) return finish(state, {
+                    reason: stored?.reason || "storage_write_failed" });
                 let readBackRaw; try { readBackRaw = readRaw(); }
                 catch (_error) { return finish(state, { reason: "storage_readback_failed" }); }
                 const readBack = await inspectRaw(readBackRaw);
@@ -188,7 +194,7 @@ function (storageApi, policyApi, storeApi) {
                 try { await notifyCaptureSuccess?.(saved); }
                 catch (_error) { /* restore notification must not change a completed save */ }
                 return saved;
-            } catch (_error) { return finish(state, { reason: "storage_write_failed" }); }
+            } catch (_error) { return finish(state, { reason: "unexpected_runtime_error" }); }
             finally { inProgress = false; }
         }
         function windowState(value) {
@@ -206,7 +212,10 @@ function (storageApi, policyApi, storeApi) {
         function automaticOutcome(result, overrides = {}) {
             const technicalReason = overrides.reason || result?.reason || null;
             const persistenceReasons = ["storage_write_failed", "storage_readback_failed",
-                "existing_storage_invalid", "storage_changed_during_capture"];
+                "existing_storage_invalid", "storage_changed_during_capture", "quota_exceeded",
+                "serialization_failed"];
+            const runtimeReasons = ["collector_runtime_failed", "collector_verification_failed",
+                "unexpected_runtime_error"];
             const staleReasons = ["source_changed_during_capture", "refresh_in_progress"];
             staleReasons.push("window_closed_before_persist");
             const invalidScopeReasons = ["session_unverified", "scope_identity_mismatch",
@@ -215,6 +224,7 @@ function (storageApi, policyApi, storeApi) {
                 result?.status === "already_saved" ? "already_saved" :
                     result?.status === "duplicate" ? "duplicate" :
                         persistenceReasons.includes(technicalReason) ? "persistence_failed" :
+                            runtimeReasons.includes(technicalReason) ? "runtime_failed" :
                             staleReasons.includes(technicalReason) ? "stale" :
                                 invalidScopeReasons.includes(technicalReason) ? "invalid_scope" :
                                     "waiting_for_eligibility");
@@ -269,7 +279,8 @@ function (storageApi, policyApi, storeApi) {
             const value = automaticOutcome(result, { windowStatus: "inside_window" });
             if (!persistOutcome(value)) return freeze({ ...clone(value), reason: value.saved ?
                 "diagnostics_failed" : value.reason, errorCode: "diagnostics_failed" });
-            return value;
+            return result?.deficiencyReason ? freeze({ ...clone(value),
+                deficiencyReason: result.deficiencyReason }) : value;
         }
         const captureManual = context => capture(context);
         const getState = () => freeze(clone(lastState));
