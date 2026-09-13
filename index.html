@@ -1330,6 +1330,12 @@
 <script src="js/morningV5ReferencePriceFact.js"></script>
 <script src="js/morningV5CrossContractMapping.js"></script>
 <script src="js/morningV5ReferencePriceRuntime.js"></script>
+<script src="js/morningV5SupplyDemandLane.js"></script>
+<script src="js/morningV5ReferencePriceLane.js"></script>
+<script src="js/morningV5Comparison.js"></script>
+<script src="js/morningBaselineV5.js"></script>
+<script src="js/morningV5ShadowCollector.js"></script>
+<script src="js/morningV5ShadowRuntime.js"></script>
 <script src="js/weeklyFormalIdentityRuntime.js"></script>
 <script src="js/overallV2FormalEnvelopeRuntime.js"></script>
 <script src="js/morningV4RuntimeFactContract.js"></script>
@@ -6430,6 +6436,7 @@ function refreshAllMarketData() {
     initializeQriMajorSqAcquisitionRuntime().beginMarketRefresh(requestId);
     window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
     window.invalidateMorningV5ReferencePriceFact?.("new_market_refresh");
+    window.invalidateMorningV5Shadow?.("new_market_refresh");
     window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     const startedAt = new Date().toISOString();
 
@@ -6479,6 +6486,7 @@ function refreshAllMarketData() {
     marketRefreshPromise = runRefresh().finally(async () => {
         marketRefreshPromise = null;
         await window.publishMorningComparisonV4Runtime?.();
+        await window.publishMorningV5Shadow?.();
         window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
         initializeQriMajorSqAcquisitionRuntime().completeFormalRender(requestId);
