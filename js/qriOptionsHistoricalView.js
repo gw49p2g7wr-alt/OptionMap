@@ -1,8 +1,11 @@
 (function (root, factory) {
-    const api = factory();
+    const presentation = typeof module === "object" && module.exports
+        ? require("./strikeBarChartPresentation.js")
+        : root?.OptionMapStrikeBarChartPresentation;
+    const api = factory(presentation);
     if (typeof module === "object" && module.exports) module.exports = api;
     if (root) root.OptionMapQriOptionsHistoricalView = api;
-})(typeof window !== "undefined" ? window : globalThis, function () {
+})(typeof window !== "undefined" ? window : globalThis, function (presentation) {
     "use strict";
 
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -36,6 +39,7 @@
             content: get("historicalQriContent"),
             metadata: get("historicalQriMetadata"),
             chartContainer: get("historicalQriChartContainer"),
+            chartPlot: get("historicalQriChartPlot"),
             canvas: get("historicalQriOpenInterestChart"),
             developer: get("historicalQriDeveloperDetails")
         };
@@ -147,15 +151,17 @@
         function renderChart(viewModel) {
             destroyChart();
             if (!dom.canvas || typeof ChartConstructor !== "function") return false;
+            presentation?.preparePlot?.({ container: dom.chartContainer,
+                plot: dom.chartPlot, strikeCount: viewModel.chartData.strikes.length });
             chart = new ChartConstructor(dom.canvas, {
                 type: "bar",
                 data: { labels: viewModel.chartData.strikes.map(String), datasets: [
                     { label: "CALL建玉残", data: [...viewModel.chartData.callOpenInterest],
                         backgroundColor: optionColors?.call, borderColor: optionColors?.call,
-                        borderWidth: 1 },
+                        borderWidth: 1, ...presentation?.DATASET_OPTIONS },
                     { label: "PUT建玉残", data: [...viewModel.chartData.putOpenInterest],
                         backgroundColor: optionColors?.put, borderColor: optionColors?.put,
-                        borderWidth: 1 }
+                        borderWidth: 1, ...presentation?.DATASET_OPTIONS }
                 ] },
                 options: { responsive: true, maintainAspectRatio: false, animation: false,
                     scales: { x: { title: { display: true, text: "権利行使価格" } },

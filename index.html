@@ -900,8 +900,10 @@
                     <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
                     <h4>保存済みCALL・PUT建玉残</h4>
                     <div id="historicalQriChartContainer"
-                        class="historical-qri-chart-container" hidden>
-                        <canvas id="historicalQriOpenInterestChart"></canvas>
+                        class="historical-qri-chart-container strike-bar-chart-scroll" hidden>
+                        <div id="historicalQriChartPlot" class="strike-bar-chart-plot">
+                            <canvas id="historicalQriOpenInterestChart"></canvas>
+                        </div>
                     </div>
                     <details class="historical-qri-developer-panel">
                         <summary>履歴identity詳細</summary>
@@ -938,8 +940,10 @@
                     </p>
                     <h4>保存済みCALL・PUT建玉残の限月合算</h4>
                     <div id="historicalQriAggregationChartContainer"
-                        class="historical-qri-chart-container" hidden>
-                        <canvas id="historicalQriAggregationChart"></canvas>
+                        class="historical-qri-chart-container strike-bar-chart-scroll" hidden>
+                        <div id="historicalQriAggregationChartPlot" class="strike-bar-chart-plot">
+                            <canvas id="historicalQriAggregationChart"></canvas>
+                        </div>
                     </div>
                     <details class="historical-qri-developer-panel">
                         <summary>合算identity詳細</summary>
@@ -986,8 +990,11 @@
                 hidden
             ></div>
 
-            <div class="chart-container combined-chart-container">
-                <canvas id="combinedPriceChart"></canvas>
+            <div id="combinedPriceChartContainer"
+                class="chart-container combined-chart-container strike-bar-chart-scroll">
+                <div id="combinedPriceChartPlot" class="strike-bar-chart-plot">
+                    <canvas id="combinedPriceChart"></canvas>
+                </div>
             </div>
 
             <details id="qriIvCurvePanel"
@@ -1286,6 +1293,7 @@
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
+<script src="js/strikeBarChartPresentation.js"></script>
 <script src="js/qriOptionsHistoricalViewModel.js"></script>
 <script src="js/qriOptionsHistoricalAggregation.js"></script>
 <script src="js/qriOptionsHistoricalView.js"></script>

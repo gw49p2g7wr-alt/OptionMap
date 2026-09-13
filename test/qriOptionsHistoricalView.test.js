@@ -130,6 +130,14 @@ test("専用chartはCALL赤PUT青を使いunpublished nullを維持", async () =
     assert.equal(configuration.data.datasets[0].backgroundColor, "#9b4058");
     assert.equal(configuration.data.datasets[1].backgroundColor, "#285f9e");
     assert.deepEqual(configuration.data.datasets[1].data, [20, null]);
+    assert.deepEqual(configuration.data.datasets.map(dataset => ({
+        categoryPercentage: dataset.categoryPercentage,
+        barPercentage: dataset.barPercentage,
+        maxBarThickness: dataset.maxBarThickness,
+        barThickness: dataset.barThickness,
+        grouped: dataset.grouped
+    })), [0, 1].map(() => ({ categoryPercentage: 0.82, barPercentage: 0.9,
+        maxBarThickness: 10, barThickness: undefined, grouped: undefined })));
     assert.equal(configuration.plugins, undefined);
 });
 

@@ -1,8 +1,11 @@
 (function (root, factory) {
-    const api = factory();
+    const presentation = typeof module === "object" && module.exports
+        ? require("./strikeBarChartPresentation.js")
+        : root?.OptionMapStrikeBarChartPresentation;
+    const api = factory(presentation);
     if (typeof module === "object" && module.exports) module.exports = api;
     if (root) root.OptionMapQriOptionsHistoricalAggregationView = api;
-})(typeof window !== "undefined" ? window : globalThis, function () {
+})(typeof window !== "undefined" ? window : globalThis, function (presentation) {
     "use strict";
 
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -34,6 +37,7 @@
             metadata: get("historicalQriAggregationMetadata"),
             legend: get("historicalQriAggregationPartialLegend"),
             chartContainer: get("historicalQriAggregationChartContainer"),
+            chartPlot: get("historicalQriAggregationChartPlot"),
             canvas: get("historicalQriAggregationChart"),
             developer: get("historicalQriAggregationDeveloperDetails")
         };
@@ -209,16 +213,18 @@
         function renderChart(aggregation) {
             destroyChart();
             if (!dom.canvas || typeof ChartConstructor !== "function") return false;
+            presentation?.preparePlot?.({ container: dom.chartContainer,
+                plot: dom.chartPlot, strikeCount: aggregation.strikes.length });
             const colors = side => aggregation.points.map(point => point[side].complete
                 ? optionColors?.[side] : partialColors?.[side]);
             chart = new ChartConstructor(dom.canvas, { type: "bar", data: {
                 labels: aggregation.strikes.map(String), datasets: [
                     { label: "CALL合算", data: aggregation.points.map(point => point.call.total),
                         backgroundColor: colors("call"), borderColor: optionColors?.call,
-                        borderWidth: 1 },
+                        borderWidth: 1, ...presentation?.DATASET_OPTIONS },
                     { label: "PUT合算", data: aggregation.points.map(point => point.put.total),
                         backgroundColor: colors("put"), borderColor: optionColors?.put,
-                        borderWidth: 1 }
+                        borderWidth: 1, ...presentation?.DATASET_OPTIONS }
                 ] }, options: { responsive: true, maintainAspectRatio: false, animation: false,
                 scales: { x: { title: { display: true, text: "権利行使価格" } },
                     y: { beginAtZero: true, title: { display: true, text: "建玉残合計" } } },

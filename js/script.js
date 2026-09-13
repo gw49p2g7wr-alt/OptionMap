@@ -3076,6 +3076,30 @@ function createBarColors(values, normalColor, strongColor) {
     });
 }
 
+function prepareCombinedStrikeChart(strikeCount) {
+    const presentation = window.OptionMapStrikeBarChartPresentation;
+    presentation?.preparePlot?.({
+        container: document.getElementById("combinedPriceChartContainer"),
+        plot: document.getElementById("combinedPriceChartPlot"),
+        strikeCount
+    });
+    return presentation;
+}
+
+function centerCombinedStrikeChart(chart, labels) {
+    const presentation = window.OptionMapStrikeBarChartPresentation;
+    const priceIndex = labels.reduce((best, label, index) => {
+        const distance = Math.abs(Number(String(label).replace(/,/g, "")) - currentPrice);
+        return distance < best.distance ? { index, distance } : best;
+    }, { index: -1, distance: Infinity }).index;
+    presentation?.centerIndex?.({
+        container: document.getElementById("combinedPriceChartContainer"),
+        plot: document.getElementById("combinedPriceChartPlot"),
+        chart,
+        index: priceIndex
+    });
+}
+
 
 
 const currentPriceLinePlugin = {
@@ -6929,6 +6953,7 @@ function renderQriContractDisplayChart() {
     const maxPut = Math.max(...numericPutValues, 1);
     const canvas = document.getElementById("combinedPriceChart");
     if (!canvas) return false;
+    const strikeChartPresentation = prepareCombinedStrikeChart(visible.length);
     if (combinedPriceChart) {
         combinedPriceChart.destroy();
         clearQriChartRendererIdentity();
@@ -6944,13 +6969,15 @@ function renderQriContractDisplayChart() {
                 backgroundColor: createBarColors(numericCallValues,
                     OPTION_SIDE_CHART_COLORS.call.soft,
                     OPTION_SIDE_CHART_COLORS.call.strong),
-                borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1 },
+                borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1,
+                ...strikeChartPresentation?.DATASET_OPTIONS },
             { label: isVolumeMode ? "PUT取引高" : "PUT建玉残",
                 data: numericPutValues.map(value => -(value / maxPut * 100)),
                 backgroundColor: createBarColors(numericPutValues,
                     OPTION_SIDE_CHART_COLORS.put.soft,
                     OPTION_SIDE_CHART_COLORS.put.strong),
-                borderColor: OPTION_SIDE_CHART_COLORS.put.border, borderWidth: 1 }
+                borderColor: OPTION_SIDE_CHART_COLORS.put.border, borderWidth: 1,
+                ...strikeChartPresentation?.DATASET_OPTIONS }
         ] },
         options: { responsive: true, maintainAspectRatio: false, animation: false,
             scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 16, maxRotation: 45,
@@ -6964,6 +6991,7 @@ function renderQriContractDisplayChart() {
                     return `${type}${isVolumeMode ? "取引高" : "建玉残"}：${values[context.dataIndex].toLocaleString()}枚`; } } } }
         }
     });
+    centerCombinedStrikeChart(combinedPriceChart, visible.map(item => item.label));
     setQriChartRendererIdentity({ rendererKind: "display_only",
         sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
         displayOnly: true, displayGeneration: source.displayGeneration });
@@ -7256,6 +7284,8 @@ console.log(
         return;
     }
 
+    const strikeChartPresentation = prepareCombinedStrikeChart(labels.length);
+
     if (combinedPriceChart) {
         combinedPriceChart.destroy();
         clearQriChartRendererIdentity();
@@ -7312,7 +7342,8 @@ console.log(
                     borderColor:
                         OPTION_SIDE_CHART_COLORS.call.border,
 
-                    borderWidth: 1
+                    borderWidth: 1,
+                    ...strikeChartPresentation?.DATASET_OPTIONS
                 },
                 {
                     label: isVolumeMode
@@ -7329,7 +7360,8 @@ console.log(
                     borderColor:
                         OPTION_SIDE_CHART_COLORS.put.border,
 
-                    borderWidth: 1
+                    borderWidth: 1,
+                    ...strikeChartPresentation?.DATASET_OPTIONS
                 }
             ]
         },
@@ -7461,6 +7493,7 @@ console.log(
             }
         }
     });
+    centerCombinedStrikeChart(combinedPriceChart, labels);
     setQriChartRendererIdentity({ rendererKind: "formal",
         sourceKind: sourceAvailability.rendererSourceKind || "formal",
         displayOnly: false });

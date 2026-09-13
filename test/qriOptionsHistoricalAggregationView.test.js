@@ -167,6 +167,13 @@ test("complete aggregationを専用ChartへCALL赤PUT青で表示", async () => 
     assert.equal(config.data.datasets[1].borderColor, "#285f9e");
     assert.deepEqual(config.data.datasets[0].backgroundColor, ["#9b4058"]);
     assert.deepEqual(config.data.datasets[1].backgroundColor, ["#285f9e"]);
+    config.data.datasets.forEach(dataset => {
+        assert.equal(dataset.categoryPercentage, 0.82);
+        assert.equal(dataset.barPercentage, 0.9);
+        assert.equal(dataset.maxBarThickness, 10);
+        assert.equal(Object.hasOwn(dataset, "barThickness"), false);
+        assert.equal(Object.hasOwn(dataset, "grouped"), false);
+    });
     assert.equal(ChartFake.instances[0].canvas.id, "historicalQriAggregationChart");
 });
 
