@@ -1327,6 +1327,9 @@
 <script src="js/currentPriceLastValidCache.js"></script>
 <script src="js/currentPriceLiveIdentityFact.js"></script>
 <script src="js/currentPriceLiveIdentityRuntime.js"></script>
+<script src="js/morningV5ReferencePriceFact.js"></script>
+<script src="js/morningV5CrossContractMapping.js"></script>
+<script src="js/morningV5ReferencePriceRuntime.js"></script>
 <script src="js/weeklyFormalIdentityRuntime.js"></script>
 <script src="js/overallV2FormalEnvelopeRuntime.js"></script>
 <script src="js/morningV4RuntimeFactContract.js"></script>
@@ -5732,6 +5735,17 @@ async function fetchQriData({ requestId } = {}) {
                 formalCurrentPriceMode: priceResult?.reason === "manual_mode"
                     ? "manual" : "automatic"
             });
+            await window.publishMorningV5ReferencePriceFact?.({
+                referencePrice: payload.referencePrices?.nikkei225Futures || null,
+                optionContract: payload.canonicalV2?.contract || null,
+                formalTradingDate: payload.canonicalV2?.tradingDate || null,
+                pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
+                sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl,
+                requestId: activeRequestId,
+                fetchedAt
+            }, {
+                isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
+            });
             if (priceResult?.success === true && priceResult.mode === "automatic") {
                 window.OptionMapCurrentPriceBootRestoreShadow
                     ?.markCurrentPriceBootRestoreShadowSuperseded({
@@ -6415,6 +6429,7 @@ function refreshAllMarketData() {
     initializeQriReferenceAcquisitionRuntime().beginMarketRefresh(requestId);
     initializeQriMajorSqAcquisitionRuntime().beginMarketRefresh(requestId);
     window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
+    window.invalidateMorningV5ReferencePriceFact?.("new_market_refresh");
     window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     const startedAt = new Date().toISOString();
 
