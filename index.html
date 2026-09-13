@@ -5385,6 +5385,19 @@ function initializeFormalBaselineRetryScheduler() {
     return formalBaselineRetryScheduler;
 }
 
+async function publishQriReferencePriceShadow(input, guard) {
+    return window.publishMorningV5ReferencePriceFact?.(input, { isCurrentRequest: guard });
+}
+
+function invalidateCrossContractShadow(reason) {
+    window.invalidateMorningV5ReferencePriceFact?.(reason);
+    window.invalidateMorningV5Shadow?.(reason);
+}
+
+async function publishCrossContractShadow() {
+    return window.publishMorningV5Shadow?.();
+}
+
 async function fetchQriData({ requestId } = {}) {
     const source = "qri";
     const sourceUrl = "https://svc.qri.jp/jpx/nkopm/";
@@ -5743,7 +5756,7 @@ async function fetchQriData({ requestId } = {}) {
                 formalCurrentPriceMode: priceResult?.reason === "manual_mode"
                     ? "manual" : "automatic"
             });
-            await window.publishMorningV5ReferencePriceFact?.({
+            await publishQriReferencePriceShadow({
                 referencePrice: payload.referencePrices?.nikkei225Futures || null,
                 optionContract: payload.canonicalV2?.contract || null,
                 formalTradingDate: payload.canonicalV2?.tradingDate || null,
@@ -5751,9 +5764,7 @@ async function fetchQriData({ requestId } = {}) {
                 sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl,
                 requestId: activeRequestId,
                 fetchedAt
-            }, {
-                isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId)
-            });
+            }, () => isCurrentFetchRequest(source, activeRequestId));
             if (priceResult?.success === true && priceResult.mode === "automatic") {
                 window.OptionMapCurrentPriceBootRestoreShadow
                     ?.markCurrentPriceBootRestoreShadowSuperseded({
@@ -6437,8 +6448,7 @@ function refreshAllMarketData() {
     initializeQriReferenceAcquisitionRuntime().beginMarketRefresh(requestId);
     initializeQriMajorSqAcquisitionRuntime().beginMarketRefresh(requestId);
     window.invalidateMorningComparisonV4Runtime?.("new_market_refresh");
-    window.invalidateMorningV5ReferencePriceFact?.("new_market_refresh");
-    window.invalidateMorningV5Shadow?.("new_market_refresh");
+    invalidateCrossContractShadow("new_market_refresh");
     window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
     const startedAt = new Date().toISOString();
 
@@ -6488,7 +6498,7 @@ function refreshAllMarketData() {
     marketRefreshPromise = runRefresh().finally(async () => {
         marketRefreshPromise = null;
         await window.publishMorningComparisonV4Runtime?.();
-        await window.publishMorningV5Shadow?.();
+        await publishCrossContractShadow();
         window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.();
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
         initializeQriMajorSqAcquisitionRuntime().completeFormalRender(requestId);
