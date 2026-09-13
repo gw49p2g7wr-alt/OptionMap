@@ -1,14 +1,16 @@
 (function (root, factory) { const commonJs = typeof module === "object" && module.exports && !(root && root.document);
     const supplyApi = commonJs ? require("./morningV5SupplyDemandLane.js") : root?.OptionMapMorningV5SupplyDemandLane;
     const priceApi = commonJs ? require("./morningV5ReferencePriceLane.js") : root?.OptionMapMorningV5ReferencePriceLane;
-    const api = factory(supplyApi, priceApi); if (commonJs) module.exports = api;
+    const guardApi = commonJs ? require("./morningV5ShadowGenerationGuard.js") :
+        root?.OptionMapMorningV5ShadowGenerationGuard;
+    const api = factory(supplyApi, priceApi, guardApi); if (commonJs) module.exports = api;
     if (root) { root.OptionMapMorningV5ShadowCollector = api; const collector = api.createCollector({
         getQri: () => root.getQriFormalIdentityFact?.(), getWeekly: () => root.getWeeklyFormalIdentityFact?.(),
         getOverall: () => root.getOverallV2FormalEnvelope?.(),
         getReference: () => root.getMorningV5ReferencePriceFact?.(),
         isRefreshInProgress: () => root.isMarketRefreshInProgress?.() === true });
         root.collectMorningV5Shadow = collector.collect; root.getMorningV5ShadowCollectorState = collector.getState; }
-})(typeof window !== "undefined" ? window : globalThis, function (supplyApi, priceApi) {
+})(typeof window !== "undefined" ? window : globalThis, function (supplyApi, priceApi, guardApi) {
     "use strict"; const COLLECTOR_VERSION = 1;
     const clone = value => value == null ? value : typeof structuredClone === "function" ?
         structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -46,15 +48,17 @@
             await beforeEndSnapshot?.(); const end = sourceSnapshot(getters);
             const refreshAtEnd = getters.isRefreshInProgress?.() === true;
             const startGeneration = sourceGenerations(start), endGeneration = sourceGenerations(end);
-            const changed = JSON.stringify(startGeneration) !== JSON.stringify(endGeneration);
-            const ready = formalSupplyDemand.available === true && !refreshAtStart && !refreshAtEnd && !changed;
+            const guard = guardApi.evaluateMorningV5ShadowGenerationGuard(startGeneration, endGeneration);
+            const changed = !guard.generationMatched;
+            const ready = formalSupplyDemand.available === true && !refreshAtStart && !refreshAtEnd && guard.accepted;
             state = freeze({ collectorVersion: COLLECTOR_VERSION, status: ready ? "ready" : "not_ready",
-                reason: refreshAtStart || refreshAtEnd ? "refresh_in_progress" : changed ?
-                    "source_generation_changed" : formalSupplyDemand.reason, collectedAt,
+                reason: refreshAtStart || refreshAtEnd ? "refresh_in_progress" : !guard.accepted ?
+                    guard.reason : formalSupplyDemand.reason, collectedAt,
                 formalSupplyDemand, referencePrice, sourceGenerations: { start: startGeneration,
                     end: endGeneration }, diagnostics: { formalReady: formalSupplyDemand.available === true,
                     referenceReady: referencePrice.available === true, refreshInProgress:
-                        refreshAtStart || refreshAtEnd, generationsMatched: !changed } });
+                        refreshAtStart || refreshAtEnd, generationsMatched: !changed,
+                    generationGuard: guard } });
             return state;
         }
         return freeze({ collect, getState: () => freeze(clone(state)) }); }
