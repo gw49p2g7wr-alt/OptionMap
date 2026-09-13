@@ -23,6 +23,13 @@ test("mapping identity is deterministic and binds every relevant identity", asyn
     const changed = await Mapping.buildMorningV5CrossContractMapping(changedFact);
     assert.equal(first.mappingId, duplicate.mappingId); assert.notEqual(first.mappingId, changed.mappingId);
 });
+test("mapping identity remains stable across price observations", async () => {
+    const firstFact = await fact(); const nextFact = await fact({ referencePrice: { price: 43500 } });
+    const first = await Mapping.buildMorningV5CrossContractMapping(firstFact);
+    const next = await Mapping.buildMorningV5CrossContractMapping(nextFact);
+    assert.notEqual(first.referenceVersionKey, next.referenceVersionKey);
+    assert.equal(first.mappingId, next.mappingId);
+});
 test("same-contract is explicit and unresolved or cross-date facts fail closed", async () => {
     const same = await fact({ optionContract: "2026-12" });
     assert.equal((await Mapping.buildMorningV5CrossContractMapping(same)).mappingClass,

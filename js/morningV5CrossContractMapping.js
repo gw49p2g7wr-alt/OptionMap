@@ -24,7 +24,10 @@
             .createHash("sha256").update(serialized).digest("hex");
         const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(serialized));
         return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join(""); }
-    function content(mapping) { const value = { ...mapping }; delete value.mappingId; return value; }
+    function content(mapping) { const value = { ...mapping }; delete value.mappingId;
+        // The quote version is evidence attached to the mapping, not part of the stable
+        // contract/date mapping identity used to compare two price observations.
+        delete value.referenceVersionKey; return value; }
     async function buildMorningV5CrossContractMapping(fact) {
         if (!await factApi?.validateMorningV5ReferencePriceFact?.(fact)) return null;
         if (fact.quoteDate !== fact.formalTradingDate) return null;
