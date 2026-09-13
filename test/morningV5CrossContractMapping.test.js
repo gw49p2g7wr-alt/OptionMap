@@ -30,12 +30,14 @@ test("mapping identity remains stable across price observations", async () => {
     assert.notEqual(first.referenceVersionKey, next.referenceVersionKey);
     assert.equal(first.mappingId, next.mappingId);
 });
-test("same-contract is explicit and unresolved or cross-date facts fail closed", async () => {
+test("same-contract is explicit and cross-date evidence remains explicit", async () => {
     const same = await fact({ optionContract: "2026-12" });
     assert.equal((await Mapping.buildMorningV5CrossContractMapping(same)).mappingClass,
         "same_contract_reference");
     const crossDate = await fact({ formalTradingDate: "2026-09-13" });
-    assert.equal(await Mapping.buildMorningV5CrossContractMapping(crossDate), null);
+    const mapped = await Mapping.buildMorningV5CrossContractMapping(crossDate);
+    assert.equal(mapped.formalTradingDate, "2026-09-13");
+    assert.equal(mapped.quoteDate, "2026-09-14");
     assert.equal(await Mapping.buildMorningV5CrossContractMapping({}), null);
 });
 test("tampered mapping is rejected", async () => {

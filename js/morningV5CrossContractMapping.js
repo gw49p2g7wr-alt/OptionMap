@@ -30,7 +30,6 @@
         delete value.referenceVersionKey; return value; }
     async function buildMorningV5CrossContractMapping(fact) {
         if (!await factApi?.validateMorningV5ReferencePriceFact?.(fact)) return null;
-        if (fact.quoteDate !== fact.formalTradingDate) return null;
         const mapping = { mappingVersion: MAPPING_VERSION, status: "verified",
             mappingClass: fact.optionContract === fact.contract ? "same_contract_reference" :
                 "explicit_cross_contract_reference", optionContract: fact.optionContract,
