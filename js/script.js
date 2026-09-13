@@ -3100,6 +3100,14 @@ function centerCombinedStrikeChart(chart, labels) {
     });
 }
 
+function renderCombinedStrikeChartLegend(chart = null) {
+    window.OptionMapStrikeBarChartPresentation?.renderLegend?.({
+        documentRef: document,
+        legend: document.getElementById("combinedPriceChartLegend"),
+        datasets: chart?.data?.datasets || []
+    });
+}
+
 
 
 const currentPriceLinePlugin = {
@@ -6985,12 +6993,13 @@ function renderQriContractDisplayChart() {
             y: { min: -115, max: 115, ticks: { stepSize: 100,
                 font: { size: CHART_TEXT_SIZE.axis, weight: "600" },
                 callback: value => value === 100 ? "CALL" : value === -100 ? "PUT" : value === 0 ? "0" : "" } } },
-            plugins: { legend: { ...readableLegendOptions() }, tooltip: { ...readableTooltipOptions(),
+            plugins: { legend: { display: false }, tooltip: { ...readableTooltipOptions(),
                 callbacks: { label(context) { const values = context.datasetIndex === 0
                     ? numericCallValues : numericPutValues; const type = context.datasetIndex === 0 ? "CALL" : "PUT";
                     return `${type}${isVolumeMode ? "取引高" : "建玉残"}：${values[context.dataIndex].toLocaleString()}枚`; } } } }
         }
     });
+    renderCombinedStrikeChartLegend(combinedPriceChart);
     centerCombinedStrikeChart(combinedPriceChart, visible.map(item => item.label));
     setQriChartRendererIdentity({ rendererKind: "display_only",
         sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
@@ -7023,6 +7032,7 @@ window.setQriContractDisplayUnavailable = function (contract) {
         combinedPriceChart = null;
         clearQriChartRendererIdentity();
     }
+    renderCombinedStrikeChartLegend();
     return true;
 };
 
@@ -7451,7 +7461,7 @@ console.log(
 
             plugins: {
                 legend: {
-                    ...readableLegendOptions()
+                    display: false
                 },
 
                 tooltip: {
@@ -7493,6 +7503,7 @@ console.log(
             }
         }
     });
+    renderCombinedStrikeChartLegend(combinedPriceChart);
     centerCombinedStrikeChart(combinedPriceChart, labels);
     setQriChartRendererIdentity({ rendererKind: "formal",
         sourceKind: sourceAvailability.rendererSourceKind || "formal",

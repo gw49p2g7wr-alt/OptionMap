@@ -26,7 +26,8 @@ class Element {
 const IDS = ["historicalQriAggregationPanel", "historicalQriAggregationContracts",
     "historicalQriAggregationDate", "historicalQriAggregationState",
     "historicalQriAggregationContent", "historicalQriAggregationMetadata",
-    "historicalQriAggregationPartialLegend", "historicalQriAggregationChartContainer",
+    "historicalQriAggregationPartialLegend", "historicalQriAggregationChartLegend",
+    "historicalQriAggregationChartContainer",
     "historicalQriAggregationChart", "historicalQriAggregationDeveloperDetails"];
 
 function documentFixture() {
@@ -174,6 +175,10 @@ test("complete aggregationを専用ChartへCALL赤PUT青で表示", async () => 
         assert.equal(Object.hasOwn(dataset, "barThickness"), false);
         assert.equal(Object.hasOwn(dataset, "grouped"), false);
     });
+    assert.equal(config.options.plugins.legend.display, false);
+    assert.equal(value.nodes.historicalQriAggregationChartLegend.hidden, false);
+    assert.deepEqual(value.nodes.historicalQriAggregationChartLegend.children
+        .map(item => item.children[1].textContent), ["CALL合算", "PUT合算"]);
     assert.equal(ChartFake.instances[0].canvas.id, "historicalQriAggregationChart");
 });
 

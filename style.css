@@ -73,6 +73,34 @@ body{
     overscroll-behavior-inline: contain;
 }
 
+.strike-bar-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 18px;
+    margin: 4px 0 10px;
+    color: #475467;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.strike-bar-chart-legend[hidden] {
+    display: none;
+}
+
+.strike-bar-chart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.strike-bar-chart-legend-swatch {
+    width: 28px;
+    height: 12px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+}
+
 .strike-bar-chart-plot {
     position: relative;
     width: 100%;

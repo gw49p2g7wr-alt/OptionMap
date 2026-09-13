@@ -36,6 +36,7 @@
             content: get("historicalQriAggregationContent"),
             metadata: get("historicalQriAggregationMetadata"),
             legend: get("historicalQriAggregationPartialLegend"),
+            chartLegend: get("historicalQriAggregationChartLegend"),
             chartContainer: get("historicalQriAggregationChartContainer"),
             chartPlot: get("historicalQriAggregationChartPlot"),
             canvas: get("historicalQriAggregationChart"),
@@ -111,6 +112,7 @@
             if (dom.metadata) dom.metadata.textContent = "";
             if (dom.legend) dom.legend.hidden = true;
             if (dom.chartContainer) dom.chartContainer.hidden = true;
+            presentation?.renderLegend?.({ documentRef, legend: dom.chartLegend, datasets: [] });
             if (dom.developer) dom.developer.textContent = "";
         }
 
@@ -228,9 +230,11 @@
                 ] }, options: { responsive: true, maintainAspectRatio: false, animation: false,
                 scales: { x: { title: { display: true, text: "権利行使価格" } },
                     y: { beginAtZero: true, title: { display: true, text: "建玉残合計" } } },
-                plugins: { legend: { display: true }, tooltip: { callbacks: {
+                plugins: { legend: { display: false }, tooltip: { callbacks: {
                     label: context => tooltipLabel(aggregation, context)
                 } } } } });
+            presentation?.renderLegend?.({ documentRef, legend: dom.chartLegend,
+                datasets: chart.configuration?.data?.datasets || chart.data?.datasets });
             if (dom.chartContainer) dom.chartContainer.hidden = false;
             return true;
         }

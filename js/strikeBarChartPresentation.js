@@ -35,6 +35,35 @@
         return true;
     }
 
+    function firstColor(value) {
+        return Array.isArray(value) ? value.find(color => typeof color === "string") : value;
+    }
+
+    function renderLegend({ documentRef, legend, datasets } = {}) {
+        if (!legend?.replaceChildren || !documentRef?.createElement) return false;
+        const visibleDatasets = Array.isArray(datasets)
+            ? datasets.filter(dataset => dataset && dataset.label) : [];
+        const items = visibleDatasets.map(dataset => {
+            const item = documentRef.createElement("span");
+            const swatch = documentRef.createElement("span");
+            const label = documentRef.createElement("span");
+            item.className = "strike-bar-chart-legend-item";
+            swatch.className = "strike-bar-chart-legend-swatch";
+            const backgroundColor = firstColor(dataset.backgroundColor);
+            const borderColor = firstColor(dataset.borderColor);
+            if (swatch.style) {
+                if (typeof backgroundColor === "string") swatch.style.backgroundColor = backgroundColor;
+                if (typeof borderColor === "string") swatch.style.borderColor = borderColor;
+            }
+            label.textContent = String(dataset.label);
+            item.replaceChildren(swatch, label);
+            return item;
+        });
+        legend.replaceChildren(...items);
+        legend.hidden = items.length === 0;
+        return items.length > 0;
+    }
+
     return Object.freeze({ SLOT_WIDTH, AXIS_ALLOWANCE, DATASET_OPTIONS,
-        preparePlot, centerIndex });
+        preparePlot, centerIndex, renderLegend });
 });

@@ -38,6 +38,7 @@
             state: get("historicalQriState"),
             content: get("historicalQriContent"),
             metadata: get("historicalQriMetadata"),
+            chartLegend: get("historicalQriChartLegend"),
             chartContainer: get("historicalQriChartContainer"),
             chartPlot: get("historicalQriChartPlot"),
             canvas: get("historicalQriOpenInterestChart"),
@@ -125,6 +126,7 @@
             if (dom.metadata) dom.metadata.textContent = "";
             if (dom.developer) dom.developer.textContent = "";
             if (dom.chartContainer) dom.chartContainer.hidden = true;
+            presentation?.renderLegend?.({ documentRef, legend: dom.chartLegend, datasets: [] });
         }
 
         function renderMetadata(metadata) {
@@ -166,8 +168,10 @@
                 options: { responsive: true, maintainAspectRatio: false, animation: false,
                     scales: { x: { title: { display: true, text: "権利行使価格" } },
                         y: { beginAtZero: true, title: { display: true, text: "建玉残" } } },
-                    plugins: { legend: { display: true }, tooltip: { enabled: true } } }
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } } }
             });
+            presentation?.renderLegend?.({ documentRef, legend: dom.chartLegend,
+                datasets: chart.configuration?.data?.datasets || chart.data?.datasets });
             if (dom.chartContainer) dom.chartContainer.hidden = false;
             return true;
         }

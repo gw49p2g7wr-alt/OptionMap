@@ -18,7 +18,7 @@ class Element {
 
 const IDS = ["historicalQriPanel", "historyContractSelect", "historyDateSelect",
     "historicalQriState", "historicalQriContent", "historicalQriMetadata",
-    "historicalQriChartContainer", "historicalQriOpenInterestChart",
+    "historicalQriChartLegend", "historicalQriChartContainer", "historicalQriOpenInterestChart",
     "historicalQriDeveloperDetails"];
 
 function documentFixture() {
@@ -139,6 +139,10 @@ test("専用chartはCALL赤PUT青を使いunpublished nullを維持", async () =
     })), [0, 1].map(() => ({ categoryPercentage: 0.82, barPercentage: 0.9,
         maxBarThickness: 10, barThickness: undefined, grouped: undefined })));
     assert.equal(configuration.plugins, undefined);
+    assert.equal(configuration.options.plugins.legend.display, false);
+    assert.equal(value.nodes.historicalQriChartLegend.hidden, false);
+    assert.deepEqual(value.nodes.historicalQriChartLegend.children
+        .map(item => item.children[1].textContent), ["CALL建玉残", "PUT建玉残"]);
 });
 
 test("metadata・historical notice・developer detailsを分離", async () => {
