@@ -14,6 +14,7 @@ function records(sourceDate, suffix = "1") { const entryKey = Schema.entryKeyFor
     return { entry: { entryKey, sourceDate, activeRevisionKey: revisionKey,
         firstSeenAt: confirmedAt, lastSeenAt: confirmedAt }, revision: { revisionKey, entryKey,
         sourceDate, versionKey, signatureAlgorithm: "sha256", signature: "a".repeat(64),
+        contentSignature: "a".repeat(64),
         confirmedAt, replacedAt: null, revisionState: "active", completeSet: { sourceDate } } }; }
 async function seed(store, rows) { const db = await store.openArchive(), tx = db.transaction([
     Schema.META_STORE, Schema.ENTRY_STORE, Schema.REVISION_STORE], "readwrite");

@@ -16,6 +16,7 @@ test("active and replaced revision records have explicit integrity state", () =>
     const base = { revisionKey: "participant|2026-09-14|version-1",
         entryKey: "participant|2026-09-14", sourceDate: "2026-09-14", versionKey: "version-1",
         signatureAlgorithm: "sha256", signature: "a".repeat(64),
+        contentSignature: "a".repeat(64),
         confirmedAt: "2026-09-14T01:00:00.000Z", completeSet: {} };
     assert.equal(Schema.validateRevision({ ...base, revisionState: "active", replacedAt: null }), true);
     assert.equal(Schema.validateRevision({ ...base, revisionState: "replaced",

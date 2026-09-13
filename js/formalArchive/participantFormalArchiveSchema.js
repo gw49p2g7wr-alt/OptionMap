@@ -50,6 +50,7 @@
         if (!object(value) || !isoDate(value.sourceDate) || value.entryKey !== entryKeyFor(value.sourceDate) ||
             !text(value.revisionKey) || !text(value.versionKey) || value.revisionKey !==
                 `${value.entryKey}|${value.versionKey}` || !/^[0-9a-f]{64}$/.test(value.signature || "") ||
+            value.contentSignature !== value.signature ||
             value.signatureAlgorithm !== "sha256" || !timestamp(value.confirmedAt) ||
             !["active", "replaced"].includes(value.revisionState) || !object(value.completeSet)) return false;
         return value.revisionState === "active" ? value.replacedAt === null : timestamp(value.replacedAt);
