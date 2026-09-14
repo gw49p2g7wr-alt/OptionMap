@@ -18,10 +18,10 @@
         rollover: "hard_identity_boundary"
     });
     const DERIVATION_SEMANTICS = Object.freeze({
-        delta: "current_minus_previous_published_observation",
+        delta: "current_minus_immediately_previous_saved_observation_both_published",
         rankChange: "current_rank_minus_previous_rank_negative_is_improvement",
         max: "maximum_published_oi_earliest_date_wins_tie",
-        ivChange: "current_minus_previous_available_iv",
+        ivChange: "current_minus_immediately_previous_saved_observation_both_iv_available",
         priceDistance: "strike_minus_exactly_mapped_reference_price",
         disappearance: "only_published_zero_is_zero_confirmed",
         nonDisappearance: "notPublished_missing_gap_are_unknown_not_disappeared"

@@ -89,6 +89,17 @@ test("missing、notPublished、gap、observedを混同しない", () => {
     assert.match(result.semantics.derived.nonDisappearance, /notPublished_missing_gap/);
 });
 
+test("notPublishedやmissingを飛び越えてdelta・rank change・IV changeを算出しない", () => {
+    const source = fixture();
+    const result = Projection.projectWallHistory(source);
+    const newWall = result.walls.find(item => item.strike === 65000 && item.side === "call");
+    assert.equal(newWall.observations[1].previousObservationTradingDate, "2026-09-11");
+    assert.equal(newWall.observations[1].previousObservedTradingDate, null);
+    assert.equal(newWall.observations[1].previousObservationDelta, null);
+    const put = result.walls.find(item => item.strike === 64000 && item.side === "put");
+    assert.equal(put.observations[1].previousObservationDelta, null);
+});
+
 test("IV exact joinとQRI revision完全一致Price Snapshotだけを採用", () => {
     const source = fixture(); source.priceSnapshots.push({ ...source.priceSnapshots[0], price: 1,
         snapshotId: "wrong", observedAt: "2026-09-15T09:00:00Z",

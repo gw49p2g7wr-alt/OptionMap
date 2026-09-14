@@ -116,23 +116,25 @@
         }
         const projectedWalls = [...walls.values()].map(wall => {
             wall.observations.sort((a, b) => a.tradingDate.localeCompare(b.tradingDate));
-            let previousObserved = null, previousIv = null, maxOi = null, maxOiDate = null;
+            let previousItem = null, maxOi = null, maxOiDate = null;
             for (const item of wall.observations) {
-                item.previousObservedTradingDate = previousObserved?.tradingDate || null;
-                item.previousObservationDelta = item.state === "observed" && previousObserved
-                    ? item.openInterest - previousObserved.openInterest : null;
-                item.rankChange = item.state === "observed" && previousObserved
-                    ? item.rank - previousObserved.rank : null;
+                item.previousObservationTradingDate = previousItem?.tradingDate || null;
+                item.previousObservedTradingDate = previousItem?.state === "observed"
+                    ? previousItem.tradingDate : null;
+                item.previousObservationDelta = item.state === "observed" && previousItem?.state === "observed"
+                    ? item.openInterest - previousItem.openInterest : null;
+                item.rankChange = item.state === "observed" && previousItem?.state === "observed"
+                    ? item.rank - previousItem.rank : null;
                 item.shrinkState = item.state !== "observed" ? "unavailable"
                     : item.openInterest === 0 ? "zero_confirmed"
                     : item.previousObservationDelta < 0 ? "shrinking" : "not_shrinking";
                 item.zeroState = item.state === "observed" && item.openInterest === 0
                     ? "zero_confirmed" : item.state === "observed" ? "nonzero" : "unavailable";
-                item.ivChange = item.iv.status === "available" && previousIv !== null
-                    ? item.iv.value - previousIv : null;
+                item.ivChange = item.iv.status === "available" && previousItem?.iv.status === "available"
+                    ? item.iv.value - previousItem.iv.value : null;
                 if (item.state === "observed") { if (maxOi === null || item.openInterest > maxOi) {
-                    maxOi = item.openInterest; maxOiDate = item.tradingDate; } previousObserved = item; }
-                if (item.iv.status === "available") previousIv = item.iv.value;
+                    maxOi = item.openInterest; maxOiDate = item.tradingDate; } }
+                previousItem = item;
             }
             const observed = wall.observations.filter(item => item.state === "observed");
             const notPublished = wall.observations.filter(item => item.state === "notPublished");
