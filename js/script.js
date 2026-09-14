@@ -929,6 +929,7 @@ function getCurrentQriOpenInterestSourceDate() {
 }
 
 function setQriOpenInterestDataUnavailable() {
+    qriFormalChartContract = null;
     Object.assign(qriOpenInterestDataState, {
         status: null,
         sourceDate: null,
@@ -945,6 +946,7 @@ function applyFallbackQriOpenInterest({
     callVolumes,
     putVolumes
 } = {}) {
+    qriFormalChartContract = null;
     const cache = lastValidQriOpenInterestCache;
 
     if (!isValidQriOpenInterestCache(cache)) {
@@ -1141,17 +1143,22 @@ let currentChartMode = "openInterest";
 let qriContractDisplayData = null;
 let qriChartRendererIdentity = null;
 let qriChartRendererGeneration = 0;
+let qriFormalChartContract = null;
 
 function setQriChartRendererIdentity({ rendererKind, sourceKind, displayOnly,
-    displayGeneration = null } = {}) {
+    displayGeneration = null, contract = null, mode = currentChartMode } = {}) {
+    window.wallHistoryDrawerRuntime?.close?.();
     qriChartRendererIdentity = Object.freeze({ rendererKind, sourceKind,
         displayOnly, generation: ++qriChartRendererGeneration,
+        contract: /^20\d{2}-(0[1-9]|1[0-2])$/.test(contract || "") ? contract : null,
+        mode,
         displayGeneration: Number.isSafeInteger(displayGeneration)
             ? displayGeneration : null,
         renderedAt: new Date().toISOString() });
 }
 
 function clearQriChartRendererIdentity() {
+    window.wallHistoryDrawerRuntime?.close?.();
     qriChartRendererIdentity = null;
 }
 let lastJpxFetchedAt = null;
@@ -3317,7 +3324,10 @@ function applyCurrentPrice({
             allJpxPutVolumes,
             {
                 openInterestAvailable: jpxOpenInterestAvailable === true,
-                openInterestLabels: allJpxOpenInterestLabels
+                openInterestLabels: allJpxOpenInterestLabels,
+                rendererSourceKind: qriChartRendererIdentity?.sourceKind || null,
+                contract: qriChartRendererIdentity?.rendererKind === "formal"
+                    ? qriChartRendererIdentity.contract : null
             }
         );
     }
@@ -3851,7 +3861,10 @@ function switchChartMode(mode) {
             allJpxPutVolumes,
             {
                 openInterestAvailable: jpxOpenInterestAvailable === true,
-                openInterestLabels: allJpxOpenInterestLabels
+                openInterestLabels: allJpxOpenInterestLabels,
+                rendererSourceKind: qriChartRendererIdentity?.sourceKind || null,
+                contract: qriChartRendererIdentity?.rendererKind === "formal"
+                    ? qriChartRendererIdentity.contract : null
             }
         );
     }
@@ -6972,14 +6985,14 @@ function renderQriContractDisplayChart() {
         type: "bar",
         plugins: [currentPriceLinePlugin],
         data: { labels: visible.map(item => item.label), datasets: [
-            { label: isVolumeMode ? "CALL取引高" : "CALL建玉残",
+            { label: isVolumeMode ? "CALL取引高" : "CALL建玉残", optionSide: "call",
                 data: numericCallValues.map(value => value / maxCall * 100),
                 backgroundColor: createBarColors(numericCallValues,
                     OPTION_SIDE_CHART_COLORS.call.soft,
                     OPTION_SIDE_CHART_COLORS.call.strong),
                 borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1,
                 ...strikeChartPresentation?.DATASET_OPTIONS },
-            { label: isVolumeMode ? "PUT取引高" : "PUT建玉残",
+            { label: isVolumeMode ? "PUT取引高" : "PUT建玉残", optionSide: "put",
                 data: numericPutValues.map(value => -(value / maxPut * 100)),
                 backgroundColor: createBarColors(numericPutValues,
                     OPTION_SIDE_CHART_COLORS.put.soft,
@@ -7003,7 +7016,7 @@ function renderQriContractDisplayChart() {
     centerCombinedStrikeChart(combinedPriceChart, visible.map(item => item.label));
     setQriChartRendererIdentity({ rendererKind: "display_only",
         sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
-        displayOnly: true, displayGeneration: source.displayGeneration });
+        displayOnly: true, displayGeneration: source.displayGeneration, contract: source.contract });
     return true;
 }
 
@@ -7080,6 +7093,10 @@ window.drawJpxPriceChart = function (
     putVolumes,
     sourceAvailability = {}
 ) {    
+    if (sourceAvailability.rendererSourceKind === "live" &&
+        /^20\d{2}-(0[1-9]|1[0-2])$/.test(sourceAvailability.contract || "")) {
+        qriFormalChartContract = sourceAvailability.contract;
+    }
     const previousOpenInterestAvailability =
         jpxOpenInterestAvailable;
     const hasExplicitOpenInterestAvailability =
@@ -7341,6 +7358,7 @@ console.log(
                     label: isVolumeMode
                         ? "CALL取引高"
                         : "CALL建玉残",
+                    optionSide: "call",
                     data: normalizedCallValues,
 
                     backgroundColor: createBarColors(
@@ -7359,6 +7377,7 @@ console.log(
                     label: isVolumeMode
                         ? "PUT取引高"
                         : "PUT建玉残",
+                    optionSide: "put",
                     data: normalizedPutValues,
 
                     backgroundColor: createBarColors(
@@ -7507,7 +7526,7 @@ console.log(
     centerCombinedStrikeChart(combinedPriceChart, labels);
     setQriChartRendererIdentity({ rendererKind: "formal",
         sourceKind: sourceAvailability.rendererSourceKind || "formal",
-        displayOnly: false });
+        displayOnly: false, contract: sourceAvailability.contract || qriFormalChartContract });
 
     updateWallCandidates(
         labels,

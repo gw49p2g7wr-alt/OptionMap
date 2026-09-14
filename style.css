@@ -2426,3 +2426,50 @@ canvas {
     .full-export-controls { align-items: stretch; flex-direction: column; }
     .full-export-actions { min-width: 0; text-align: left; }
 }
+.wall-history-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1190;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.wall-history-drawer {
+    position: fixed;
+    z-index: 1200;
+    top: 0;
+    right: 0;
+    width: min(680px, 92vw);
+    height: 100vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+    background: #fff;
+    color: #172033;
+    box-shadow: -10px 0 32px rgba(15, 23, 42, 0.24);
+}
+
+.wall-history-drawer-header { display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; position: sticky; top: -20px; z-index: 2; padding: 20px 0 12px;
+    background: #fff; border-bottom: 1px solid #d9deea; }
+.wall-history-drawer-header h3 { margin: 8px 0 0; }
+.wall-history-drawer-header button { min-width: 44px; min-height: 44px; font-size: 26px; }
+.wall-history-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wall-history-summary div { padding: 10px; border: 1px solid #e0e5ef; border-radius: 8px; }
+.wall-history-summary dt { font-size: 12px; color: #64748b; }
+.wall-history-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; font-weight: 600; }
+.wall-history-chart { height: 230px; }
+.wall-history-table-scroll { overflow-x: auto; }
+.wall-history-table-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.wall-history-table-scroll th, .wall-history-table-scroll td { padding: 7px; border-bottom: 1px solid #e4e8f0; text-align: right; }
+.wall-history-table-scroll th:first-child, .wall-history-table-scroll td:first-child,
+.wall-history-table-scroll th:nth-child(2), .wall-history-table-scroll td:nth-child(2) { text-align: left; }
+.wall-history-drawer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wall-history-unavailable { background: #fff8e8; border: 1px solid #f4d69b; border-radius: 8px; padding: 0 12px; }
+body.wall-history-open { overflow: hidden; }
+
+@media (max-width: 640px) {
+    .wall-history-drawer { width: 100vw; padding: 14px; }
+    .wall-history-drawer-header { top: -14px; padding-top: 14px; }
+    .wall-history-summary { grid-template-columns: 1fr; }
+    .wall-history-chart { height: 200px; }
+}

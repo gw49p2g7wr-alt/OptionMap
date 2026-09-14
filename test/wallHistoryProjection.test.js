@@ -135,11 +135,11 @@ test("最大建玉は各日side内のrank 1と一致し未知metricを生成し�
     assert.equal(result.diagnostics.inferredUnavailableMetrics, false);
 });
 
-test("JSON getterのみを公開しUI、Full Export、Overall、Morningへ接続しない", () => {
+test("projection coreはstorage、Full Export、Overall、Morningへ接続しない", () => {
     const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
     assert.match(html, /wallHistoryContract\.js[\s\S]*wallHistoryProjection\.js/);
     for (const file of ["js/fullExportCollector.js", "js/overallJudgmentV2.js", "js/morningBaselineV4.js",
-        "js/morningBaselineV5.js", "js/script.js"]) {
+        "js/morningBaselineV5.js"]) {
         assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), /WallHistory/);
     }
     const projectionSource = fs.readFileSync(path.join(__dirname, "..", "js/wallHistoryProjection.js"), "utf8");

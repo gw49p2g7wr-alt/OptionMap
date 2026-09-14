@@ -999,9 +999,45 @@
             <div id="combinedPriceChartContainer"
                 class="chart-container combined-chart-container strike-bar-chart-scroll">
                 <div id="combinedPriceChartPlot" class="strike-bar-chart-plot">
-                    <canvas id="combinedPriceChart"></canvas>
+                    <canvas id="combinedPriceChart" tabindex="0"
+                        aria-label="CALL・PUT建玉残。建玉の棒を選ぶとWall Historyを表示します"></canvas>
                 </div>
             </div>
+
+            <div id="wallHistoryDrawerBackdrop" class="wall-history-drawer-backdrop" hidden></div>
+            <aside id="wallHistoryDrawer" class="wall-history-drawer" role="dialog"
+                aria-modal="true" aria-labelledby="wallHistoryDrawerTitle" hidden>
+                <header class="wall-history-drawer-header">
+                    <div><span class="historical-qri-badge">Wall History β</span>
+                        <h3 id="wallHistoryDrawerTitle">Wall History</h3></div>
+                    <button id="wallHistoryDrawerClose" type="button" aria-label="Wall Historyを閉じる">×</button>
+                </header>
+                <p id="wallHistoryDrawerStatus" role="status" aria-live="polite"></p>
+                <div id="wallHistoryDrawerContent" hidden>
+                    <dl class="wall-history-summary">
+                        <div><dt>wall identity</dt><dd id="wallHistoryIdentity"></dd></div>
+                        <div><dt>初出日</dt><dd id="wallHistoryFirstSeen"></dd></div>
+                        <div><dt>最大OI / 日付</dt><dd id="wallHistoryMax"></dd></div>
+                        <div><dt>前回観測差</dt><dd id="wallHistoryLatestDelta"></dd></div>
+                        <div><dt>rank / rank change</dt><dd id="wallHistoryLatestRank"></dd></div>
+                        <div><dt>shrink / zero</dt><dd id="wallHistoryLatestState"></dd></div>
+                    </dl>
+                    <section><h4>OI時系列</h4><div class="wall-history-chart"><canvas id="wallHistoryOiChart"></canvas></div></section>
+                    <section id="wallHistoryIvSection"><h4>IV推移 <small id="wallHistoryIvCoverage"></small></h4>
+                        <p id="wallHistoryIvUnavailable" hidden>一致するIVなし（補完なし）</p>
+                        <div class="wall-history-chart"><canvas id="wallHistoryIvChart"></canvas></div></section>
+                    <section id="wallHistoryReferenceSection" hidden><h4>reference価格（厳密join時のみ）</h4>
+                        <div class="wall-history-chart"><canvas id="wallHistoryReferenceChart"></canvas></div></section>
+                    <section><h4>coverage / quality</h4><p id="wallHistoryCoverage"></p>
+                        <p id="wallHistoryQuality"></p><pre id="wallHistoryGapList"></pre></section>
+                    <section><h4>観測明細</h4><div class="wall-history-table-scroll"><table>
+                        <thead><tr><th>日付</th><th>状態</th><th>OI</th><th>差</th><th>rank</th><th>rank変化</th>
+                            <th>shrink</th><th>zero</th><th>IV</th><th>source revision</th></tr></thead>
+                        <tbody id="wallHistoryObservationBody"></tbody></table></div></section>
+                    <section class="wall-history-unavailable"><h4>未保存fact</h4>
+                        <p id="wallHistoryUnavailableFacts"></p></section>
+                </div>
+            </aside>
 
             <details id="qriIvCurvePanel"
                 class="qri-iv-curve-panel ui-category-panel category-options">
@@ -1372,6 +1408,9 @@
 <script src="js/wallHistoryProjection.js"></script>
 <script src="js/wallHistoryShadowEvaluation.js"></script>
 <script src="js/wallHistoryShadowRuntime.js"></script>
+<script src="js/wallHistoryDrawerModel.js"></script>
+<script src="js/wallHistoryChartSelection.js"></script>
+<script src="js/wallHistoryDrawerView.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/weeklyFuturesHistoryReadOnlyDiagnostic.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
@@ -1386,6 +1425,7 @@
 <script src="js/qriOptionOpenInterestComparisonDiagnostics.js"></script>
 <script src="js/jpxSnapshotSafety.js"></script>
 <script src="js/script.js"></script>
+<script src="js/wallHistoryDrawerRuntime.js"></script>
 <script src="js/fullExportSecurity.js"></script>
 <script src="js/fullExport.js"></script>
 <script src="js/fullExportAiSummary.js"></script>
@@ -5860,6 +5900,7 @@ async function fetchQriData({ requestId } = {}) {
                         openInterestAvailable:
                             payload.openInterestAvailable,
                         rendererSourceKind: "live",
+                        contract: payload.canonicalV2?.contract || null,
                         openInterestLabels: payload.labels,
                         callOpenInterestAvailable:
                             payload.callOpenInterestAvailable,
