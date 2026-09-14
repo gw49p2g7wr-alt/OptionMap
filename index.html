@@ -888,36 +888,49 @@
                     <p>これは保存時点のQRI建玉スナップショットです。現在値ではありません。</p>
                 </div>
                 <div id="timeTravelBanner" class="time-travel-banner" hidden>
-                    <strong id="timeTravelBannerText">過去表示</strong>
-                    <span>保存済みFormal snapshot・現在値ではありません</span>
+                    <div class="time-travel-banner-copy">
+                        <strong id="timeTravelBannerText">過去表示</strong>
+                        <span>保存済みFormal snapshot・現在値ではありません</span>
+                    </div>
                     <button id="timeTravelReturnCurrent" type="button">現在へ戻る</button>
                 </div>
-                <div class="time-travel-mode-switch" role="group" aria-label="Time Travel表示モード">
-                    <button id="timeTravelSingleMode" type="button" aria-pressed="true">単月</button>
-                    <button id="timeTravelAggregateMode" type="button" aria-pressed="false">複数限月合算</button>
+                <div class="time-travel-controls" aria-label="Time Travelの表示条件">
+                    <div class="time-travel-date-navigation">
+                        <span class="time-travel-control-label">保存日：</span>
+                        <div class="time-travel-date-row">
+                            <button id="timeTravelPreviousDate" type="button" disabled aria-label="前の保存日">◀ <span>前の保存日</span></button>
+                            <label class="visually-hidden" for="historyDateSelect">保存日</label>
+                            <input id="historyDateSelect" type="date" disabled>
+                            <button id="timeTravelNextDate" type="button" disabled aria-label="次の保存日"><span>次の保存日</span> ▶</button>
+                        </div>
+                    </div>
+                    <div class="time-travel-mode-control">
+                        <span class="time-travel-control-label">表示：</span>
+                        <div class="time-travel-mode-switch" role="group" aria-label="Time Travel表示モード">
+                            <button id="timeTravelSingleMode" type="button" aria-pressed="true">単月</button>
+                            <button id="timeTravelAggregateMode" type="button" aria-pressed="false">複数限月合算</button>
+                        </div>
+                    </div>
+                    <div id="timeTravelSingleContractControl" class="time-travel-contract-control">
+                        <label class="time-travel-control-label" for="historyContractSelect">限月：</label>
+                        <select id="historyContractSelect" disabled></select>
+                    </div>
+                    <div id="timeTravelAggregateContracts" class="historical-qri-aggregation-contracts time-travel-contract-control" hidden></div>
                 </div>
-                <div class="historical-qri-selectors">
-                    <label for="historyContractSelect">限月：</label>
-                    <select id="historyContractSelect" disabled></select>
-                    <div id="timeTravelAggregateContracts" class="historical-qri-aggregation-contracts" hidden></div>
-                    <label for="historyDateSelect">保存日：</label>
-                    <button id="timeTravelPreviousDate" type="button" disabled>◀ 前の保存日</button>
-                    <input id="historyDateSelect" type="date" disabled>
-                    <button id="timeTravelNextDate" type="button" disabled>次の保存日 ▶</button>
-                </div>
-                <p id="historicalQriState" role="status" aria-live="polite">
+                <p id="historicalQriState" class="time-travel-empty-state" role="status" aria-live="polite">
                     detailsを開くと保存済み履歴を確認します
                 </p>
                 <div id="historicalQriContent" hidden>
-                    <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
+                    <header id="timeTravelResultHeader" class="time-travel-result-header">
+                        <h3 id="timeTravelResultTitle">保存断面</h3>
+                        <p id="timeTravelResultFeedback" class="time-travel-result-feedback" role="status" aria-live="polite"></p>
+                        <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
+                    </header>
                     <div class="time-travel-summary-grid">
                         <section><h4>CALL壁 TOP3</h4><ol id="timeTravelTopCall"></ol></section>
                         <section><h4>PUT壁 TOP3</h4><ol id="timeTravelTopPut"></ol></section>
                     </div>
-                    <p id="timeTravelComparison"></p>
-                    <p id="timeTravelCoverage"></p>
-                    <p id="timeTravelIvCoverage"></p>
-                    <h4>保存済みCALL・PUT建玉残</h4>
+                    <h4 id="timeTravelChartTitle">保存済みCALL・PUT建玉残</h4>
                     <div id="historicalQriChartLegend"
                         class="strike-bar-chart-legend" aria-label="グラフの凡例" hidden></div>
                     <div id="historicalQriChartContainer"
@@ -926,11 +939,20 @@
                             <canvas id="historicalQriOpenInterestChart"></canvas>
                         </div>
                     </div>
+                    <section class="time-travel-comparison-block" aria-label="前回保存観測との比較">
+                        <p id="timeTravelComparison"></p>
+                    </section>
+                    <section class="time-travel-quality-block" aria-label="データ品質">
+                        <h4>データ品質</h4>
+                        <p id="timeTravelCoverage"></p>
+                        <p id="timeTravelIvCoverage"></p>
+                    </section>
                     <details class="historical-qri-developer-panel">
                         <summary>履歴identity詳細</summary>
                         <pre id="historicalQriDeveloperDetails"></pre>
                     </details>
                 </div>
+                <p class="time-travel-end-marker">Time Travelの表示はここまで</p>
             </details>
 
             <details id="historicalQriAggregationPanel" hidden

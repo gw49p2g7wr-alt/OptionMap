@@ -14,8 +14,11 @@
             date: get("historyDateSelect"), prev: get("timeTravelPreviousDate"), next: get("timeTravelNextDate"),
             current: get("timeTravelReturnCurrent"), single: get("timeTravelSingleMode"),
             aggregate: get("timeTravelAggregateMode"), contracts: get("timeTravelAggregateContracts"),
+            singleContractControl: get("timeTravelSingleContractControl"),
             banner: get("timeTravelBanner"), bannerText: get("timeTravelBannerText"),
             state: get("historicalQriState"), content: get("historicalQriContent"),
+            resultHeader: get("timeTravelResultHeader"), resultTitle: get("timeTravelResultTitle"),
+            resultFeedback: get("timeTravelResultFeedback"), chartTitle: get("timeTravelChartTitle"),
             metadata: get("historicalQriMetadata"), topCall: get("timeTravelTopCall"),
             topPut: get("timeTravelTopPut"), comparison: get("timeTravelComparison"),
             coverage: get("timeTravelCoverage"), ivCoverage: get("timeTravelIvCoverage"),
@@ -45,14 +48,25 @@
                 label.append(input, documentRef.createTextNode(value)); return label; }));
             dom.single.setAttribute("aria-pressed", String(session.viewMode === "single_contract"));
             dom.aggregate.setAttribute("aria-pressed", String(session.viewMode === "aggregate"));
-            dom.contract.hidden = session.viewMode === "aggregate"; dom.contracts.hidden = session.viewMode !== "aggregate";
+            dom.singleContractControl.hidden = session.viewMode === "aggregate";
+            dom.contracts.hidden = session.viewMode !== "aggregate";
             const dates = navigationDates(projection); const index = dates.indexOf(session.selectedTradingDate);
-            dom.prev.disabled = index <= 0; dom.next.disabled = index < 0 || index >= dates.length - 1;
+            dom.prev.disabled = !neighborDate(dates, session.selectedTradingDate, -1);
+            dom.next.disabled = !neighborDate(dates, session.selectedTradingDate, 1);
         }
         function navigationDates(projection) { const selected = session.viewMode === "aggregate"
             ? session.selectedContracts : [session.selectedContract]; return (projection.availability || [])
             .filter(item => selected.length && selected.every(c => item.contracts.includes(c)))
             .map(item => item.tradingDate); }
+        function neighborDate(dates, selectedDate, direction) { const index = dates.indexOf(selectedDate);
+            if (index >= 0) return dates[index + direction] || null;
+            return direction < 0 ? [...dates].reverse().find(date => date < selectedDate) || null
+                : dates.find(date => date > selectedDate) || null; }
+        function selectionLabel() { return `${session.selectedTradingDate}／${session.viewMode === "aggregate"
+            ? `${session.selectedContracts.join("＋")}限・複数限月合算` : `${session.selectedContract}限・単月`}`; }
+        function showUpdatedFeedback() { dom.resultFeedback.textContent = `${selectionLabel()}に更新しました`;
+            dom.resultHeader.classList.remove("is-updated"); void dom.resultHeader.offsetWidth;
+            dom.resultHeader.classList.add("is-updated"); }
         function list(node, values) { node.replaceChildren(...values.map(item => { const li = documentRef.createElement("li");
             li.textContent = `${item.rank}位 ${item.strike.toLocaleString()}円・${item.oi.toLocaleString()}枚`;
             li.textContent += item.previousSavedObservationDelta === null ? "（前回比較なし）"
@@ -61,14 +75,18 @@
             li.textContent += item.iv?.status === "available" ? ` IV ${item.iv.value}` : " IV欠測";
             return li; })); }
         function renderProjection(projection) {
-            renderSelectors(projection); dom.banner.hidden = false; dom.bannerText.textContent =
-                `過去表示：${session.selectedTradingDate}／${session.viewMode === "aggregate"
-                    ? session.selectedContracts.join("＋") : `${session.selectedContract}限`}`;
+            renderSelectors(projection); dom.banner.hidden = false; dom.bannerText.textContent = `過去表示：${selectionLabel()}`;
             if (projection.status !== "available") { destroyChart(); dom.content.hidden = true;
-                dom.state.hidden = false; dom.state.textContent = projection.reason === "snapshot_not_saved"
-                    ? `${session.selectedTradingDate}の${projection.missingContracts.join("・")}限snapshotはありません。現在値では補完しません。`
+                dom.state.hidden = false; const dates = navigationDates(projection),
+                    previous = neighborDate(dates, session.selectedTradingDate, -1),
+                    next = neighborDate(dates, session.selectedTradingDate, 1), nearby = [previous, next].filter(Boolean);
+                dom.state.textContent = projection.reason === "snapshot_not_saved"
+                    ? `${selectionLabel()}のsnapshotは保存されていません。現在値では補完しません。` +
+                        (nearby.length ? ` 前後の保存日（${nearby.join("／")}）へは上の矢印ボタンで移動できます。` : "")
                     : "選択した保存断面を表示できません。"; return publish("unavailable", projection.reason, projection); }
             dom.state.hidden = true; dom.content.hidden = false; list(dom.topCall, projection.top3.call);
+            dom.resultTitle.textContent = `${selectionLabel()}の保存断面`;
+            dom.chartTitle.textContent = `CALL・PUT建玉残 — ${selectionLabel()}`;
             list(dom.topPut, projection.top3.put); dom.comparison.textContent = projection.previousTradingDate
                 ? `前回保存観測比：${projection.previousTradingDate} → ${session.selectedTradingDate}`
                 : "前回保存観測比：比較対象なし";
@@ -97,9 +115,11 @@
                         y: { beginAtZero: true, title: { display: true, text: "建玉残" } } },
                     plugins: { legend: { display: false } } } }); dom.chartContainer.hidden = false;
             presentation.renderLegend?.({ documentRef, legend: dom.legend, datasets: chart.data.datasets });
+            showUpdatedFeedback();
             return publish("available", null, projection);
         }
         function rebuild(patch = {}) { navigationSourceRevision = null;
+            if (!dom.content.hidden) dom.resultFeedback.textContent = "表示条件を切り替えています…";
             session = stateApi.transition(session, patch);
             return renderProjection(projectionApi.build({ history, ivHistory, state: session })); }
         async function ensureHistory() { if (history && ivHistory) return history; if (!loading) loading = Promise.all([
@@ -109,7 +129,8 @@
                 if (oi?.status !== "ready" || !oi.history) throw new Error("read_failed");
                 history = clone(oi.history); ivHistory = iv?.status === "ready" && iv.history
                     ? clone(iv.history) : null; return history; }).finally(() => { loading = null; }); return loading; }
-        async function open() { const own = ++generation; publish("loading"); try { await ensureHistory();
+        async function open() { const own = ++generation; dom.content.hidden = true; dom.state.hidden = false;
+            dom.state.textContent = "保存済みQRI履歴を読み込んでいます…"; publish("loading"); try { await ensureHistory();
             if (own !== generation || !dom.panel.open) return publish("stale_ignored", "stale_render");
             const inv = projectionApi.inventory(history), contract = session.selectedContract || inv.contracts[0],
                 date = session.selectedTradingDate || inv.dates.at(-1);
@@ -127,7 +148,7 @@
         function onContract() { rebuild({ selectedContract: dom.contract.value }); }
         function onDate() { rebuild({ selectedTradingDate: dom.date.value }); }
         function move(offset) { const projection = projectionApi.build({ history, state: session }),
-            dates = navigationDates(projection), index = dates.indexOf(session.selectedTradingDate), next = dates[index + offset];
+            dates = navigationDates(projection), next = neighborDate(dates, session.selectedTradingDate, offset);
             if (next) rebuild({ selectedTradingDate: next }); }
         function onAggregateContracts() { const selected = [...dom.contracts.querySelectorAll("input:checked")]
             .map(input => input.value); rebuild({ selectedContracts: selected }); }

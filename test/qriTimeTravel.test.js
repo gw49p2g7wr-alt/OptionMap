@@ -118,9 +118,15 @@ test("aggregate IVは合成せず対象外を明示", async () => {
 test("既存panelをTime Travelへ発展させ保護対象へ接続しない", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const source = fs.readFileSync(path.join(__dirname, "../js/qriTimeTravelView.js"), "utf8");
+    const css = fs.readFileSync(path.join(__dirname, "../style.css"), "utf8");
     assert.match(html, /過去日のQRIを見る（Time Travel β）/);
     assert.match(html, /timeTravelPreviousDate[\s\S]*historyDateSelect[\s\S]*timeTravelNextDate/);
     assert.match(html, /過去表示[\s\S]*現在へ戻る/);
+    assert.match(html, /timeTravelResultHeader[\s\S]*timeTravelTopCall[\s\S]*historicalQriOpenInterestChart[\s\S]*timeTravelComparison[\s\S]*timeTravelCoverage/);
+    assert.match(html, /Time Travelの表示はここまで/);
+    assert.match(css, /time-travel-date-row[\s\S]*grid-template-columns:[^;]*38px[^;]*1fr[^;]*38px/);
+    assert.match(source, /singleContractControl\.hidden = session\.viewMode === "aggregate"/);
+    assert.match(source, /前後の保存日/);
     assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|fetch\s*\(|Overall|Morning|FullExport/);
     assert.doesNotMatch(source, /\bpersist\b|\bsave\b|setInterval|setTimeout/);
 });
