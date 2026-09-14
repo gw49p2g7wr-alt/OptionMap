@@ -916,6 +916,7 @@
                     </div>
                     <p id="timeTravelComparison"></p>
                     <p id="timeTravelCoverage"></p>
+                    <p id="timeTravelIvCoverage"></p>
                     <h4>保存済みCALL・PUT建玉残</h4>
                     <div id="historicalQriChartLegend"
                         class="strike-bar-chart-legend" aria-label="グラフの凡例" hidden></div>
@@ -1032,6 +1033,7 @@
                 </header>
                 <p id="wallHistoryDrawerStatus" role="status" aria-live="polite"></p>
                 <div id="wallHistoryDrawerContent" hidden>
+                    <p id="wallHistoryAnchor" class="wall-history-anchor"></p>
                     <dl class="wall-history-summary">
                         <div><dt>wall identity</dt><dd id="wallHistoryIdentity"></dd></div>
                         <div><dt>初出日</dt><dd id="wallHistoryFirstSeen"></dd></div>
@@ -1050,7 +1052,7 @@
                         <p id="wallHistoryQuality"></p><pre id="wallHistoryGapList"></pre></section>
                     <section><h4>観測明細</h4><div class="wall-history-table-scroll"><table>
                         <thead><tr><th>日付</th><th>状態</th><th>OI</th><th>差</th><th>rank</th><th>rank変化</th>
-                            <th>shrink</th><th>zero</th><th>IV</th><th>source revision</th></tr></thead>
+                            <th>shrink</th><th>zero</th><th>IV</th><th>source revision</th><th>操作</th></tr></thead>
                         <tbody id="wallHistoryObservationBody"></tbody></table></div></section>
                     <section class="wall-history-unavailable"><h4>未保存fact</h4>
                         <p id="wallHistoryUnavailableFacts"></p></section>
@@ -1942,13 +1944,17 @@ if (!qriHistoricalViewModelApi ||
     throw new Error("QRI historical view model browser module is unavailable");
 }
 const qriHistoricalRootStyle = getComputedStyle(document.documentElement);
+const qriTimeTravelIvHistoryStore = window.OptionMapQriOptionIvHistoryStore.createStore();
 const qriHistoricalView = window.OptionMapQriTimeTravelView
     .create({
         documentRef: document,
         ChartConstructor: Chart,
         readHistory: () => window.getQriOptionsHistory(),
+        readIvHistory: () => qriTimeTravelIvHistoryStore.loadHistory(),
         stateApi: window.OptionMapQriTimeTravelState,
         projectionApi: window.OptionMapQriTimeTravelProjection,
+        selectionApi: window.OptionMapWallHistoryChartSelection,
+        openWallHistory: input => window.wallHistoryDrawerRuntime?.openWall?.(input),
         optionColors: {
             call: qriHistoricalRootStyle.getPropertyValue("--option-call-color").trim(),
             put: qriHistoricalRootStyle.getPropertyValue("--option-put-color").trim()
@@ -1956,6 +1962,7 @@ const qriHistoricalView = window.OptionMapQriTimeTravelView
     });
 qriHistoricalView.initialize();
 window.getQriHistoricalViewState = () => qriHistoricalView.getState();
+window.openQriTimeTravel = input => qriHistoricalView.navigate(input);
 
 const qriHistoricalAggregationApi = window.OptionMapQriOptionsHistoricalAggregation;
 if (!qriHistoricalAggregationApi ||

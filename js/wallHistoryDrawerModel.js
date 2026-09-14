@@ -8,7 +8,7 @@
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
     function freeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
         Object.values(value).forEach(freeze); return Object.freeze(value); }
-    function build(wall, unavailableMetrics = []) {
+    function build(wall, unavailableMetrics = [], options = {}) {
         if (!wall?.wallIdentity || !Array.isArray(wall.observations)) return null;
         const observations = wall.observations.map(item => ({ tradingDate: item.tradingDate,
             state: item.state, openInterest: item.openInterest, previousObservationDelta:
@@ -23,6 +23,7 @@
         const referenceVisible = Number(wall.coverage?.referenceObservedCount) > 0;
         return freeze({ modelVersion: MODEL_VERSION, wallIdentity: wall.wallIdentity,
             contract: wall.contract, strike: wall.strike, side: wall.side,
+            anchorTradingDate: options.anchorTradingDate || null,
             firstSeenDate: wall.firstSeenDate, maxOi: wall.maxOi, maxOiDate: wall.maxOiDate,
             latestObserved: clone(latestObserved), observations, gaps,
             coverage: clone(wall.coverage || {}), quality: clone(wall.quality || {}),

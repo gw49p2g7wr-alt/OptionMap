@@ -8,7 +8,7 @@
         if (node) node.textContent = value == null ? "—" : String(value); };
     const number = value => Number.isFinite(value) ? value.toLocaleString("ja-JP") : "—";
     const signed = value => Number.isFinite(value) ? `${value > 0 ? "+" : ""}${number(value)}` : "—";
-    function create({ documentRef, ChartConstructor } = {}) {
+    function create({ documentRef, ChartConstructor, onViewDate } = {}) {
         const drawer = documentRef?.getElementById("wallHistoryDrawer"), backdrop =
             documentRef?.getElementById("wallHistoryDrawerBackdrop");
         let oiChart = null, ivChart = null, referenceChart = null, returnFocus = null;
@@ -26,16 +26,27 @@
         function renderTable(model) {
             const body = documentRef.getElementById("wallHistoryObservationBody"); if (!body) return;
             const rows = model.observations.map(item => { const row = documentRef.createElement("tr");
+                if (item.tradingDate === model.anchorTradingDate) row.className = "wall-history-anchor-row";
                 [item.tradingDate, item.state, number(item.openInterest), signed(item.previousObservationDelta),
                     number(item.rank), signed(item.rankChange), item.shrinkState, item.zeroState,
                     item.ivStatus === "available" ? number(item.iv) : item.ivStatus,
                     item.sourceRevision || "—"].forEach(value => { const cell = documentRef.createElement("td");
-                    cell.textContent = value; row.appendChild(cell); }); return row; });
+                    cell.textContent = value; row.appendChild(cell); });
+                const action = documentRef.createElement("td"), button = documentRef.createElement("button");
+                button.type = "button"; button.textContent = "この日を見る";
+                button.dataset.tradingDate = item.tradingDate; button.dataset.sourceRevision = item.sourceRevision || "";
+                action.appendChild(button); row.appendChild(action); return row; });
             body.replaceChildren(...rows);
         }
-        function lineChart(canvasId, labels, datasets, yTitle) { const canvas = documentRef.getElementById(canvasId);
+        function lineChart(canvasId, labels, datasets, yTitle, anchorTradingDate = null) {
+            const canvas = documentRef.getElementById(canvasId);
             if (!canvas || typeof ChartConstructor !== "function") return null;
-            return new ChartConstructor(canvas, { type: "line", data: { labels, datasets }, options: {
+            const anchorIndex = labels.indexOf(anchorTradingDate);
+            const decorated = datasets.map(dataset => ({ ...dataset,
+                pointRadius: labels.map((_, index) => index === anchorIndex ? 6 : 3),
+                pointBorderWidth: labels.map((_, index) => index === anchorIndex ? 3 : 1),
+                pointBorderColor: labels.map((_, index) => index === anchorIndex ? "#9b4058" : dataset.borderColor) }));
+            return new ChartConstructor(canvas, { type: "line", data: { labels, datasets: decorated }, options: {
                 responsive: true, maintainAspectRatio: false, animation: false, spanGaps: false,
                 interaction: { mode: "index", intersect: false }, plugins: { legend: { display: true } },
                 scales: { y: { title: { display: true, text: yTitle } } } } }); }
@@ -43,6 +54,7 @@
             destroyCharts(); text(documentRef, "wallHistoryDrawerTitle",
                 `${model.contract} ${number(model.strike)} ${model.side.toUpperCase()}`);
             text(documentRef, "wallHistoryIdentity", model.wallIdentity);
+            text(documentRef, "wallHistoryAnchor", model.anchorTradingDate ? `起点：${model.anchorTradingDate}` : "");
             text(documentRef, "wallHistoryFirstSeen", model.firstSeenDate);
             text(documentRef, "wallHistoryMax", `${number(model.maxOi)}枚 / ${model.maxOiDate || "—"}`);
             text(documentRef, "wallHistoryLatestDelta", signed(model.latestObserved?.previousObservationDelta));
@@ -66,7 +78,7 @@
             const labels = model.observations.map(item => item.tradingDate);
             oiChart = lineChart("wallHistoryOiChart", labels, [{ label: "OI", data: model.observations.map(item =>
                 item.state === "observed" ? item.openInterest : null), borderColor: "#5468ff",
-                backgroundColor: "rgba(84,104,255,.14)", pointRadius: 3 }], "枚");
+                backgroundColor: "rgba(84,104,255,.14)" }], "枚", model.anchorTradingDate);
             const ivSection = documentRef.getElementById("wallHistoryIvSection");
             if (ivSection) ivSection.hidden = false;
             const ivUnavailable = documentRef.getElementById("wallHistoryIvUnavailable");
@@ -75,18 +87,25 @@
             if (ivCanvas?.parentElement) ivCanvas.parentElement.hidden = model.coverage.ivObservedCount === 0;
             if (model.coverage.ivObservedCount > 0) ivChart = lineChart("wallHistoryIvChart", labels,
                 [{ label: "IV", data: model.observations.map(item => item.ivStatus === "available" ? item.iv : null),
-                    borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,.12)", pointRadius: 3 }], "IV");
+                    borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,.12)" }], "IV",
+                model.anchorTradingDate);
             const referenceSection = documentRef.getElementById("wallHistoryReferenceSection");
             if (referenceSection) referenceSection.hidden = !model.reference;
             if (model.reference) referenceChart = lineChart("wallHistoryReferenceChart",
                 model.reference.observations.map(item => item.tradingDate), [{ label: "reference価格",
                     data: model.reference.observations.map(item => item.price), borderColor: "#0f9d74",
-                    pointRadius: 3 }], "価格");
+                    pointRadius: 3 }], "価格", model.anchorTradingDate);
             text(documentRef, "wallHistoryDrawerStatus", "");
             documentRef.getElementById("wallHistoryDrawerContent")?.removeAttribute("hidden");
         }
         function showError(message) { destroyCharts(); text(documentRef, "wallHistoryDrawerStatus", message);
             documentRef.getElementById("wallHistoryDrawerContent")?.setAttribute("hidden", ""); }
+        documentRef?.getElementById("wallHistoryObservationBody")?.addEventListener("click", event => {
+            const button = event.target?.closest?.("button[data-trading-date]");
+            if (!button || typeof onViewDate !== "function") return;
+            onViewDate({ tradingDate: button.dataset.tradingDate,
+                sourceRevision: button.dataset.sourceRevision || null });
+        });
         return Object.freeze({ openLoading, render, showError, close, isOpen: () => drawer?.hidden === false });
     }
     return Object.freeze({ create });

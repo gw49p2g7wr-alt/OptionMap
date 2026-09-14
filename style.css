@@ -2498,6 +2498,11 @@ canvas {
 .wall-history-table-scroll th:nth-child(2), .wall-history-table-scroll td:nth-child(2) { text-align: left; }
 .wall-history-drawer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .wall-history-unavailable { background: #fff8e8; border: 1px solid #f4d69b; border-radius: 8px; padding: 0 12px; }
+.wall-history-anchor { position: sticky; top: 82px; z-index: 1; margin: 0; padding: 8px 10px;
+    border-radius: 7px; background: #fff2f5; color: #7b2942; font-weight: 700; }
+.wall-history-anchor:empty { display: none; }
+.wall-history-anchor-row { background: #fff2f5; outline: 2px solid #9b4058; outline-offset: -2px; }
+.wall-history-table-scroll button { min-height: 36px; white-space: nowrap; }
 body.wall-history-open { overflow: hidden; }
 
 @media (max-width: 640px) {

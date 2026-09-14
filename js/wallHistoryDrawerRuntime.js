@@ -12,7 +12,14 @@ function (contractApi, modelApi, selectionApi, viewApi) {
     function create({ root, documentRef, ChartConstructor } = {}) {
         const canvas = documentRef?.getElementById("combinedPriceChart");
         if (!canvas || !contractApi || !modelApi || !selectionApi || !viewApi) return null;
-        const view = viewApi.create({ documentRef, ChartConstructor }), gesture = selectionApi.createGestureGuard();
+        let activeContext = null;
+        const view = viewApi.create({ documentRef, ChartConstructor, onViewDate: observation => {
+            if (!activeContext) return;
+            const context = activeContext; close(); root.openQriTimeTravel?.({
+                selectedTradingDate: observation.tradingDate, selectedContract: context.contract,
+                selectedRevision: { policy: "active", versionKey: null },
+                navigationSourceRevision: observation.sourceRevision });
+        } }), gesture = selectionApi.createGestureGuard();
         let projectionPromise = null, lookup = null, requestGeneration = 0;
         function loadProjection() { if (lookup) return Promise.resolve(lookup); if (projectionPromise) return projectionPromise;
             projectionPromise = Promise.resolve(root.runWallHistoryShadowEvaluation?.()).then(result => {
@@ -34,10 +41,27 @@ function (contractApi, modelApi, selectionApi, viewApi) {
                     current?.mode !== "openInterest") { view.close(); return; }
                 const wall = walls.get(wallIdentity); if (!wall) throw new Error("wall_not_in_saved_history");
                 const unavailable = root.getWallHistoryShadowDiagnostics?.()?.evaluation?.projection?.unavailableMetrics || [];
+                activeContext = { contract: selected.contract };
                 view.render(modelApi.build(wall, unavailable));
             } catch (error) { if (ownRequest === requestGeneration) view.showError(error?.message ===
                 "wall_not_in_saved_history" ? "この壁の保存済み履歴はありません。" :
                 "Wall Historyを読み込めませんでした。"); }
+        }
+        async function openWall({ contract, strike, side, anchorTradingDate = null, trigger = null,
+            isCurrent = () => true } = {}) {
+            const wallIdentity = contractApi.wallIdentity(contract, strike, side);
+            if (!wallIdentity || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(contract || "") ||
+                !/^20\d{2}-\d{2}-\d{2}$/.test(anchorTradingDate || "")) return false;
+            const ownRequest = ++requestGeneration; view.openLoading(trigger);
+            try { const walls = await loadProjection();
+                if (ownRequest !== requestGeneration || isCurrent() !== true) { view.close(); return false; }
+                const wall = walls.get(wallIdentity); if (!wall) throw new Error("wall_not_in_saved_history");
+                const unavailable = root.getWallHistoryShadowDiagnostics?.()?.evaluation?.projection?.unavailableMetrics || [];
+                activeContext = { contract };
+                view.render(modelApi.build(wall, unavailable, { anchorTradingDate })); return true;
+            } catch (error) { if (ownRequest === requestGeneration) view.showError(error?.message ===
+                "wall_not_in_saved_history" ? "この壁の保存済み履歴はありません。" :
+                "Wall Historyを読み込めませんでした。"); return false; }
         }
         canvas.addEventListener("pointerdown", gesture.pointerDown);
         canvas.addEventListener("pointermove", gesture.pointerMove);
@@ -45,13 +69,13 @@ function (contractApi, modelApi, selectionApi, viewApi) {
         canvas.addEventListener("pointercancel", gesture.pointerUp);
         canvas.addEventListener("click", handleClick);
         documentRef.getElementById("wallHistoryDrawerClose")?.addEventListener("click", () => {
-            requestGeneration += 1; view.close(); });
+            close(); });
         documentRef.getElementById("wallHistoryDrawerBackdrop")?.addEventListener("click", () => {
-            requestGeneration += 1; view.close(); });
+            close(); });
         documentRef.addEventListener("keydown", event => { if (event.key === "Escape" && view.isOpen()) {
-            requestGeneration += 1; view.close(); } });
-        function close() { requestGeneration += 1; return view.close(); }
-        return Object.freeze({ handleClick, close, getDiagnostics: () => Object.freeze({
+            close(); } });
+        function close() { requestGeneration += 1; activeContext = null; return view.close(); }
+        return Object.freeze({ handleClick, openWall, close, getDiagnostics: () => Object.freeze({
             projectionCached: Boolean(lookup), projectionInFlight: Boolean(projectionPromise),
             rendererIdentity: root.getQriChartRendererIdentity?.() || null, open: view.isOpen() }) });
     }

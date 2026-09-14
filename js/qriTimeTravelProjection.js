@@ -30,22 +30,40 @@
         call: { published: point.call.total !== null, value: point.call.total },
         put: { published: point.put.total !== null, value: point.put.total }
     })) }; }
-    function decorate(current, previous) {
+    function activeIvIndex(history) {
+        const index = new Map();
+        for (const entry of history?.entries || []) {
+            const revision = entry?.revisions?.find(item => item.versionKey === entry.activeVersionKey);
+            if (!revision || revision.contract !== entry.contract || revision.tradingDate !== entry.tradingDate) continue;
+            for (const record of revision.canonical?.records || []) index.set(
+                `${entry.contract}|${entry.tradingDate}|${record.optionType}|${record.strike}`,
+                { status: record.iv?.status || "missing", value: record.iv?.status === "available"
+                    ? record.iv.value : null, sourceRevision: revision.versionKey });
+        }
+        return index;
+    }
+    function decorate(current, previous, iv = null, contract = null, tradingDate = null) {
         const previousMap = new Map(rows(previous).map(item => [`${item.side}|${item.strike}`, item]));
         const facts = rows(current).map(item => { const prior = previousMap.get(`${item.side}|${item.strike}`);
+            const ivFact = iv?.get(`${contract}|${tradingDate}|${item.side}|${item.strike}`) || null;
             return { ...item, previousOi: prior?.published ? prior.oi : null,
-                previousSavedObservationDelta: item.published && prior?.published ? item.oi - prior.oi : null }; });
+                previousSavedObservationDelta: item.published && prior?.published ? item.oi - prior.oi : null,
+                iv: { status: ivFact?.status || "missing", value: ivFact?.value ?? null,
+                    sourceRevision: ivFact?.sourceRevision || null } }; });
         const top3 = Object.fromEntries(["call", "put"].map(side => [side, facts.filter(item => item.side === side &&
             item.published).sort((a, b) => b.oi - a.oi || a.strike - b.strike).slice(0, 3)
             .map((item, index) => ({ ...item, rank: index + 1 }))]));
         return { facts, top3, coverage: { total: facts.length,
             observed: facts.filter(item => item.published).length,
             notPublished: facts.filter(item => !item.published).length,
-            comparable: facts.filter(item => item.previousSavedObservationDelta !== null).length } };
+            comparable: facts.filter(item => item.previousSavedObservationDelta !== null).length },
+            ivCoverage: { eligible: facts.length, observed: facts.filter(item =>
+                item.iv.status === "available").length, missing: facts.filter(item =>
+                item.iv.status !== "available").length } };
     }
     function result(status, reason, data = {}) { return freeze({ status, reason, readOnly: true,
         storageWrite: false, activeRevisionWrite: false, liveStateWrite: false, ...clone(data) }); }
-    function build({ history, state } = {}) {
+    function build({ history, ivHistory = null, state } = {}) {
         const available = inventory(history); const date = state?.selectedTradingDate;
         const selected = state?.viewMode === "aggregate" ? [...(state.selectedContracts || [])]
             : [state?.selectedContract].filter(Boolean);
@@ -80,9 +98,13 @@
             previous = state.viewMode === "aggregate"
                 ? aggregationSnapshot(aggregationApi.buildQriHistoricalAggregation({ snapshots: previousSnapshots }))
                 : previousSnapshots[0]; }
-        const derived = decorate(snapshot, previous); return result("available", null, { ...base,
+        const iv = state.viewMode === "single_contract" ? activeIvIndex(ivHistory) : null;
+        const derived = decorate(snapshot, previous, iv, state.viewMode === "single_contract"
+            ? selected[0] : null, date); return result("available", null, { ...base,
             identity, metadata, chartData, previousTradingDate: previousDate, top3: derived.top3,
             comparisonFacts: derived.facts, coverage: derived.coverage,
+            ivCoverage: state.viewMode === "single_contract" ? derived.ivCoverage : {
+                eligible: 0, observed: 0, missing: 0, reason: "aggregate_not_applicable" },
             quality: { complete: derived.coverage.notPublished === 0,
                 previousObservationAvailable: previousDate !== null }, selectedRevision:
                 state.viewMode === "single_contract" ? views[0].selection.activeVersionKey

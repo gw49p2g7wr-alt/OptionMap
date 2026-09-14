@@ -43,6 +43,13 @@ test("referenceは厳密join実績がある場合だけoptional modelを作る",
         [{ tradingDate: "2026-09-10", price: 59800, priceDistance: 200 }]);
 });
 
+test("drawer modelはTime Travel起点日だけを明示しwall identityを変えない", () => {
+    const result = Model.build(wall, [], { anchorTradingDate: "2026-09-10" });
+    assert.equal(result.anchorTradingDate, "2026-09-10");
+    assert.equal(result.wallIdentity, wall.wallIdentity);
+    assert.equal(result.contract, "2026-10");
+});
+
 function chart(side = "call", hits = [{ datasetIndex: 0, index: 1 }]) { return { data: {
     labels: ["59,500", "60,000"], datasets: [{ optionSide: side }] },
 getElementsAtEventForMode(event, mode, options, useFinalPosition) {
@@ -78,9 +85,13 @@ test("HTML wiringはread-only drawerだけを追加し保護対象へ接続し�
     const root = path.join(__dirname, "..");
     const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
     const runtime = fs.readFileSync(path.join(root, "js/wallHistoryDrawerRuntime.js"), "utf8");
+    const view = fs.readFileSync(path.join(root, "js/wallHistoryDrawerView.js"), "utf8");
     assert.match(html, /id="wallHistoryDrawer"[\s\S]*wallHistoryDrawerRuntime\.js/);
     assert.match(html, /id="wallHistoryIvUnavailable"[^>]*hidden/);
+    assert.match(html, /id="wallHistoryAnchor"/);
+    assert.match(view, /この日を見る/);
     assert.match(runtime, /runWallHistoryShadowEvaluation/);
+    assert.match(runtime, /selectedRevision:\s*\{ policy:\s*"active"/);
     assert.doesNotMatch(runtime, /localStorage|readwrite|\.add\(|\.put\(|fetch\(/);
     for (const file of ["js/fullExportCollector.js", "js/overallJudgmentV2.js",
         "js/morningBaselineV4.js", "js/morningBaselineV5.js"]) assert.doesNotMatch(

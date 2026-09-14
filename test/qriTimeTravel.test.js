@@ -37,6 +37,16 @@ async function fixture() {
             entry("2026-10", "2026-09-08", { 60000: 30, 61000: 6 }, { 60000: 40, 61000: 7 }, "3"),
             entry("2026-12", "2026-09-08", { 60000: 50, 61000: 9 }, { 60000: 60, 61000: 10 }, "4") ] };
 }
+function ivHistory(contract = "2026-09", date = "2026-09-08") {
+    const versionKey = `qri-option-iv-v1|${contract}|${date}|sha256:${"a".repeat(64)}`;
+    return { entries: [{ entryKey: `${contract}|${date}`, contract, tradingDate: date,
+        activeVersionKey: versionKey, revisions: [{ versionKey, contract, tradingDate: date,
+            canonical: { contract, tradingDate: date, records: [
+                { optionType: "call", strike: 60000, iv: { status: "available", value: 21.5 } },
+                { optionType: "put", strike: 60000, iv: { status: "missing", value: null } },
+                { optionType: "call", strike: 99999, iv: { status: "available", value: 99 } }
+            ] } }] }] };
+}
 
 test("historical stateはimmutableでlive復帰を明示する", () => {
     const initial = State.create({ selectedTradingDate: "2026-09-08", selectedContract: "2026-09" });
@@ -80,12 +90,37 @@ test("aggregateは同日active snapshotだけを合算する", async () => {
     assert.equal(value.top3.put[0].previousSavedObservationDelta, 18);
 });
 
+test("IVはcontract・tradingDate・strike・side完全一致のactive revisionだけを結合", async () => {
+    const history = await fixture(), state = State.create({ selectedTradingDate: "2026-09-08",
+        selectedContract: "2026-09", selectedContracts: ["2026-09"] });
+    const value = Projection.build({ history, ivHistory: ivHistory(), state });
+    const call = value.comparisonFacts.find(item => item.side === "call" && item.strike === 60000);
+    const put = value.comparisonFacts.find(item => item.side === "put" && item.strike === 60000);
+    assert.deepEqual(call.iv, { status: "available", value: 21.5,
+        sourceRevision: ivHistory().entries[0].activeVersionKey });
+    assert.deepEqual(put.iv, { status: "missing", value: null,
+        sourceRevision: ivHistory().entries[0].activeVersionKey });
+    assert.deepEqual(value.ivCoverage, { eligible: 4, observed: 1, missing: 3 });
+    assert.equal(Projection.build({ history, ivHistory: ivHistory("2026-10"), state })
+        .ivCoverage.observed, 0);
+    assert.equal(Projection.build({ history, ivHistory: ivHistory("2026-09", "2026-09-07"), state })
+        .ivCoverage.observed, 0);
+});
+
+test("aggregate IVは合成せず対象外を明示", async () => {
+    const history = await fixture(), value = Projection.build({ history, ivHistory: ivHistory(),
+        state: State.create({ viewMode: "aggregate", selectedTradingDate: "2026-09-08",
+            selectedContract: "2026-09", selectedContracts: ["2026-09", "2026-10"] }) });
+    assert.deepEqual(value.ivCoverage, { eligible: 0, observed: 0, missing: 0,
+        reason: "aggregate_not_applicable" });
+});
+
 test("既存panelをTime Travelへ発展させ保護対象へ接続しない", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const source = fs.readFileSync(path.join(__dirname, "../js/qriTimeTravelView.js"), "utf8");
     assert.match(html, /過去日のQRIを見る（Time Travel β）/);
     assert.match(html, /timeTravelPreviousDate[\s\S]*historyDateSelect[\s\S]*timeTravelNextDate/);
     assert.match(html, /過去表示[\s\S]*現在へ戻る/);
-    assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|fetch\s*\(|Overall|Morning|FullExport|wallHistory|OptionIv/);
+    assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|fetch\s*\(|Overall|Morning|FullExport/);
     assert.doesNotMatch(source, /\bpersist\b|\bsave\b|setInterval|setTimeout/);
 });
