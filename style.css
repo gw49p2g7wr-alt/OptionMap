@@ -56,6 +56,39 @@ body{
     min-width: 145px;
 }
 
+.time-travel-banner {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 10px 0;
+    padding: 10px 12px;
+    border: 2px solid #9b4058;
+    border-radius: 8px;
+    background: #fff2f5;
+    color: #612538;
+}
+
+.time-travel-banner[hidden] { display: none; }
+.time-travel-banner button { margin-left: auto; font-weight: 700; }
+.time-travel-mode-switch { display: flex; gap: 8px; margin: 8px 0; }
+.time-travel-mode-switch button[aria-pressed="true"] { background: #26364a; color: #fff; }
+.time-travel-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.time-travel-summary-grid section { padding: 8px 12px; border: 1px solid #d7dce2; border-radius: 8px; }
+.time-travel-summary-grid h4 { margin: 0 0 6px; }
+
+@media (max-width: 720px) {
+    .time-travel-banner { align-items: stretch; }
+    .time-travel-banner button { width: 100%; margin-left: 0; }
+    .time-travel-summary-grid { grid-template-columns: 1fr; }
+    .historical-qri-selectors { align-items: stretch; }
+    .historical-qri-selectors input[type="date"],
+    .historical-qri-selectors button { width: 100%; }
+}
+
 .historical-qri-metadata {
     line-height: 1.7;
     color: #46515f;

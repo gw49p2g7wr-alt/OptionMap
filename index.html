@@ -882,22 +882,40 @@
             </p>
 
             <details id="historicalQriPanel" class="historical-qri-panel">
-                <summary>保存済みQRI履歴を見る</summary>
+                <summary>過去日のQRIを見る（Time Travel β）</summary>
                 <div class="historical-qri-heading">
-                    <span class="historical-qri-badge">保存済み履歴</span>
+                    <span class="historical-qri-badge">Time Travel β</span>
                     <p>これは保存時点のQRI建玉スナップショットです。現在値ではありません。</p>
+                </div>
+                <div id="timeTravelBanner" class="time-travel-banner" hidden>
+                    <strong id="timeTravelBannerText">過去表示</strong>
+                    <span>保存済みFormal snapshot・現在値ではありません</span>
+                    <button id="timeTravelReturnCurrent" type="button">現在へ戻る</button>
+                </div>
+                <div class="time-travel-mode-switch" role="group" aria-label="Time Travel表示モード">
+                    <button id="timeTravelSingleMode" type="button" aria-pressed="true">単月</button>
+                    <button id="timeTravelAggregateMode" type="button" aria-pressed="false">複数限月合算</button>
                 </div>
                 <div class="historical-qri-selectors">
                     <label for="historyContractSelect">限月：</label>
                     <select id="historyContractSelect" disabled></select>
+                    <div id="timeTravelAggregateContracts" class="historical-qri-aggregation-contracts" hidden></div>
                     <label for="historyDateSelect">保存日：</label>
-                    <select id="historyDateSelect" disabled></select>
+                    <button id="timeTravelPreviousDate" type="button" disabled>◀ 前の保存日</button>
+                    <input id="historyDateSelect" type="date" disabled>
+                    <button id="timeTravelNextDate" type="button" disabled>次の保存日 ▶</button>
                 </div>
                 <p id="historicalQriState" role="status" aria-live="polite">
                     detailsを開くと保存済み履歴を確認します
                 </p>
                 <div id="historicalQriContent" hidden>
                     <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
+                    <div class="time-travel-summary-grid">
+                        <section><h4>CALL壁 TOP3</h4><ol id="timeTravelTopCall"></ol></section>
+                        <section><h4>PUT壁 TOP3</h4><ol id="timeTravelTopPut"></ol></section>
+                    </div>
+                    <p id="timeTravelComparison"></p>
+                    <p id="timeTravelCoverage"></p>
                     <h4>保存済みCALL・PUT建玉残</h4>
                     <div id="historicalQriChartLegend"
                         class="strike-bar-chart-legend" aria-label="グラフの凡例" hidden></div>
@@ -914,7 +932,7 @@
                 </div>
             </details>
 
-            <details id="historicalQriAggregationPanel"
+            <details id="historicalQriAggregationPanel" hidden
                 class="historical-qri-panel historical-qri-aggregation-panel">
                 <summary>保存済みQRIを複数限月で合算</summary>
                 <div class="historical-qri-heading">
@@ -1340,6 +1358,9 @@
 <script src="js/qriOptionsHistoricalAggregation.js"></script>
 <script src="js/qriOptionsHistoricalView.js"></script>
 <script src="js/qriOptionsHistoricalAggregationView.js"></script>
+<script src="js/qriTimeTravelState.js"></script>
+<script src="js/qriTimeTravelProjection.js"></script>
+<script src="js/qriTimeTravelView.js"></script>
 <script src="js/formalOptionAvailabilityEvidence.js"></script>
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
 <script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
@@ -1921,13 +1942,13 @@ if (!qriHistoricalViewModelApi ||
     throw new Error("QRI historical view model browser module is unavailable");
 }
 const qriHistoricalRootStyle = getComputedStyle(document.documentElement);
-const qriHistoricalView = window.OptionMapQriOptionsHistoricalView
-    .createQriOptionsHistoricalView({
+const qriHistoricalView = window.OptionMapQriTimeTravelView
+    .create({
         documentRef: document,
         ChartConstructor: Chart,
         readHistory: () => window.getQriOptionsHistory(),
-        buildViewModel: input =>
-            qriHistoricalViewModelApi.buildQriHistoricalViewModel(input),
+        stateApi: window.OptionMapQriTimeTravelState,
+        projectionApi: window.OptionMapQriTimeTravelProjection,
         optionColors: {
             call: qriHistoricalRootStyle.getPropertyValue("--option-call-color").trim(),
             put: qriHistoricalRootStyle.getPropertyValue("--option-put-color").trim()
