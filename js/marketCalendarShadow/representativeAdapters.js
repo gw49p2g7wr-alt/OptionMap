@@ -5,10 +5,12 @@
         ? require("./representativeParsers.js") : root?.OptionMapMarketCalendarRepresentativeParsers;
     const encoding = typeof module === "object" && module.exports && !(root && root.document)
         ? require("./xmlEncoding.js") : root?.OptionMapMarketCalendarXmlEncoding;
-    const api = factory(registry, parsers, encoding);
+    const htmlEncoding = typeof module === "object" && module.exports && !(root && root.document)
+        ? require("./htmlEncoding.js") : root?.OptionMapMarketCalendarHtmlEncoding;
+    const api = factory(registry, parsers, encoding, htmlEncoding);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketCalendarRepresentativeAdapters = api;
-})(typeof window !== "undefined" ? window : globalThis, function (registry, parsers, encoding) {
+})(typeof window !== "undefined" ? window : globalThis, function (registry, parsers, encoding, htmlEncoding) {
     "use strict";
     const text = bytes => new TextDecoder("utf-8").decode(bytes);
     const context = (source, fetchResult, runId, sourceUrl = fetchResult.finalUrl,
@@ -98,6 +100,18 @@
                     semanticDescriptorUrl: htmlFetch.finalUrl,
                     semanticDescriptorContentHash: htmlFetch.contentHash } });
             return { fetches: [jsonFetch, htmlFetch], ...parsed }; } }); }
+    function createCensus() { const sourceId = "us-census-calendar"; return Object.freeze({ sourceId,
+        async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), fetched =
+            await fetcher(sourceId, source.canonicalUrl); if (fetched.status !== "success")
+            return { fetches: [fetched], records: [], diagnostics: [`fetch:${fetched.reason}`] };
+            const decoded = htmlEncoding.decodeHtml(fetched.bytes, fetched.contentType);
+            if (!decoded.ok) return { fetches: [fetched], records: [],
+                diagnostics: [`encoding:${decoded.reason}`], encoding: decoded };
+            const base = context(source, fetched, runId), parsed = parsers.parseCensus(decoded.text,
+                { ...base, httpMetadata: { ...base.httpMetadata, encodingEvidence: decoded.evidence,
+                    encodingWarnings: decoded.warnings } });
+            return { fetches: [fetched], ...parsed, encoding: { ok: true, encoding: decoded.encoding,
+                evidence: decoded.evidence, warnings: decoded.warnings } }; } }); }
     return Object.freeze({ create, createStatCpi, createStatLabor, createEsriMachineryOrders,
-        createEsriSna, createBea });
+        createEsriSna, createBea, createCensus });
 });

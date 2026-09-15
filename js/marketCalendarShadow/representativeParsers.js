@@ -181,6 +181,32 @@
         if (!recognized && !diagnostics.length) diagnostics.push("bea_release_rows_not_found");
         return { records, diagnostics, exclusions };
     }
+    function parseCensus(html, context) {
+        const records = [], diagnostics = [], exclusions = [];
+        const table = html.match(/<table[^>]*id=["']calendar["'][^>]*>([\s\S]*?)<\/table>/i);
+        if (!table) return { records, diagnostics: ["census_calendar_table_not_found"], exclusions };
+        for (const row of table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+            const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(value => strip(value[1]));
+            if (!cells.length) continue;
+            if (cells[0] !== "Advance Monthly Sales for Retail and Food Services") {
+                exclusions.push({ label: cells[0], reason: "non_retail_sales_economic_indicator" }); continue; }
+            const date = cells[1]?.match(/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s*(20\d{2})$/),
+                time = cells[2]?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i), period = cells[3]?.match(
+                    /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})$/);
+            if (!date || !time || !period) { diagnostics.push("census_retail_sales_row_incomplete"); continue; }
+            let hour = Number(time[1]); if (time[3].toUpperCase() === "PM" && hour < 12) hour += 12;
+            if (time[3].toUpperCase() === "AM" && hour === 12) hour = 0;
+            const referencePeriod = `${period[2]}-${pad(MONTHS[period[1]])}`;
+            records.push(record(context, { eventType: "US_RETAIL_SALES", edition: "advance",
+                scope: "national", authorityEventId: `Advance Monthly Sales for Retail and Food Services|${referencePeriod}|advance`,
+                sourceTitle: cells[0], titleJa: "米小売売上高", titleEn: "U.S. Retail Sales",
+                referencePeriod, releaseKind: "advance_monthly_retail_sales",
+                sourceLocalSchedule: local("instant", `${date[3]}-${pad(MONTHS[date[1]])}-${pad(date[2])}`,
+                    `${pad(hour)}:${time[2]}`, "America/New_York") }));
+        }
+        if (!records.length && !diagnostics.length) diagnostics.push("census_retail_sales_rows_not_found");
+        return { records, diagnostics, exclusions };
+    }
     const CPI_SCOPES = Object.freeze({
         "全国": Object.freeze({ eventType: "JP_NATIONAL_CPI", edition: "initial", scope: "national",
             titleJa: "全国CPI", titleEn: "Japan National CPI" }),
@@ -341,7 +367,8 @@
                 sourceLocalSchedule: local("all_day", `${value[1]}-${value[2]}-${value[3]}`, null, "Asia/Tokyo") })); }
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
-    return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, beaGdpIdentity, beaPceIdentity,
+    return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, parseCensus,
+        beaGdpIdentity, beaPceIdentity,
         BEA_JSON_RELEASES, BEA_GDP_EDITIONS, BEA_REVISION_CONTRACT,
         parseStatCpiXml, parseStatLaborXml,
         parseEsriMachineryOrders, parseEsriSna,
