@@ -6,7 +6,7 @@ const T1 = "2026-09-16T05:15:58.893Z", T2 = "2026-09-16T05:16:00.000Z";
 
 test("acceptedAtはfetch後かつsource cursorよりstrictly monotonic", () => {
     const run = { sourceId: "us-bls-calendar", runId: "run-1", status: "accepted",
-        acceptedAt: T2, fetchedAt: [T1] };
+        acceptedAt: T2, fetchedAt: [T1], semanticSetHash: "a".repeat(64) };
     assert.equal(Contract.validateAcceptedRun(run, { previousAcceptedAt: T1 }).valid, true);
     assert.deepEqual(Contract.validateAcceptedRun({ ...run, acceptedAt: T1 },
         { previousAcceptedAt: T1 }).errors, ["accepted_at_not_monotonic"]);

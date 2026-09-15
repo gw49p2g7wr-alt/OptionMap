@@ -18,6 +18,7 @@
         const errors = [];
         if (!nonempty(value?.sourceId)) errors.push("source_id_invalid");
         if (!nonempty(value?.runId)) errors.push("run_id_invalid");
+        if (!hash(value?.semanticSetHash)) errors.push("semantic_set_hash_invalid");
         if (!timestamp(value?.acceptedAt)) errors.push("accepted_at_invalid");
         if (value?.status !== "accepted") errors.push("run_not_accepted");
         if (!Array.isArray(value?.fetchedAt) || !value.fetchedAt.length ||

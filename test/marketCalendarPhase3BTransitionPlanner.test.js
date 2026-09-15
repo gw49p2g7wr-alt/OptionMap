@@ -58,3 +58,9 @@ test("duplicate runはidempotentまたはconflict", () => {
     assert.equal(Planner.planTransition({ snapshot, run: { ...run("r1"), semanticSetHash: H2 },
         canonicalSet: [event()] }).outcome, "duplicate_run_conflict");
 });
+
+test("missing/malformed runはthrowせずfail-closed", () => {
+    assert.equal(Planner.planTransition({ canonicalSet: [event()] }).outcome, "run_rejected");
+    assert.ok(Planner.planTransition({ run: { ...run("r1"), semanticSetHash: "bad" },
+        canonicalSet: [event()] }).errors.includes("semantic_set_hash_invalid"));
+});

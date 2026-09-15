@@ -24,6 +24,9 @@
     }
     function planTransition({ snapshot = emptySnapshot(), run, canonicalSet = [], coverage = null,
         parserChanged = false } = {}) {
+        const baseValidation = contract.validateAcceptedRun(run);
+        if (!baseValidation.valid) return frozen({ ok: false, outcome: "run_rejected",
+            errors: baseValidation.errors });
         const priorRun = (snapshot.runs || []).find(item => item.sourceId === run.sourceId && item.runId === run.runId);
         if (priorRun) return priorRun.acceptedAt === run.acceptedAt &&
             priorRun.semanticSetHash === run.semanticSetHash
