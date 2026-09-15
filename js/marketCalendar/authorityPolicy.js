@@ -9,7 +9,11 @@
     const POLICY_VERSION = 1;
     const UNAVAILABLE_EVENT_TYPES = Object.freeze({ JP_INDUSTRIAL_PRODUCTION: Object.freeze({
         sourceId: "jp-meti-calendar", status: "unavailable",
-        reason: "authority_endpoint_unresolved" }) });
+        reason: "authority_endpoint_unresolved" }),
+        US_ISM_MANUFACTURING: Object.freeze({ sourceId: "us-ism-calendar", status: "unavailable",
+            reason: "authority_endpoint_unresolved" }),
+        US_ISM_SERVICES: Object.freeze({ sourceId: "us-ism-calendar", status: "unavailable",
+            reason: "authority_endpoint_unresolved" }) });
     const FORMAL_SOURCE_BY_EVENT_TYPE = Object.freeze({
         BOJ_MPM: "jp-boj-calendar", BOJ_POLICY_DECISION: "jp-boj-calendar",
         BOJ_GOVERNOR_PRESS_CONFERENCE: "jp-boj-calendar", JP_TANKAN: "jp-boj-calendar",

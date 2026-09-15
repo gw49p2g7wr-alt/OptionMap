@@ -21,7 +21,7 @@ test("Phase 0A taxonomyの全event typeに一次authorityがある", () => {
 });
 
 test("Phase 0B registryは公式HTTPS hostとIANA timezoneを固定", () => {
-    assert.equal(Object.keys(Registry.SOURCES).length, 13);
+    assert.equal(Object.keys(Registry.SOURCES).length, 12);
     for (const source of Object.values(Registry.SOURCES)) {
         assert.equal(Registry.validateSourceUrl(source.sourceId, source.canonicalUrl).valid, true);
         assert.equal(Registry.validateSourceUrl(source.sourceId, "https://example.com/calendar").valid, false);
@@ -39,6 +39,20 @@ test("METI unresolved endpointはJP_INDUSTRIAL_PRODUCTIONを明示unavailableに
     assert.deepEqual(Policy.evaluateFormalEligibility({ sourceId: "jp-meti-calendar",
         eventType: "JP_INDUSTRIAL_PRODUCTION" }, blocked), { eligible: false,
         reason: "authority_endpoint_unresolved" });
+});
+
+test("ISM client-profile依存SSO endpointは2 PMI eventを明示unavailableにする", () => {
+    const blocked = Registry.getKnownSource("us-ism-calendar");
+    assert.equal(Registry.getSource("us-ism-calendar"), null);
+    assert.deepEqual([blocked.formalStatus, blocked.formalEligible, blocked.canonicalUrl],
+        ["blocked_authority_endpoint", false, null]);
+    assert.equal(blocked.diagnostic, "public_endpoint_client_profile_dependent_sso_redirect");
+    for (const eventType of ["US_ISM_MANUFACTURING", "US_ISM_SERVICES"]) {
+        assert.deepEqual(Policy.UNAVAILABLE_EVENT_TYPES[eventType], { sourceId: "us-ism-calendar",
+            status: "unavailable", reason: "authority_endpoint_unresolved" });
+        assert.deepEqual(Policy.evaluateFormalEligibility({ sourceId: "us-ism-calendar", eventType }, blocked),
+            { eligible: false, reason: "authority_endpoint_unresolved" });
+    }
 });
 
 test("旧ESRI 404 sourceは理由と分割先を明示してFormal registryから除外", () => {

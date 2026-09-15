@@ -14,7 +14,6 @@
         ["us-bls-calendar", "US_BLS", "US", "https://www.bls.gov/schedule/", "www.bls.gov", "America/New_York"],
         ["us-bea-calendar", "US_BEA", "US", "https://apps.bea.gov/API/signup/release_dates.json", "apps.bea.gov", "America/New_York"],
         ["us-census-calendar", "US_CENSUS", "US", "https://www.census.gov/economic-indicators/calendar-listview.html", "www.census.gov", "America/New_York"],
-        ["us-ism-calendar", "US_ISM", "US", "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar/", "www.ismworld.org", "America/New_York"],
         ["jp-jpx-derivatives-calendar", "JPX", "JP", "https://www.jpx.co.jp/derivatives/rules/last-trading-day/", "www.jpx.co.jp", "Asia/Tokyo"],
         ["jp-jpx-market-holidays", "JPX", "JP", "https://www.jpx.co.jp/corporate/about-jpx/calendar/", "www.jpx.co.jp", "Asia/Tokyo"],
         ["us-nyse-market-holidays", "NYSE", "US", "https://www.nyse.com/markets/hours-calendars", "www.nyse.com", "America/New_York"]
@@ -35,7 +34,15 @@
         allowedHosts: Object.freeze(["www.meti.go.jp"]), sourceTimeZone: "Asia/Tokyo",
         parserId: "jp-meti-calendar-parser", parserVersion: 1, formalEligible: false,
         formalStatus: "blocked_authority_endpoint", diagnostic: "authority_endpoint_unresolved",
-        resumeCondition: "verified_official_primary_schedule_endpoint" }) });
+        resumeCondition: "verified_official_primary_schedule_endpoint" }),
+        "us-ism-calendar": Object.freeze({ sourceId: "us-ism-calendar", authority: "US_ISM",
+            jurisdiction: "US", authorityLevel: "primary", sourceKind: "official_calendar",
+            canonicalUrl: null, allowedHosts: Object.freeze(["www.ismworld.org"]),
+            sourceTimeZone: "America/New_York", parserId: "us-ism-calendar-parser", parserVersion: 1,
+            formalEligible: false, formalStatus: "blocked_authority_endpoint",
+            diagnostic: "public_endpoint_client_profile_dependent_sso_redirect",
+            lastKnownUrl: "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar/",
+            resumeCondition: "stable_public_official_schedule_endpoint_without_login_session_or_cookie" }) });
     const getSource = sourceId => SOURCES[sourceId] || null;
     const getKnownSource = sourceId => SOURCES[sourceId] || BLOCKED_SOURCES[sourceId] || null;
     function validateSourceUrl(sourceId, value) {

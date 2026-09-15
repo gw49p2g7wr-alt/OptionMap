@@ -14,7 +14,6 @@ const definitions = {
     "us-bls-calendar": ["US_CPI", "2026-08", "national", "instant", "2026-09-11", "08:30"],
     "us-bea-calendar": ["US_PCE", "2026-08", "national", "instant", "2026-09-30", "08:30"],
     "us-census-calendar": ["US_RETAIL_SALES", "2026-08", "national", "instant", "2026-09-16", "08:30"],
-    "us-ism-calendar": ["US_ISM_MANUFACTURING", "2026-08", "national", "instant", "2026-09-01", "10:00"],
     "jp-jpx-derivatives-calendar": ["JPX_NIKKEI225_MAJOR_SQ", "2026-09", "OSE", "all_day", "2026-09-11", null],
     "jp-jpx-market-holidays": ["JPX_MARKET_HOLIDAY", "2026-09-22", "JPX", "all_day", "2026-09-22", null],
     "us-nyse-market-holidays": ["US_NYSE_MARKET_HOLIDAY", "2026-09-07", "NYSE_CASH", "all_day", "2026-09-07", null]
