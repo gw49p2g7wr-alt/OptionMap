@@ -223,6 +223,57 @@
         if (!records.length) diagnostics.push("jpx_holiday_rows_not_found");
         return { records, diagnostics, exclusions: [] };
     }
+    function englishDate(value, year = null) {
+        const match = strip(value).match(/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:\D.*)?$/);
+        return match && year ? `${year}-${pad(MONTHS[match[1]])}-${pad(match[2])}` : null;
+    }
+    function parseNyseMarketHolidays(html, context) {
+        const records = [], diagnostics = [], exclusions = [], heading = html.indexOf(
+            "All NYSE markets observe U.S. holidays as listed below");
+        if (heading < 0) return { records, diagnostics: ["nyse_holiday_authority_heading_not_found"], exclusions };
+        const table = html.slice(heading).match(/<table[^>]*>[\s\S]*?<th>Holiday<\/th>([\s\S]*?)<\/table>/i);
+        if (!table) return { records, diagnostics: ["nyse_holiday_table_not_found"], exclusions };
+        const years = [...table[1].matchAll(/<th[^>]*>\s*(20\d{2})\s*<\/th>/gi)]
+            .map(value => Number(value[1]));
+        if (!years.length) return { records, diagnostics: ["nyse_holiday_years_not_found"], exclusions };
+        for (const row of table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+            const labelMatch = row[1].match(/<th[^>]*>([\s\S]*?)<\/th>/i); if (!labelMatch) continue;
+            const label = strip(labelMatch[1]), values = cells(row[1]);
+            if (values.length !== years.length) { diagnostics.push(`nyse_holiday_row_ambiguous:${label}`); continue; }
+            values.forEach((value, index) => { if (/^[—–-]\**$/.test(value.trim())) return;
+                const date = englishDate(value, years[index]);
+                if (!date) { diagnostics.push(`nyse_holiday_date_ambiguous:${label}:${years[index]}`); return; }
+                records.push(record(context, { eventType: "US_NYSE_MARKET_HOLIDAY", edition: "regular",
+                    scope: "nyse_cash_equities", authorityEventId: `NYSE cash equities holiday|${date}`,
+                    sourceTitle: label, titleJa: `NYSE休場（${label}）`, titleEn: `NYSE Market Holiday (${label})`,
+                    referencePeriod: date, releaseKind: "full_session_holiday",
+                    sourceLocalSchedule: local("all_day", date, null, "America/New_York") })); }); }
+        const disclaimerSection = html.slice(table.index + table[0].length + heading), earlyDates = new Set();
+        for (const paragraph of disclaimerSection.matchAll(/<p[^>]*data-type="disclaimer"[^>]*>([\s\S]*?)<\/p>/gi)) {
+            const value = strip(paragraph[1]);
+            if (!/^\*{2,4}\s+Each market will close early at 1:00 p\.m\. \(1:15 p\.m\. for eligible options\) on /.test(value)) continue;
+            if (!/All times are Eastern Time\.$/.test(value)) { diagnostics.push("nyse_early_close_timezone_missing"); continue; }
+            const dateText = value.slice(value.indexOf(" on ") + 4, value.indexOf(". NYSE American Equities"));
+            for (const match of dateText.matchAll(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(20\d{2})/g)) {
+                const date = `${match[3]}-${pad(MONTHS[match[1]])}-${pad(match[2])}`;
+                if (earlyDates.has(date)) { diagnostics.push(`nyse_early_close_duplicate:${date}`); continue; }
+                earlyDates.add(date); records.push(record(context, { eventType: "US_NYSE_EARLY_CLOSE",
+                    edition: "regular", scope: "nyse_cash_equities",
+                    authorityEventId: `NYSE cash equities early close|${date}`,
+                    sourceTitle: "NYSE cash equities early close", titleJa: "NYSE短縮取引",
+                    titleEn: "NYSE Early Close", referencePeriod: date, releaseKind: "early_session_close",
+                    sourceLocalSchedule: local("instant", date, "13:00", "America/New_York") })); }
+        }
+        if (earlyDates.size) { exclusions.push({ label: "eligible options early close at 13:15 ET",
+            reason: "different_market_scope_nyse_options" });
+            exclusions.push({ label: "specified NYSE-affiliated late sessions close at 17:00 ET",
+                reason: "different_market_and_session_scope" }); }
+        if (!records.some(value => value.eventType === "US_NYSE_MARKET_HOLIDAY"))
+            diagnostics.push("nyse_holiday_rows_not_found");
+        if (!records.some(value => value.eventType === "US_NYSE_EARLY_CLOSE"))
+            diagnostics.push("nyse_early_close_rows_not_found");
+        return { records, diagnostics, exclusions };
+    }
     const CPI_SCOPES = Object.freeze({
         "全国": Object.freeze({ eventType: "JP_NATIONAL_CPI", edition: "initial", scope: "national",
             titleJa: "全国CPI", titleEn: "Japan National CPI" }),
@@ -384,6 +435,7 @@
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
     return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, parseCensus, parseJpxMarketHolidays,
+        parseNyseMarketHolidays,
         beaGdpIdentity, beaPceIdentity,
         BEA_JSON_RELEASES, BEA_GDP_EDITIONS, BEA_REVISION_CONTRACT,
         parseStatCpiXml, parseStatLaborXml,

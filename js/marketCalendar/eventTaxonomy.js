@@ -34,7 +34,8 @@
         JPX_NIKKEI225_MAJOR_SQ: { category: CATEGORY.DERIVATIVES, jurisdiction: "JP" },
         JPX_NIKKEI225_LAST_TRADING_DAY: { category: CATEGORY.DERIVATIVES, jurisdiction: "JP" },
         JPX_MARKET_HOLIDAY: { category: CATEGORY.MARKET_SESSION, jurisdiction: "JP" },
-        US_NYSE_MARKET_HOLIDAY: { category: CATEGORY.MARKET_SESSION, jurisdiction: "US" }
+        US_NYSE_MARKET_HOLIDAY: { category: CATEGORY.MARKET_SESSION, jurisdiction: "US" },
+        US_NYSE_EARLY_CLOSE: { category: CATEGORY.MARKET_SESSION, jurisdiction: "US" }
     });
     const isEventType = value => Object.hasOwn(EVENT_TYPES, value);
     return Object.freeze({ CATEGORY, EVENT_TYPES, isEventType });

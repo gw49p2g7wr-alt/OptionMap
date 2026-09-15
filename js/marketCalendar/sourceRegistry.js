@@ -16,7 +16,7 @@
         ["us-census-calendar", "US_CENSUS", "US", "https://www.census.gov/economic-indicators/calendar-listview.html", "www.census.gov", "America/New_York"],
         ["jp-jpx-derivatives-calendar", "JPX", "JP", "https://www.jpx.co.jp/derivatives/rules/last-trading-day/", "www.jpx.co.jp", "Asia/Tokyo"],
         ["jp-jpx-market-holidays", "JPX", "JP", "https://www.jpx.co.jp/corporate/about-jpx/calendar/", "www.jpx.co.jp", "Asia/Tokyo"],
-        ["us-nyse-market-holidays", "NYSE", "US", "https://www.nyse.com/markets/hours-calendars", "www.nyse.com", "America/New_York"]
+        ["us-nyse-market-holidays", "NYSE", "US", "https://www.nyse.com/trade/hours-calendars", "www.nyse.com", "America/New_York"]
     ].map(([sourceId, authority, jurisdiction, canonicalUrl, allowedHost, sourceTimeZone]) => Object.freeze({
         sourceId, authority, jurisdiction, authorityLevel: "primary", sourceKind: "official_calendar",
         canonicalUrl, allowedHosts: Object.freeze([allowedHost]), sourceTimeZone,
@@ -27,6 +27,11 @@
         allowedHosts: Object.freeze(["apps.bea.gov", "www.bea.gov"]),
         endpointRoles: Object.freeze({ scheduleAuthority: bea.canonicalUrl,
             releaseSemantics: "https://www.bea.gov/news/schedule" }) });
+    const nyse = sourceEntries["us-nyse-market-holidays"];
+    sourceEntries["us-nyse-market-holidays"] = Object.freeze({ ...nyse,
+        endpointHistory: Object.freeze([{ url: "https://www.nyse.com/markets/hours-calendars",
+            status: "replaced", replacement: nyse.canonicalUrl,
+            reason: "official_same_host_redirect_to_trade_hours_calendars" }]) });
     const SOURCES = Object.freeze(sourceEntries);
     const BLOCKED_SOURCES = Object.freeze({ "jp-meti-calendar": Object.freeze({ sourceId: "jp-meti-calendar",
         authority: "JP_METI", jurisdiction: "JP", authorityLevel: "primary",

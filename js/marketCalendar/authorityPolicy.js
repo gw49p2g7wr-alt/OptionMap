@@ -32,7 +32,8 @@
         JPX_NIKKEI225_MAJOR_SQ: "jp-jpx-derivatives-calendar",
         JPX_NIKKEI225_LAST_TRADING_DAY: "jp-jpx-derivatives-calendar",
         JPX_MARKET_HOLIDAY: "jp-jpx-market-holidays",
-        US_NYSE_MARKET_HOLIDAY: "us-nyse-market-holidays"
+        US_NYSE_MARKET_HOLIDAY: "us-nyse-market-holidays",
+        US_NYSE_EARLY_CLOSE: "us-nyse-market-holidays"
     });
     function evaluateFormalEligibility(record, source) {
         if (!record || !taxonomy?.isEventType(record.eventType)) return { eligible: false,
