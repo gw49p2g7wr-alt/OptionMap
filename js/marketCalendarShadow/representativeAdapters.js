@@ -112,6 +112,19 @@
                     encodingWarnings: decoded.warnings } });
             return { fetches: [fetched], ...parsed, encoding: { ok: true, encoding: decoded.encoding,
                 evidence: decoded.evidence, warnings: decoded.warnings } }; } }); }
+    function createJpxMarketHolidays() { const sourceId = "jp-jpx-market-holidays";
+        return Object.freeze({ sourceId, async acquire({ fetcher, runId }) { const source =
+            registry.getSource(sourceId), fetched = await fetcher(sourceId, source.canonicalUrl);
+            if (fetched.status !== "success") return { fetches: [fetched], records: [],
+                diagnostics: [`fetch:${fetched.reason}`] };
+            const decoded = htmlEncoding.decodeHtml(fetched.bytes, fetched.contentType);
+            if (!decoded.ok) return { fetches: [fetched], records: [], diagnostics:
+                [`encoding:${decoded.reason}`], encoding: decoded };
+            const base = context(source, fetched, runId), parsed = parsers.parseJpxMarketHolidays(decoded.text,
+                { ...base, httpMetadata: { ...base.httpMetadata, encodingEvidence: decoded.evidence,
+                    encodingWarnings: decoded.warnings } });
+            return { fetches: [fetched], ...parsed, encoding: { ok: true, encoding: decoded.encoding,
+                evidence: decoded.evidence, warnings: decoded.warnings } }; } }); }
     return Object.freeze({ create, createStatCpi, createStatLabor, createEsriMachineryOrders,
-        createEsriSna, createBea, createCensus });
+        createEsriSna, createBea, createCensus, createJpxMarketHolidays });
 });

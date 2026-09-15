@@ -207,6 +207,22 @@
         if (!records.length && !diagnostics.length) diagnostics.push("census_retail_sales_rows_not_found");
         return { records, diagnostics, exclusions };
     }
+    function parseJpxMarketHolidays(html, context) {
+        const records = [], diagnostics = [];
+        const heading = html.indexOf('id="heading_7"');
+        if (heading < 0) return { records, diagnostics: ["jpx_holiday_section_not_found"], exclusions: [] };
+        const section = html.slice(heading), rows = [...section.matchAll(
+            /<tr><td[^>]*>\s*(20\d{2})\/(\d{2})\/(\d{2})（[^）]+）<\/td[^>]*><td[^>]*>\s*([^<]+?)\s*<\/td><\/tr>/g)];
+        for (const match of rows) { const date = `${match[1]}-${match[2]}-${match[3]}`,
+            label = strip(match[4]);
+            records.push(record(context, { eventType: "JPX_MARKET_HOLIDAY", edition: "regular",
+                scope: "JPX_cash_markets", authorityEventId: `JPX market holiday|${date}`,
+                sourceTitle: label, titleJa: `JPX休場（${label}）`, titleEn: "JPX Market Holiday",
+                referencePeriod: date, releaseKind: "official_market_holiday",
+                sourceLocalSchedule: local("all_day", date, null, "Asia/Tokyo") })); }
+        if (!records.length) diagnostics.push("jpx_holiday_rows_not_found");
+        return { records, diagnostics, exclusions: [] };
+    }
     const CPI_SCOPES = Object.freeze({
         "全国": Object.freeze({ eventType: "JP_NATIONAL_CPI", edition: "initial", scope: "national",
             titleJa: "全国CPI", titleEn: "Japan National CPI" }),
@@ -367,7 +383,7 @@
                 sourceLocalSchedule: local("all_day", `${value[1]}-${value[2]}-${value[3]}`, null, "Asia/Tokyo") })); }
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
-    return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, parseCensus,
+    return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, parseCensus, parseJpxMarketHolidays,
         beaGdpIdentity, beaPceIdentity,
         BEA_JSON_RELEASES, BEA_GDP_EDITIONS, BEA_REVISION_CONTRACT,
         parseStatCpiXml, parseStatLaborXml,
