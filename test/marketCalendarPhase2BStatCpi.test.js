@@ -75,6 +75,8 @@ test("jp-stat-cpi shadowは除外理由を保持し月次2件だけFormal化", a
     assert.equal(source.timezoneResolution, "success"); assert.equal(source.duplicates, 0);
     assert.equal(source.identityCollisions, 0); assert.equal(source.formalEligible, true);
     assert.equal(source.formalCanonicalSet.length, 2); assert.equal(source.exclusions.length, 4);
+    assert.equal(source.formalCanonicalSet[0].source.requestId, "request-1");
+    assert.equal(source.formalCanonicalSet[0].source.runId, "run-1");
 });
 
 test("jp-stat-cpi再取得はsemantic revision安定・acquisition evidence更新", async () => {

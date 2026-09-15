@@ -17,7 +17,9 @@
         edition: values.edition || "initial", sourceStatus: values.sourceStatus || "scheduled",
         sourcePublishedAt: context.sourcePublishedAt || null, sourceUpdatedAt: context.sourceUpdatedAt || null,
         sourceUrl: context.sourceUrl, fetchedAt: context.fetchedAt, parserId: context.parserId,
-        parserVersion: context.parserVersion, rawContentHash: context.rawContentHash, ...values }; }
+        parserVersion: context.parserVersion, rawContentHash: context.rawContentHash,
+        requestId: context.requestId || null, runId: context.runId || null,
+        httpMetadata: context.httpMetadata || null, ...values }; }
     function parseBoj(html, context) {
         const diagnostics = [], records = [];
         const meeting = html.match(/id="p02"[\s\S]*?<p>\s*(20\d{2})年(\d{1,2})月(\d{1,2})日[^、]*、\s*(\d{1,2})日/);
@@ -137,6 +139,55 @@
         if (!scopeCount) diagnostics.push("cpi_class_1_hierarchy_not_found");
         return { records, diagnostics, exclusions };
     }
+    const normalizedJapanesePeriod = value => String(value || "").normalize("NFKC").replace(/\s+/g, "");
+    function laborReleaseKind(label) {
+        const normalized = normalizedJapanesePeriod(label), monthly = normalized.match(
+            /^基本集計[（(](20\d{2})年(\d{1,2})月分[）)]$/);
+        if (monthly) return { formal: true, kind: "basic_monthly",
+            referencePeriod: `${monthly[1]}-${pad(monthly[2])}` };
+        if (/^基本集計[（(].+月期平均[）)]$/.test(normalized))
+            return { formal: false, kind: "basic_quarterly_average" };
+        if (/^基本集計[（(].+年度平均[）)]$/.test(normalized))
+            return { formal: false, kind: "basic_fiscal_year_average" };
+        if (/^基本集計[（(].+年平均[）)]$/.test(normalized))
+            return { formal: false, kind: "basic_calendar_year_average" };
+        if (/^詳細集計[（(].+月期平均[）)]$/.test(normalized))
+            return { formal: false, kind: "detailed_quarterly_average" };
+        if (/^詳細集計[（(].+年平均[）)]$/.test(normalized))
+            return { formal: false, kind: "detailed_calendar_year_average" };
+        return { formal: false, kind: "unknown" };
+    }
+    function parseStatLaborXml(xml, context) {
+        const records = [], diagnostics = [], exclusions = [], outerPattern =
+            /<class_1\s+name="([^"]*)"[^>]*>([\s\S]*?)<\/class_1>/g;
+        let outerCount = 0;
+        for (const outer of xml.matchAll(outerPattern)) { outerCount += 1; const outerLabel =
+            normalizedJapanesePeriod(outer[1]), outerPeriod = outerLabel.match(/^(20\d{2})年(\d{1,2})月分$/),
+            innerPattern = /<class_2\s+name="([^"]*)"[^>]*>([\s\S]*?)<\/class_2>/g;
+            let innerCount = 0;
+            for (const inner of outer[2].matchAll(innerPattern)) { innerCount += 1; const classification =
+                laborReleaseKind(inner[1]);
+                if (classification.kind === "unknown") {
+                    diagnostics.push(`labor_unknown_release_kind:${inner[1]}`); continue; }
+                if (!classification.formal) { exclusions.push({ periodGroup: outer[1], label: inner[1],
+                    reason: classification.kind }); continue; }
+                if (!outerPeriod || `${outerPeriod[1]}-${pad(outerPeriod[2])}` !== classification.referencePeriod) {
+                    diagnostics.push(`labor_ambiguous_period:${outer[1]}:${inner[1]}`); continue; }
+                const value = tag => inner[2].match(new RegExp(`<${tag}>([^<]*)<\\/${tag}>`))?.[1],
+                    year = value("release_year"), month = value("release_month"), day = value("release_day"),
+                    hour = value("release_hour"), minute = value("release_minute");
+                if (![year, month, day, hour, minute].every(item => /^\d+$/.test(item || ""))) {
+                    diagnostics.push(`labor_monthly_release_incomplete:${inner[1]}`); continue; }
+                records.push(record(context, { eventType: "JP_LABOR_FORCE", edition: "initial",
+                    scope: "national", sourceTitle: inner[1], titleJa: "労働力調査（基本集計・月次）",
+                    titleEn: "Labour Force Survey Basic Tabulation Monthly Results",
+                    referencePeriod: classification.referencePeriod, releaseKind: classification.kind,
+                    sourceLocalSchedule: local("instant", `${year}-${pad(month)}-${pad(day)}`,
+                        `${pad(hour)}:${pad(minute)}`, "Asia/Tokyo") })); }
+            if (!innerCount) diagnostics.push(`labor_hierarchy_malformed:${outer[1]}`); }
+        if (!outerCount) diagnostics.push("labor_class_1_hierarchy_not_found");
+        return { records, diagnostics, exclusions };
+    }
     function discoverJpxWorkbook(html, year, baseUrl) {
         const match = html.match(new RegExp(`href="([^"]*${year}_indexfutures_options_1_j\\.xlsx)"`));
         return match ? new URL(match[1], baseUrl).href : null;
@@ -157,6 +208,7 @@
                 sourceLocalSchedule: local("all_day", `${value[1]}-${value[2]}-${value[3]}`, null, "Asia/Tokyo") })); }
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
-    return Object.freeze({ parseBoj, parseFed, parseBls, parseStatCpiXml, releaseKind,
+    return Object.freeze({ parseBoj, parseFed, parseBls, parseStatCpiXml, parseStatLaborXml,
+        releaseKind, laborReleaseKind,
         discoverJpxWorkbook, parseJpxWorkbook });
 });
