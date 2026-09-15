@@ -35,20 +35,25 @@
             authorityEventId: record.authorityEventId });
             eventSchedule = schedules.canonicalize(record.sourceLocalSchedule); }
         catch (error) { return { ok: false, reason: error.message, event: null }; }
-        const content = { schemaVersion: 1, logical, schedule: eventSchedule,
+        const semanticContent = { schemaVersion: 1, logical, schedule: eventSchedule,
             lifecycleStatus: record.sourceStatus || "scheduled",
             title: { ja: record.titleJa || record.sourceTitle, en: record.titleEn || null },
-            source: { sourceId: source.sourceId, authority: source.authority,
-                sourceUrl: record.sourceUrl, sourcePublishedAt: record.sourcePublishedAt,
-                sourceUpdatedAt: record.sourceUpdatedAt, fetchedAt: record.fetchedAt,
-                rawContentHash: record.rawContentHash, parserVersion: record.parserVersion },
             change: { reason: record.changeReason || null, supersedesRevisionKey: null } };
-        const canonicalContentHash = await sha256(content);
+        const acquisitionEvidence = { sourceId: source.sourceId, authority: source.authority,
+            sourceUrl: record.sourceUrl, sourcePublishedAt: record.sourcePublishedAt,
+            sourceUpdatedAt: record.sourceUpdatedAt, fetchedAt: record.fetchedAt,
+            rawContentHash: record.rawContentHash, parserId: record.parserId,
+            parserVersion: record.parserVersion, requestId: record.requestId || null,
+            runId: record.runId || null, httpMetadata: record.httpMetadata || null };
+        const canonicalContentHash = await sha256(semanticContent),
+            acquisitionEvidenceHash = await sha256(acquisitionEvidence);
         const freeze = value => { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
             Object.values(value).forEach(freeze); return Object.freeze(value); };
-        return { ok: true, reason: null, event: freeze({ ...content,
+        return { ok: true, reason: null, event: freeze({ ...semanticContent,
+            source: acquisitionEvidence, acquisitionEvidence,
             eventKey: logical.eventKey, revisionKey: `${logical.eventKey}|sha256:${canonicalContentHash}`,
-            validFrom: null, validTo: null, canonicalContentHash }) };
+            acquisitionEvidenceKey: `${source.sourceId}|sha256:${acquisitionEvidenceHash}`,
+            validFrom: null, validTo: null, canonicalContentHash, acquisitionEvidenceHash }) };
     }
     return Object.freeze({ stable, sha256, canonicalize });
 });
