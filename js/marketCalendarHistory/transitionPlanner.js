@@ -23,14 +23,14 @@
     }
     function planTransition({ snapshot = emptySnapshot(), run, canonicalSet = [], coverage = null,
         parserChanged = false } = {}) {
-        const cursor = (snapshot.cursors || []).find(item => item.sourceId === run?.sourceId),
-            validation = contract.validateAcceptedRun(run, { previousAcceptedAt: cursor?.acceptedAt || null });
-        if (!validation.valid) return frozen({ ok: false, outcome: "run_rejected", errors: validation.errors });
         const priorRun = (snapshot.runs || []).find(item => item.sourceId === run.sourceId && item.runId === run.runId);
         if (priorRun) return priorRun.acceptedAt === run.acceptedAt &&
             priorRun.semanticSetHash === run.semanticSetHash
             ? frozen({ ok: true, changed: false, outcome: "already_committed", plan: null })
             : frozen({ ok: false, outcome: "duplicate_run_conflict", errors: ["duplicate_run_conflict"] });
+        const cursor = (snapshot.cursors || []).find(item => item.sourceId === run?.sourceId),
+            validation = contract.validateAcceptedRun(run, { previousAcceptedAt: cursor?.acceptedAt || null });
+        if (!validation.valid) return frozen({ ok: false, outcome: "run_rejected", errors: validation.errors });
         if (!canonicalSet.length) return frozen({ ok: false, outcome: "empty_formal_set",
             errors: ["empty_formal_set"] });
         const entryByKey = new Map((snapshot.entries || []).map(item => [item.eventKey, item]));
