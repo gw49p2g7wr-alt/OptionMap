@@ -36,7 +36,7 @@
                 Object.assign(entry, clone(update)); delete entry.expectedActiveRevisionKey; }
             if (options.failAfter === "revisions") throw new Error("injected_failure_after_revisions");
             for (const item of plan.appendEvidence) {
-                if (!next.evidence.some(value => value.acquisitionEvidenceKey === item.acquisitionEvidenceKey))
+                if (!next.evidence.some(value => value.evidenceLinkKey === item.evidenceLinkKey))
                     next.evidence.push(clone(item)); }
             next.observations.push(...clone(plan.appendObservations));
             next.runs.push(...clone(plan.appendRuns));

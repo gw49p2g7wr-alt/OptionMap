@@ -18,6 +18,7 @@
     function evidenceFor(event, run) {
         return { eventKey: event.eventKey, revisionKey: event.revisionKey, sourceId: run.sourceId,
             runId: run.runId, acceptedAt: run.acceptedAt, acquisitionEvidenceKey: event.acquisitionEvidenceKey,
+            evidenceLinkKey: `${event.revisionKey}|${event.acquisitionEvidenceKey}`,
             acquisitionEvidenceHash: event.acquisitionEvidenceHash, fetchedAt: event.acquisitionEvidence.fetchedAt,
             acquisitionEvidence: clone(event.acquisitionEvidence) };
     }
