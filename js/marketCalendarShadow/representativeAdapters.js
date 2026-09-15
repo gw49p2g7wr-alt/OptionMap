@@ -76,5 +76,15 @@
                 xmlUrl, xmlFetch.contentHash));
             return { fetches: [landing, xmlFetch], ...parsed, encoding: { ok: true,
                 encoding: decoded.encoding, evidence: decoded.evidence } }; } }); }
-    return Object.freeze({ create, createStatCpi, createStatLabor });
+    function createEsri(sourceId, parser) { return Object.freeze({ sourceId,
+        async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), fetched =
+            await fetcher(sourceId, source.canonicalUrl); if (fetched.status !== "success")
+            return { fetches: [fetched], records: [], diagnostics: [`fetch:${fetched.reason}`] };
+            const parsed = parser(text(fetched.bytes), context(source, fetched, runId));
+            return { fetches: [fetched], ...parsed }; } }); }
+    const createEsriMachineryOrders = () => createEsri("jp-esri-machinery-orders-calendar",
+        parsers.parseEsriMachineryOrders);
+    const createEsriSna = () => createEsri("jp-esri-sna-calendar", parsers.parseEsriSna);
+    return Object.freeze({ create, createStatCpi, createStatLabor, createEsriMachineryOrders,
+        createEsriSna });
 });

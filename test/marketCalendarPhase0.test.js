@@ -20,12 +20,19 @@ test("Phase 0A taxonomyの全event typeに一次authorityがある", () => {
 });
 
 test("Phase 0B registryは公式HTTPS hostとIANA timezoneを固定", () => {
-    assert.equal(Object.keys(Registry.SOURCES).length, 13);
+    assert.equal(Object.keys(Registry.SOURCES).length, 14);
     for (const source of Object.values(Registry.SOURCES)) {
         assert.equal(Registry.validateSourceUrl(source.sourceId, source.canonicalUrl).valid, true);
         assert.equal(Registry.validateSourceUrl(source.sourceId, "https://example.com/calendar").valid, false);
         assert.doesNotThrow(() => new Intl.DateTimeFormat("en", { timeZone: source.sourceTimeZone }));
     }
+});
+
+test("旧ESRI 404 sourceは理由と分割先を明示してFormal registryから除外", () => {
+    assert.equal(Registry.getSource("jp-esri-calendar"), null);
+    assert.deepEqual(Registry.REPLACED_SOURCES["jp-esri-calendar"], { status: "replaced",
+        reason: "official_endpoint_removed_http_404", replacements:
+            ["jp-esri-machinery-orders-calendar", "jp-esri-sna-calendar"] });
 });
 
 test("Phase 0C fixture parserは初期βの全sourceを受理", () => {

@@ -188,6 +188,55 @@
         if (!outerCount) diagnostics.push("labor_class_1_hierarchy_not_found");
         return { records, diagnostics, exclusions };
     }
+    const cells = row => [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(value => strip(value[1]));
+    function parseEsriMachineryOrders(html, context) {
+        const records = [], diagnostics = [], exclusions = [], table = html.match(
+            /<table[^>]*>[\s\S]*?機械受注統計調査[\s\S]*?<\/table>/i);
+        if (!table) return { records, exclusions, diagnostics: ["esri_machinery_table_not_found"] };
+        let releaseYear = null, lastReleaseMonth = null, rowCount = 0;
+        for (const row of table[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) { const values = cells(row[1]);
+            if (values.length < 3) continue; const value = values[2], date = value.match(
+                /(?:(?:令和)?(\d{1,2})年\s*)?(\d{1,2})月\s*(\d{1,2})日\s*\((\d{1,2})月分\)/);
+            if (!date) { if (value && value !== "&nbsp;") exclusions.push({ label: value,
+                reason: "non_monthly_or_empty_machinery_cell" }); continue; }
+            rowCount += 1; const releaseMonth = Number(date[2]), referenceMonth = Number(date[4]);
+            if (date[1]) releaseYear = 2018 + Number(date[1]);
+            else if (releaseYear && lastReleaseMonth && releaseMonth < lastReleaseMonth) releaseYear += 1;
+            if (!releaseYear) { diagnostics.push(`esri_machinery_year_context_missing:${value}`); continue; }
+            lastReleaseMonth = releaseMonth; const referenceYear = referenceMonth > releaseMonth
+                ? releaseYear - 1 : releaseYear;
+            records.push(record(context, { eventType: "JP_MACHINERY_ORDERS", edition: "initial",
+                scope: "national", sourceTitle: `機械受注統計調査 ${date[4]}月分`, titleJa: "機械受注",
+                titleEn: "Machinery Orders", referencePeriod: `${referenceYear}-${pad(referenceMonth)}`,
+                releaseKind: "monthly", sourceLocalSchedule: local("instant",
+                    `${releaseYear}-${pad(releaseMonth)}-${pad(date[3])}`, "08:50", "Asia/Tokyo") })); }
+        if (!rowCount) diagnostics.push("esri_machinery_monthly_rows_not_found");
+        return { records, diagnostics, exclusions };
+    }
+    function parseEsriSna(html, context) {
+        const records = [], diagnostics = [], exclusions = [], heading = html.indexOf("四半期別GDP速報"),
+            nextHeading = html.indexOf("<h2", heading + 4), section = heading < 0 ? "" :
+                html.slice(heading, nextHeading < 0 ? html.length : nextHeading), table = section.match(
+                    /<table[^>]*>([\s\S]*?)<\/table>/i);
+        if (!table) return { records, exclusions, diagnostics: ["esri_sna_gdp_table_not_found"] };
+        for (const row of table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) { const value = cells(row[1]);
+            if (value.length !== 3) continue; const period = value[0].match(
+                /^(20\d{2})年(\d{1,2})-(\d{1,2})月期（([12])次速報）$/), date = value[1].match(
+                    /^(20\d{2})（令和\d+）年(\d{1,2})月(\d{1,2})日（[^）]+）$/), time = value[2].match(
+                    /^(\d{1,2})時(\d{1,2})分$/);
+            if (!period) { exclusions.push({ label: value[0], reason: "non_quarterly_gdp_release" }); continue; }
+            if (!date || !time) { diagnostics.push(`esri_sna_gdp_row_incomplete:${value.join("|")}`); continue; }
+            records.push(record(context, { eventType: "JP_GDP", edition: period[4] === "1"
+                ? "first_preliminary" : "second_preliminary", scope: "national",
+                sourceTitle: value[0], titleJa: `GDP ${period[4]}次速報`, titleEn:
+                    `GDP ${period[4] === "1" ? "First" : "Second"} Preliminary`,
+                referencePeriod: `${period[1]}-Q${Math.ceil(Number(period[3]) / 3)}`,
+                releaseKind: "quarterly_preliminary", sourceLocalSchedule: local("instant",
+                    `${date[1]}-${pad(date[2])}-${pad(date[3])}`, `${pad(time[1])}:${pad(time[2])}`,
+                    "Asia/Tokyo") })); }
+        if (!records.length && !diagnostics.length) diagnostics.push("esri_sna_gdp_rows_not_found");
+        return { records, diagnostics, exclusions };
+    }
     function discoverJpxWorkbook(html, year, baseUrl) {
         const match = html.match(new RegExp(`href="([^"]*${year}_indexfutures_options_1_j\\.xlsx)"`));
         return match ? new URL(match[1], baseUrl).href : null;
@@ -209,6 +258,7 @@
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
     return Object.freeze({ parseBoj, parseFed, parseBls, parseStatCpiXml, parseStatLaborXml,
+        parseEsriMachineryOrders, parseEsriSna,
         releaseKind, laborReleaseKind,
         discoverJpxWorkbook, parseJpxWorkbook });
 });

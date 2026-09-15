@@ -8,7 +8,8 @@
         ["jp-boj-calendar", "BOJ", "JP", "https://www.boj.or.jp/about/calendar/", "www.boj.or.jp", "Asia/Tokyo"],
         ["jp-stat-cpi", "JP_STATISTICS_BUREAU", "JP", "https://www.stat.go.jp/data/cpi/", "www.stat.go.jp", "Asia/Tokyo"],
         ["jp-stat-labor", "JP_STATISTICS_BUREAU", "JP", "https://www.stat.go.jp/data/roudou/", "www.stat.go.jp", "Asia/Tokyo"],
-        ["jp-esri-calendar", "JP_ESRI", "JP", "https://www.esri.cao.go.jp/jp/stat/kouhyou/kouhyou.html", "www.esri.cao.go.jp", "Asia/Tokyo"],
+        ["jp-esri-machinery-orders-calendar", "JP_ESRI", "JP", "https://www.esri.cao.go.jp/jp/stat/stat-schedule.html", "www.esri.cao.go.jp", "Asia/Tokyo"],
+        ["jp-esri-sna-calendar", "JP_ESRI", "JP", "https://www.esri.cao.go.jp/jp/sna/kouhyou/kouhyou_top.html", "www.esri.cao.go.jp", "Asia/Tokyo"],
         ["jp-meti-calendar", "JP_METI", "JP", "https://www.meti.go.jp/statistics/", "www.meti.go.jp", "Asia/Tokyo"],
         ["us-fed-fomc-calendar", "US_FED", "US", "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", "www.federalreserve.gov", "America/New_York"],
         ["us-bls-calendar", "US_BLS", "US", "https://www.bls.gov/schedule/", "www.bls.gov", "America/New_York"],
@@ -32,5 +33,8 @@
             : { valid: false, reason: "source_url_not_allowed" }; }
         catch (_error) { return { valid: false, reason: "source_url_invalid" }; }
     }
-    return Object.freeze({ SOURCES, getSource, validateSourceUrl });
+    const REPLACED_SOURCES = Object.freeze({ "jp-esri-calendar": Object.freeze({ status: "replaced",
+        reason: "official_endpoint_removed_http_404", replacements: Object.freeze([
+            "jp-esri-machinery-orders-calendar", "jp-esri-sna-calendar"]) }) });
+    return Object.freeze({ SOURCES, REPLACED_SOURCES, getSource, validateSourceUrl });
 });
