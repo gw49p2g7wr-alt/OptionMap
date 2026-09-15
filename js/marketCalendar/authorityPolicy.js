@@ -7,6 +7,9 @@
 })(typeof window !== "undefined" ? window : globalThis, function (taxonomy) {
     "use strict";
     const POLICY_VERSION = 1;
+    const UNAVAILABLE_EVENT_TYPES = Object.freeze({ JP_INDUSTRIAL_PRODUCTION: Object.freeze({
+        sourceId: "jp-meti-calendar", status: "unavailable",
+        reason: "authority_endpoint_unresolved" }) });
     const FORMAL_SOURCE_BY_EVENT_TYPE = Object.freeze({
         BOJ_MPM: "jp-boj-calendar", BOJ_POLICY_DECISION: "jp-boj-calendar",
         BOJ_GOVERNOR_PRESS_CONFERENCE: "jp-boj-calendar", JP_TANKAN: "jp-boj-calendar",
@@ -30,6 +33,8 @@
     function evaluateFormalEligibility(record, source) {
         if (!record || !taxonomy?.isEventType(record.eventType)) return { eligible: false,
             reason: "event_type_unregistered" };
+        if (UNAVAILABLE_EVENT_TYPES[record.eventType]) return { eligible: false,
+            reason: UNAVAILABLE_EVENT_TYPES[record.eventType].reason };
         if (!source || source.sourceId !== record.sourceId) return { eligible: false,
             reason: "source_unregistered" };
         if (source.authorityLevel !== "primary" || source.formalEligible !== true)
@@ -39,5 +44,5 @@
             : { eligible: false, reason: "source_not_authoritative_for_event_type" };
     }
     return Object.freeze({ POLICY_VERSION, FALLBACK_MODE: "none", FORMAL_SOURCE_BY_EVENT_TYPE,
-        evaluateFormalEligibility });
+        UNAVAILABLE_EVENT_TYPES, evaluateFormalEligibility });
 });

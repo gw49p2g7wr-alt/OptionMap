@@ -10,7 +10,6 @@ const definitions = {
     "jp-stat-labor": ["JP_LABOR_FORCE", "2026-08", "national", "instant", "2026-10-02", "08:30"],
     "jp-esri-machinery-orders-calendar": ["JP_MACHINERY_ORDERS", "2026-07", "national", "instant", "2026-09-16", "08:50"],
     "jp-esri-sna-calendar": ["JP_GDP", "2026-Q3", "national", "instant", "2026-11-16", "08:50"],
-    "jp-meti-calendar": ["JP_INDUSTRIAL_PRODUCTION", "2026-08", "national", "instant", "2026-09-30", "08:50"],
     "us-fed-fomc-calendar": ["US_FOMC_POLICY_DECISION", "2026-09-meeting", "federal", "instant", "2026-09-16", "14:00"],
     "us-bls-calendar": ["US_CPI", "2026-08", "national", "instant", "2026-09-11", "08:30"],
     "us-bea-calendar": ["US_PCE", "2026-08", "national", "instant", "2026-09-30", "08:30"],

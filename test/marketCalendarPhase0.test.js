@@ -12,6 +12,7 @@ test("Phase 0A taxonomyの全event typeに一次authorityがある", () => {
     assert.deepEqual(Object.keys(Taxonomy.EVENT_TYPES).sort(),
         Object.keys(Policy.FORMAL_SOURCE_BY_EVENT_TYPE).sort());
     for (const [eventType, sourceId] of Object.entries(Policy.FORMAL_SOURCE_BY_EVENT_TYPE)) {
+        if (Policy.UNAVAILABLE_EVENT_TYPES[eventType]) continue;
         const source = Registry.getSource(sourceId);
         assert.equal(source.authorityLevel, "primary", eventType);
         assert.equal(source.formalEligible, true, eventType);
@@ -20,12 +21,24 @@ test("Phase 0A taxonomyの全event typeに一次authorityがある", () => {
 });
 
 test("Phase 0B registryは公式HTTPS hostとIANA timezoneを固定", () => {
-    assert.equal(Object.keys(Registry.SOURCES).length, 14);
+    assert.equal(Object.keys(Registry.SOURCES).length, 13);
     for (const source of Object.values(Registry.SOURCES)) {
         assert.equal(Registry.validateSourceUrl(source.sourceId, source.canonicalUrl).valid, true);
         assert.equal(Registry.validateSourceUrl(source.sourceId, "https://example.com/calendar").valid, false);
         assert.doesNotThrow(() => new Intl.DateTimeFormat("en", { timeZone: source.sourceTimeZone }));
     }
+});
+
+test("METI unresolved endpointはJP_INDUSTRIAL_PRODUCTIONを明示unavailableにする", () => {
+    const blocked = Registry.getKnownSource("jp-meti-calendar");
+    assert.equal(Registry.getSource("jp-meti-calendar"), null);
+    assert.deepEqual([blocked.formalStatus, blocked.formalEligible, blocked.canonicalUrl],
+        ["blocked_authority_endpoint", false, null]);
+    assert.deepEqual(Policy.UNAVAILABLE_EVENT_TYPES.JP_INDUSTRIAL_PRODUCTION, {
+        sourceId: "jp-meti-calendar", status: "unavailable", reason: "authority_endpoint_unresolved" });
+    assert.deepEqual(Policy.evaluateFormalEligibility({ sourceId: "jp-meti-calendar",
+        eventType: "JP_INDUSTRIAL_PRODUCTION" }, blocked), { eligible: false,
+        reason: "authority_endpoint_unresolved" });
 });
 
 test("旧ESRI 404 sourceは理由と分割先を明示してFormal registryから除外", () => {
