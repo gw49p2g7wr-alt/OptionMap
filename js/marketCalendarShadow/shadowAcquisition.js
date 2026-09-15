@@ -16,7 +16,8 @@
     function create({ adapters, fetcher, previousObservations = {}, runId = null } = {}) {
         async function run() { const sourceResults = [];
             for (const adapter of adapters || []) { const acquired = await adapter.acquire({ fetcher, runId }),
-                diagnostics = [...(acquired.diagnostics || [])], canonical = [], eventTypes = {};
+                diagnostics = [...(acquired.diagnostics || [])], exclusions = clone(acquired.exclusions || []),
+                canonical = [], eventTypes = {};
                 let parserStatus = diagnostics.length ? acquired.records?.length ? "partial" : "failure" : "success";
                 for (const record of acquired.records || []) { const validation = sourceContract.validateSourceRecord(record);
                     if (!validation.valid) { diagnostics.push(...validation.errors.map(error => `contract:${error}`)); continue; }
@@ -62,7 +63,8 @@
                         ? "success" : canonical.length ? "partial" : "failure", eventCount: canonical.length,
                     eventTypes, duplicates, identityCollisions, timezoneResolution: diagnostics.some(value =>
                         value.startsWith("timezone:")) ? "failure" : canonical.length ? "success" : "not_evaluated",
-                    diagnostics, formalEligible, formalCanonicalSet: formalEligible ? canonical : [] })); }
+                    encoding: clone(acquired.encoding || null), exclusions, diagnostics, formalEligible,
+                    formalCanonicalSet: formalEligible ? canonical : [] })); }
             return freeze({ shadow: true, readOnly: true, storageWrite: false, uiConnected: false,
                 timeTravelConnected: false, schedulerConnected: false, notificationConnected: false,
                 overallV2Connected: false, generatedAt: new Date().toISOString(), sources: sourceResults }); }

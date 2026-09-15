@@ -3,10 +3,12 @@
         ? require("../marketCalendar/sourceRegistry.js") : root?.OptionMapMarketEventSourceRegistry;
     const parsers = typeof module === "object" && module.exports && !(root && root.document)
         ? require("./representativeParsers.js") : root?.OptionMapMarketCalendarRepresentativeParsers;
-    const api = factory(registry, parsers);
+    const encoding = typeof module === "object" && module.exports && !(root && root.document)
+        ? require("./xmlEncoding.js") : root?.OptionMapMarketCalendarXmlEncoding;
+    const api = factory(registry, parsers, encoding);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketCalendarRepresentativeAdapters = api;
-})(typeof window !== "undefined" ? window : globalThis, function (registry, parsers) {
+})(typeof window !== "undefined" ? window : globalThis, function (registry, parsers, encoding) {
     "use strict";
     const text = bytes => new TextDecoder("utf-8").decode(bytes);
     const context = (source, fetchResult, runId, sourceUrl = fetchResult.finalUrl,
@@ -44,5 +46,20 @@
         htmlAdapter("us-bls-calendar", parsers.parseBls),
         htmlAdapter("us-fed-fomc-calendar", parsers.parseFed),
         jpxAdapter({ XLSX })]); }
-    return Object.freeze({ create });
+    function createStatCpi() { const sourceId = "jp-stat-cpi"; return Object.freeze({ sourceId,
+        async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), landing =
+            await fetcher(sourceId, source.canonicalUrl); if (landing.status !== "success")
+            return { fetches: [landing], records: [], diagnostics: [`fetch:${landing.reason}`] };
+            const xmlUrl = new URL("/data/kouhyou/e-stat_cpi.xml", source.canonicalUrl).href,
+                xmlFetch = await fetcher(sourceId, xmlUrl); if (xmlFetch.status !== "success")
+                return { fetches: [landing, xmlFetch], records: [], diagnostics:
+                    [`child_fetch:${xmlFetch.reason}`] };
+            const decoded = encoding.decodeUtf16Xml(xmlFetch.bytes, xmlFetch.contentType);
+            if (!decoded.ok) return { fetches: [landing, xmlFetch], records: [],
+                diagnostics: [`encoding:${decoded.reason}`], encoding: decoded };
+            const parsed = parsers.parseStatCpiXml(decoded.text, context(source, xmlFetch, runId,
+                xmlUrl, xmlFetch.contentHash));
+            return { fetches: [landing, xmlFetch], ...parsed, encoding: { ok: true,
+                encoding: decoded.encoding, evidence: decoded.evidence } }; } }); }
+    return Object.freeze({ create, createStatCpi });
 });

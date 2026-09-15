@@ -95,6 +95,48 @@
         return { records, diagnostics: records.length ? diagnostics : diagnostics.length ? diagnostics
             : ["bls_release_rows_not_parsed"] };
     }
+    const CPI_SCOPES = Object.freeze({
+        "全国": Object.freeze({ eventType: "JP_NATIONAL_CPI", edition: "initial", scope: "national",
+            titleJa: "全国CPI", titleEn: "Japan National CPI" }),
+        "東京都区部（中旬速報値）": Object.freeze({ eventType: "JP_TOKYO_CPI", edition: "preliminary",
+            scope: "tokyo", titleJa: "東京都区部CPI", titleEn: "Tokyo CPI" })
+    });
+    function releaseKind(label) {
+        const monthly = String(label).match(/^(20\d{2})年(\d{1,2})月分$/);
+        if (monthly) return { formal: true, kind: "monthly", referencePeriod:
+            `${monthly[1]}-${pad(monthly[2])}` };
+        if (/年度平均/.test(label)) return { formal: false, kind: "fiscal_year_average" };
+        if (/年平均/.test(label)) return { formal: false, kind: "calendar_year_average" };
+        if (/基準|遡及|接続指数/.test(label)) return { formal: false, kind: "benchmark_or_retrospective" };
+        return { formal: false, kind: "special_release" };
+    }
+    function parseStatCpiXml(xml, context) {
+        const records = [], diagnostics = [], exclusions = [], scopePattern =
+            /<class_1\s+name="([^"]*)"[^>]*>([\s\S]*?)<\/class_1>/g;
+        let scopeCount = 0;
+        for (const scopeMatch of xml.matchAll(scopePattern)) { scopeCount += 1; const scopeLabel = scopeMatch[1],
+            mapping = CPI_SCOPES[scopeLabel];
+            if (!mapping) { diagnostics.push(`cpi_unknown_scope:${scopeLabel}`); continue; }
+            const class2Pattern = /<class_2\s+name="([^"]*)"[^>]*>([\s\S]*?)<\/class_2>/g;
+            let releaseCount = 0;
+            for (const releaseMatch of scopeMatch[2].matchAll(class2Pattern)) { releaseCount += 1;
+                const label = releaseMatch[1], classification = releaseKind(label);
+                if (!classification.formal) { exclusions.push({ scope: scopeLabel, label,
+                    reason: classification.kind }); continue; }
+                const value = tag => releaseMatch[2].match(new RegExp(`<${tag}>([^<]*)<\\/${tag}>`))?.[1],
+                    year = value("release_year"), month = value("release_month"), day = value("release_day"),
+                    hour = value("release_hour"), minute = value("release_minute");
+                if (![year, month, day, hour, minute].every(item => /^\d+$/.test(item || ""))) {
+                    diagnostics.push(`cpi_monthly_release_incomplete:${scopeLabel}:${label}`); continue; }
+                records.push(record(context, { eventType: mapping.eventType, edition: mapping.edition,
+                    scope: mapping.scope, sourceTitle: `${scopeLabel} ${label}`, titleJa: mapping.titleJa,
+                    titleEn: mapping.titleEn, referencePeriod: classification.referencePeriod,
+                    releaseKind: classification.kind, sourceLocalSchedule: local("instant",
+                        `${year}-${pad(month)}-${pad(day)}`, `${pad(hour)}:${pad(minute)}`, "Asia/Tokyo") })); }
+            if (!releaseCount) diagnostics.push(`cpi_scope_hierarchy_malformed:${scopeLabel}`); }
+        if (!scopeCount) diagnostics.push("cpi_class_1_hierarchy_not_found");
+        return { records, diagnostics, exclusions };
+    }
     function discoverJpxWorkbook(html, year, baseUrl) {
         const match = html.match(new RegExp(`href="([^"]*${year}_indexfutures_options_1_j\\.xlsx)"`));
         return match ? new URL(match[1], baseUrl).href : null;
@@ -115,5 +157,6 @@
                 sourceLocalSchedule: local("all_day", `${value[1]}-${value[2]}-${value[3]}`, null, "Asia/Tokyo") })); }
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
-    return Object.freeze({ parseBoj, parseFed, parseBls, discoverJpxWorkbook, parseJpxWorkbook });
+    return Object.freeze({ parseBoj, parseFed, parseBls, parseStatCpiXml, releaseKind,
+        discoverJpxWorkbook, parseJpxWorkbook });
 });
