@@ -12,7 +12,7 @@
         ["jp-esri-sna-calendar", "JP_ESRI", "JP", "https://www.esri.cao.go.jp/jp/sna/kouhyou/kouhyou_top.html", "www.esri.cao.go.jp", "Asia/Tokyo"],
         ["us-fed-fomc-calendar", "US_FED", "US", "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", "www.federalreserve.gov", "America/New_York"],
         ["us-bls-calendar", "US_BLS", "US", "https://www.bls.gov/schedule/", "www.bls.gov", "America/New_York"],
-        ["us-bea-calendar", "US_BEA", "US", "https://www.bea.gov/news/schedule", "www.bea.gov", "America/New_York"],
+        ["us-bea-calendar", "US_BEA", "US", "https://apps.bea.gov/API/signup/release_dates.json", "apps.bea.gov", "America/New_York"],
         ["us-census-calendar", "US_CENSUS", "US", "https://www.census.gov/economic-indicators/calendar-listview.html", "www.census.gov", "America/New_York"],
         ["us-ism-calendar", "US_ISM", "US", "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar/", "www.ismworld.org", "America/New_York"],
         ["jp-jpx-derivatives-calendar", "JPX", "JP", "https://www.jpx.co.jp/derivatives/rules/last-trading-day/", "www.jpx.co.jp", "Asia/Tokyo"],
@@ -22,7 +22,13 @@
         sourceId, authority, jurisdiction, authorityLevel: "primary", sourceKind: "official_calendar",
         canonicalUrl, allowedHosts: Object.freeze([allowedHost]), sourceTimeZone,
         parserId: `${sourceId}-parser`, parserVersion: 1, formalEligible: true }));
-    const SOURCES = Object.freeze(Object.fromEntries(sources.map(source => [source.sourceId, source])));
+    const sourceEntries = Object.fromEntries(sources.map(source => [source.sourceId, source]));
+    const bea = sourceEntries["us-bea-calendar"];
+    sourceEntries["us-bea-calendar"] = Object.freeze({ ...bea,
+        allowedHosts: Object.freeze(["apps.bea.gov", "www.bea.gov"]),
+        endpointRoles: Object.freeze({ scheduleAuthority: bea.canonicalUrl,
+            releaseSemantics: "https://www.bea.gov/news/schedule" }) });
+    const SOURCES = Object.freeze(sourceEntries);
     const BLOCKED_SOURCES = Object.freeze({ "jp-meti-calendar": Object.freeze({ sourceId: "jp-meti-calendar",
         authority: "JP_METI", jurisdiction: "JP", authorityLevel: "primary",
         sourceKind: "official_calendar", canonicalUrl: null,

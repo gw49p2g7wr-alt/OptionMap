@@ -85,6 +85,19 @@
     const createEsriMachineryOrders = () => createEsri("jp-esri-machinery-orders-calendar",
         parsers.parseEsriMachineryOrders);
     const createEsriSna = () => createEsri("jp-esri-sna-calendar", parsers.parseEsriSna);
+    function createBea() { const sourceId = "us-bea-calendar"; return Object.freeze({ sourceId,
+        async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), jsonFetch =
+            await fetcher(sourceId, source.endpointRoles.scheduleAuthority);
+            if (jsonFetch.status !== "success") return { fetches: [jsonFetch], records: [],
+                diagnostics: [`fetch:${jsonFetch.reason}`] };
+            const htmlFetch = await fetcher(sourceId, source.endpointRoles.releaseSemantics);
+            if (htmlFetch.status !== "success") return { fetches: [jsonFetch, htmlFetch], records: [],
+                diagnostics: [`semantic_fetch:${htmlFetch.reason}`] };
+            const base = context(source, jsonFetch, runId), parsed = parsers.parseBea(text(jsonFetch.bytes),
+                text(htmlFetch.bytes), { ...base, httpMetadata: { ...base.httpMetadata,
+                    semanticDescriptorUrl: htmlFetch.finalUrl,
+                    semanticDescriptorContentHash: htmlFetch.contentHash } });
+            return { fetches: [jsonFetch, htmlFetch], ...parsed }; } }); }
     return Object.freeze({ create, createStatCpi, createStatLabor, createEsriMachineryOrders,
-        createEsriSna });
+        createEsriSna, createBea });
 });

@@ -139,9 +139,12 @@ test("BLS recognized releaseのmalformed scheduleはfail-closed", () => {
 });
 
 test("read-only fetchはallowlist外redirectを拒否しcontent hashを返す", async () => {
-    const source = Registry.getSource("us-bls-calendar"), ok = await Fetch.acquire(source.sourceId,
-        source.canonicalUrl, { fetchImpl: async url => ({ status: 200, ok: true, url,
-            headers: new Headers({ "content-type": "text/html" }), arrayBuffer: async () => encoder.encode("body").buffer }) });
+    const source = Registry.getSource("us-bls-calendar"); let accept = null;
+    const ok = await Fetch.acquire(source.sourceId,
+        source.canonicalUrl, { fetchImpl: async (url, options) => { accept = options.headers.accept; return {
+            status: 200, ok: true, url, headers: new Headers({ "content-type": "text/html" }),
+            arrayBuffer: async () => encoder.encode("body").buffer }; } });
+    assert.match(accept, /application\/json/);
     assert.match(ok.contentHash, /^[0-9a-f]{64}$/); assert.equal(ok.status, "success");
     const blocked = await Fetch.acquire(source.sourceId, source.canonicalUrl, { fetchImpl: async () => ({
         status: 302, ok: false, url: source.canonicalUrl,

@@ -97,6 +97,90 @@
         return { records, diagnostics: records.length ? diagnostics : diagnostics.length ? diagnostics
             : ["bls_release_rows_not_parsed"] };
     }
+    const BEA_JSON_RELEASES = Object.freeze({ GDP: "Gross Domestic Product",
+        PCE: "Personal Income and Outlays" });
+    const BEA_GDP_EDITIONS = Object.freeze({ Advance: "advance_estimate",
+        Second: "second_estimate", Third: "third_estimate" });
+    const BEA_REVISION_CONTRACT = Object.freeze({ movedTimestamp: "same_logical_event_new_revision",
+        omittedFromJson: "not_formalized_status_unknown", htmlTba: "not_formalized_status_unknown",
+        restoredTimestamp: "same_logical_event_new_revision" });
+    function beaLocalInstant(value) {
+        if (typeof value !== "string" || !/^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/.test(value) ||
+            !Number.isFinite(Date.parse(value))) return null;
+        const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York",
+            year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+            hourCycle: "h23" }).formatToParts(new Date(value)).filter(part => part.type !== "literal")
+            .map(part => [part.type, part.value]));
+        return { startDate: `${parts.year}-${parts.month}-${parts.day}`,
+            startTime: `${parts.hour}:${parts.minute}` };
+    }
+    function beaGdpIdentity(title) {
+        if (!/^(?:GDP|Gross Domestic Product)\b/.test(title) || /\bby (?:State|County|Metropolitan)|Puerto Rico/i.test(title))
+            return null;
+        if (/\bAnnual Update\b/i.test(title)) return null;
+        const edition = title.match(/\b(Advance|Second|Third) Estimate\b/i), period = title.match(
+            /\b([1-4])(?:st|nd|rd|th) Quarter(?: and Year)?[, ]+(20\d{2})\b/i);
+        if (!edition || !period) return null;
+        const label = edition[1][0].toUpperCase() + edition[1].slice(1).toLowerCase();
+        return { edition: BEA_GDP_EDITIONS[label], referencePeriod: `${period[2]}-Q${period[1]}` };
+    }
+    function beaPceIdentity(title) {
+        const match = title.match(/^Personal Income and Outlays,\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})$/i);
+        if (!match) return null;
+        const monthLabel = match[1][0].toUpperCase() + match[1].slice(1).toLowerCase();
+        return { edition: "initial", referencePeriod: `${match[2]}-${pad(MONTHS[monthLabel])}` };
+    }
+    function parseBea(jsonText, html, context) {
+        const records = [], diagnostics = [], exclusions = []; let schedule;
+        try { schedule = JSON.parse(jsonText); }
+        catch (_error) { return { records: [], diagnostics: ["bea_json_invalid"], exclusions }; }
+        if (!schedule || typeof schedule !== "object" || Array.isArray(schedule))
+            return { records: [], diagnostics: ["bea_json_schema_invalid"], exclusions };
+        const categories = {};
+        for (const [kind, label] of Object.entries(BEA_JSON_RELEASES)) {
+            const dates = schedule[label]?.release_dates;
+            if (!Array.isArray(dates)) { diagnostics.push(`bea_json_release_missing:${label}`); continue; }
+            categories[kind] = new Map();
+            for (const value of dates) { const instant = beaLocalInstant(value);
+                if (!instant) { diagnostics.push(`bea_json_datetime_invalid:${label}`); continue; }
+                const key = `${instant.startDate}T${instant.startTime}`;
+                if (categories[kind].has(key)) diagnostics.push(`bea_json_duplicate_datetime:${label}:${key}`);
+                categories[kind].set(key, instant); }
+        }
+        const yearMatch = html.match(/<th[^>]*>\s*Year\s+(20\d{2})\s*<\/th>/i);
+        if (!yearMatch) return { records: [], diagnostics: [...diagnostics, "bea_html_year_not_found"], exclusions };
+        const year = Number(yearMatch[1]); let recognized = 0;
+        for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+            const titleMatch = row[1].match(/<td[^>]*class="[^"]*release-title[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
+            if (!titleMatch) continue;
+            const title = strip(titleMatch[1]), gdp = beaGdpIdentity(title), pce = beaPceIdentity(title),
+                relevant = /^(?:GDP|Gross Domestic Product|Personal Income and Outlays)\b/.test(title);
+            if (!gdp && !pce) { if (relevant) exclusions.push({ label: title,
+                reason: /^Personal Income and Outlays/.test(title) ? "non_monthly_pio_release" :
+                    "non_standard_quarterly_gdp_release" }); continue; }
+            recognized += 1;
+            const date = row[1].match(/class="release-date"[^>]*>\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})\s*</i),
+                time = row[1].match(/class="text-muted"[^>]*>\s*(\d{1,2}):(\d{2})\s*(AM|PM)\s*</i);
+            if (!date || !time) { diagnostics.push(`bea_release_datetime_missing:${title}`); continue; }
+            let hour = Number(time[1]); if (time[3].toUpperCase() === "PM" && hour < 12) hour += 12;
+            if (time[3].toUpperCase() === "AM" && hour === 12) hour = 0;
+            const localDate = `${year}-${pad(MONTHS[date[1]])}-${pad(date[2])}`,
+                localTime = `${pad(hour)}:${time[2]}`, kind = gdp ? "GDP" : "PCE",
+                authoritative = categories[kind]?.get(`${localDate}T${localTime}`);
+            if (!authoritative) { diagnostics.push(`bea_json_html_schedule_mismatch:${kind}:${localDate}T${localTime}`); continue; }
+            const identity = gdp || pce;
+            records.push(record(context, { eventType: gdp ? "US_GDP" : "US_PCE",
+                authorityEventId: `${BEA_JSON_RELEASES[kind]}|${identity.referencePeriod}|${identity.edition}`,
+                edition: identity.edition,
+                scope: "national", sourceTitle: title, titleJa: gdp ? `米GDP ${identity.edition.replace("_", " ")}` : "米PCE",
+                titleEn: gdp ? `U.S. GDP ${identity.edition.replace("_", " ")}` : "U.S. PCE",
+                referencePeriod: identity.referencePeriod, releaseKind: gdp ? "quarterly_gdp_estimate" :
+                    "monthly_personal_income_and_outlays_package", sourceLocalSchedule:
+                    local("instant", authoritative.startDate, authoritative.startTime, "America/New_York") }));
+        }
+        if (!recognized && !diagnostics.length) diagnostics.push("bea_release_rows_not_found");
+        return { records, diagnostics, exclusions };
+    }
     const CPI_SCOPES = Object.freeze({
         "全国": Object.freeze({ eventType: "JP_NATIONAL_CPI", edition: "initial", scope: "national",
             titleJa: "全国CPI", titleEn: "Japan National CPI" }),
@@ -257,7 +341,9 @@
                 sourceLocalSchedule: local("all_day", `${value[1]}-${value[2]}-${value[3]}`, null, "Asia/Tokyo") })); }
         return { records, diagnostics: records.length ? diagnostics : ["jpx_nikkei225_options_not_parsed"] };
     }
-    return Object.freeze({ parseBoj, parseFed, parseBls, parseStatCpiXml, parseStatLaborXml,
+    return Object.freeze({ parseBoj, parseFed, parseBls, parseBea, beaGdpIdentity, beaPceIdentity,
+        BEA_JSON_RELEASES, BEA_GDP_EDITIONS, BEA_REVISION_CONTRACT,
+        parseStatCpiXml, parseStatLaborXml,
         parseEsriMachineryOrders, parseEsriSna,
         releaseKind, laborReleaseKind,
         discoverJpxWorkbook, parseJpxWorkbook });

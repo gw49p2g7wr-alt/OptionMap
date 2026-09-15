@@ -19,7 +19,7 @@
             redirects: Object.freeze(hops), contentType: null, contentHash: null, bytes: null });
         try { for (let count = 0; count <= maxRedirects; count += 1) {
             const response = await fetchImpl(url, { method: "GET", redirect: "manual",
-                headers: { accept: "text/html,application/xhtml+xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } });
+                headers: { accept: "application/json,text/html,application/xhtml+xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } });
             if (response.status >= 300 && response.status < 400) { const location = response.headers.get("location");
                 if (!location) throw new Error("redirect_location_missing"); const next = new URL(location, url).href,
                     allowed = registry.validateSourceUrl(sourceId, next);
