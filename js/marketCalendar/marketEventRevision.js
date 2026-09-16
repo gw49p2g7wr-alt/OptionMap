@@ -20,10 +20,9 @@
         displayTimeZone = "Asia/Tokyo" } = {}) {
         if (!dates.isValid(calendarDate)) throw new TypeError("calendar_date_invalid");
         return Object.freeze(entries.flatMap(entry => { const revision = selectAsKnownAt(entry.revisions, knowledgeAt);
-            if (!revision) return []; const start = schedules.calendarDateFor(revision.schedule, displayTimeZone);
-            if (revision.schedule.kind === "date_range") { const end = revision.schedule.sourceLocal.endDate;
-                return start <= calendarDate && calendarDate <= end ? [revision] : []; }
-            return start === calendarDate ? [revision] : []; }).sort((left, right) =>
+            if (!revision) return []; const interval = schedules.calendarDateIntervalFor(
+                revision.schedule, displayTimeZone);
+            return interval.start <= calendarDate && calendarDate <= interval.end ? [revision] : []; }).sort((left, right) =>
             (left.schedule.canonicalStart || "").localeCompare(right.schedule.canonicalStart || "") ||
             left.eventKey.localeCompare(right.eventKey)));
     }

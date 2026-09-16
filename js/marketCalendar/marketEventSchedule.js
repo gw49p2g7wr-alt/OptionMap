@@ -58,5 +58,12 @@
                 `${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`; }
         return schedule?.sourceLocal?.startDate || null;
     }
-    return Object.freeze({ resolveWallTime, canonicalize, calendarDateFor });
+    function calendarDateIntervalFor(schedule, displayTimeZone = "Asia/Tokyo") {
+        const start = calendarDateFor(schedule, displayTimeZone);
+        if (!date(start)) throw new TypeError("schedule_calendar_date_invalid");
+        const end = schedule?.kind === "date_range" ? schedule.sourceLocal?.endDate : start;
+        if (!date(end) || end < start) throw new TypeError("schedule_calendar_interval_invalid");
+        return Object.freeze({ start, end });
+    }
+    return Object.freeze({ resolveWallTime, canonicalize, calendarDateFor, calendarDateIntervalFor });
 });
