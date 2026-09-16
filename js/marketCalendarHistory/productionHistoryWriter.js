@@ -3,11 +3,12 @@
     const schema = commonJs ? require("./productionSchemaV1.js") : root?.OptionMapMarketCalendarProductionSchemaV1;
     const mapper = commonJs ? require("./storageRecordMapper.js") : root?.OptionMapMarketCalendarStorageRecordMapper;
     const integrity = commonJs ? require("./historyIntegrity.js") : root?.OptionMapMarketCalendarHistoryIntegrity;
-    const canonicalizer = commonJs ? require("../marketCalendar/marketEventCanonicalizer.js") : root?.OptionMapMarketEventCanonicalizer;
-    const api = factory(schema, mapper, integrity, canonicalizer);
+    const planCanonicalizer = commonJs ? require("./planCanonicalizer.js") :
+        root?.OptionMapMarketCalendarPlanCanonicalizer;
+    const api = factory(schema, mapper, integrity, planCanonicalizer);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapMarketCalendarProductionHistoryWriter = api;
-})(typeof window !== "undefined" ? window : globalThis, function (schema, mapper, integrity, canonicalizer) {
+})(typeof window !== "undefined" ? window : globalThis, function (schema, mapper, integrity, planCanonicalizer) {
     "use strict";
     const names = Object.keys(schema.STORES), request = value => new Promise((resolve, reject) => {
         value.onsuccess = () => resolve(value.result); value.onerror = () => reject(value.error); });
@@ -36,7 +37,7 @@
             expectedCursor = null, injectFailureAfter = null } = {}) {
             if (!enabled || !authorizationToken || authorization !== authorizationToken)
                 return { saved: false, outcome: "production_write_disabled", opened: false };
-            const planHash = await canonicalizer.sha256(plan);
+            const planHash = await planCanonicalizer.planHash(plan);
             if (planHash !== expectedPlanHash) return { saved: false, outcome: "plan_hash_mismatch", opened: false };
             let database;
             try { database = await openExisting(); let fingerprint;

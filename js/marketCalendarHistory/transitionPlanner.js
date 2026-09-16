@@ -1,10 +1,12 @@
 (function (root, factory) {
     const contract = typeof module === "object" && module.exports && !(root && root.document)
         ? require("./historyContract.js") : root?.OptionMapMarketCalendarHistoryContract;
-    const api = factory(contract);
+    const planCanonicalizer = typeof module === "object" && module.exports && !(root && root.document)
+        ? require("./planCanonicalizer.js") : root?.OptionMapMarketCalendarPlanCanonicalizer;
+    const api = factory(contract, planCanonicalizer);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketCalendarTransitionPlanner = api;
-})(typeof window !== "undefined" ? window : globalThis, function (contract) {
+})(typeof window !== "undefined" ? window : globalThis, function (contract, planCanonicalizer) {
     "use strict";
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
     const frozen = value => { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -87,7 +89,8 @@
                 state: confirmed ? "unobserved" : "not_evaluated", coverageConfirmed: confirmed });
         }
         if (errors.length) return frozen({ ok: false, outcome: "integrity_rejected", errors });
-        return frozen({ ok: true, changed: true, outcome: "planned", plan });
+        return frozen({ ok: true, changed: true, outcome: "planned",
+            plan: planCanonicalizer.canonicalizePlan(plan) });
     }
     return Object.freeze({ emptySnapshot, planTransition });
 });
