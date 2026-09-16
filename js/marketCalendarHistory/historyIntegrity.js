@@ -79,5 +79,25 @@
         return Object.freeze({ status: "available", calendarDate, knowledgeAt,
             events: Object.freeze(events) });
     }
-    return Object.freeze({ semanticContent, audit, queryAsKnownAt });
+    function auditStorageSnapshot(snapshot = {}) {
+        const errors = [], required = (items, fields, label) => { for (const item of items || [])
+            for (const field of fields) if (!(field in item) || item[field] === undefined || item[field] === "")
+                errors.push(`${label}:${field}_missing`); };
+        required(snapshot.runs, ["runKey", "sourceId", "runId", "acceptedAt", "semanticSetHash"], "run");
+        required(snapshot.entries, ["eventKey", "sourceId", "activeRevisionKey", "lastObservedAt"], "entry");
+        required(snapshot.revisions, ["revisionKey", "eventKey", "sourceId", "validFrom", "validTo",
+            "calendarDateStart", "calendarDateEnd", "revisionOrigin"], "revision");
+        required(snapshot.evidence, ["evidenceLinkKey", "revisionKey", "acceptedAt", "sourceId", "runId",
+            "acquisitionEvidenceKey"], "evidence");
+        required(snapshot.observations, ["observationKey", "eventKey", "acceptedAt", "sourceId", "runId",
+            "state"], "observation");
+        required(snapshot.cursors, ["sourceId", "acceptedAt", "runId", "runKey"], "cursor");
+        const unique = (items, field, label) => { const seen = new Set(); for (const item of items || []) {
+            if (seen.has(item[field])) errors.push(`${label}:${field}_duplicate`); seen.add(item[field]); } };
+        unique(snapshot.runs, "runKey", "run"); unique(snapshot.entries, "eventKey", "entry");
+        unique(snapshot.revisions, "revisionKey", "revision"); unique(snapshot.evidence, "evidenceLinkKey", "evidence");
+        unique(snapshot.observations, "observationKey", "observation"); unique(snapshot.cursors, "sourceId", "cursor");
+        return Object.freeze({ valid: errors.length === 0, errors: Object.freeze(errors) });
+    }
+    return Object.freeze({ semanticContent, audit, auditStorageSnapshot, queryAsKnownAt });
 });
