@@ -6,6 +6,12 @@ const Authorization = require("../js/marketCalendarHistory/planAuthorization.js"
 const Plan = require("../js/marketCalendarHistory/planCanonicalizer.js");
 
 const HASH = "a".repeat(64), TIME = "2026-09-16T21:56:57.950Z";
+const STORE_COUNTS = Object.freeze({ marketCalendarSourceRuns: 7,
+    marketCalendarEventEntries: 102, marketCalendarSemanticRevisions: 102,
+    marketCalendarAcquisitionEvidence: 170, marketCalendarEventObservations: 170,
+    marketCalendarSourceCursors: 4 });
+const precondition = (overrides = {}) => ({ productionSnapshotFingerprint: "b".repeat(64),
+    storeCounts: { ...STORE_COUNTS }, schemaFingerprint: "c".repeat(64), sourceCursor: null, ...overrides });
 function plan({ requestId = "request-1", encoding = true, reverse = false } = {}) {
     const evidence = { sourceId: "source", authority: "AUTH", sourceUrl: "https://example.test/",
         sourcePublishedAt: null, sourceUpdatedAt: null, fetchedAt: TIME, rawContentHash: HASH,
@@ -87,4 +93,47 @@ test("承認artifactはfake IndexedDB round-trip後も同一planへdeterministic
         artifact.authorizationIdentityHash, storageMutationHash: artifact.storageMutationHash });
     assert.equal(verified.ok, true);
     assert.equal(Plan.canonicalPayload(verified.plan), artifact.canonicalPayload);
+});
+
+test("v2はproduction precondition identityをauthorizationへ独立束縛する", async () => {
+    const artifact = await Authorization.createV2(plan(), precondition()), verified =
+        await Authorization.verify(artifact, { contractVersion: 2,
+            productionPreconditionIdentityHash: artifact.productionPreconditionIdentityHash,
+            authorizationIdentityHash: artifact.authorizationIdentityHash });
+    assert.equal(artifact.contractVersion, 2); assert.equal(verified.ok, true);
+    assert.deepEqual(verified.productionPrecondition, precondition());
+    assert.equal(await Authorization.productionPreconditionIdentity(precondition()),
+        artifact.productionPreconditionIdentityHash);
+    assert.notEqual((await Authorization.createV2(plan(), precondition({
+        productionSnapshotFingerprint: "d".repeat(64) }))).authorizationIdentityHash,
+    artifact.authorizationIdentityHash);
+});
+
+test("v2 verifierはprecondition欠落・変更・null/omitted差をfail-closed", async () => {
+    const artifact = await Authorization.createV2(plan(), precondition()), cases = [
+        { ...artifact, productionPrecondition: undefined },
+        { ...artifact, productionPrecondition: { ...artifact.productionPrecondition,
+            productionSnapshotFingerprint: "d".repeat(64) } },
+        { ...artifact, productionPrecondition: { ...artifact.productionPrecondition,
+            storeCounts: { ...artifact.productionPrecondition.storeCounts,
+                marketCalendarEventEntries: 103 } } },
+        { ...artifact, productionPrecondition: { ...artifact.productionPrecondition,
+            schemaFingerprint: "d".repeat(64) } },
+        { ...artifact, productionPrecondition: { ...artifact.productionPrecondition,
+            sourceCursor: { sourceId: "source", runId: "r", acceptedAt: TIME,
+                runKey: "source|r" } } },
+        { ...artifact, productionPrecondition: Object.fromEntries(Object.entries(
+            artifact.productionPrecondition).filter(([key]) => key !== "sourceCursor")) }
+    ];
+    for (const value of cases) assert.equal((await Authorization.verify(value)).ok, false);
+});
+
+test("v1はimmutable legacyとして検証しv2扱い・unknown version・暗黙昇格を拒否", async () => {
+    const legacy = await Authorization.create(plan());
+    assert.equal((await Authorization.verify(legacy)).ok, true);
+    assert.equal((await Authorization.verify(legacy, { contractVersion: 2 })).ok, false);
+    assert.equal((await Authorization.verify({ ...legacy, contractVersion: 2 })).ok, false);
+    assert.equal((await Authorization.verify({ ...legacy, contractVersion: 99 })).ok, false);
+    assert.equal("productionPrecondition" in legacy, false);
+    assert.equal("productionPreconditionIdentityHash" in legacy, false);
 });

@@ -12,6 +12,8 @@ const jsonBytes = artifact => Buffer.from(JSON.stringify(artifact), "utf8");
 const operationIdentity = values => Canonicalizer.sha256({ contractVersion: CONTRACT_VERSION,
     operationId: values.operationId, sourceId: values.sourceId, runId: values.runId,
     authorizationIdentityHash: values.authorizationIdentityHash,
+    ...(values.productionPreconditionIdentityHash ? { productionPreconditionIdentityHash:
+        values.productionPreconditionIdentityHash } : {}),
     artifactDigest: values.artifactDigest, byteSha256: values.byteSha256,
     byteLength: values.byteLength, artifactPath: values.artifactPath });
 const validOperationId = value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
@@ -33,6 +35,8 @@ async function stage({ artifactBytes, expected, operationId, tempRoot = os.tmpdi
     const artifactPath = path.join(directory, "approval-artifact.json"), descriptor = {
         contractVersion: CONTRACT_VERSION, operationId, sourceId: artifact.sourceId,
         runId: artifact.runId, authorizationIdentityHash: artifact.authorizationIdentityHash,
+        ...(artifact.contractVersion === Authorization.CONTRACT_VERSION_V2 ? {
+            productionPreconditionIdentityHash: artifact.productionPreconditionIdentityHash } : {}),
         artifactDigest, byteSha256: sha256Bytes(bytes), byteLength: bytes.length, artifactPath };
     descriptor.operationIdentity = await operationIdentity(descriptor);
     const handle = fsApi.openSync(artifactPath, fs.constants.O_CREAT | fs.constants.O_EXCL |
@@ -60,6 +64,8 @@ async function consume({ descriptor, expected, openDatabase, fsApi = fs } = {}) 
         const expectedOperationIdentity = await operationIdentity(descriptor);
         if (descriptor.operationIdentity !== expectedOperationIdentity ||
             descriptor.authorizationIdentityHash !== expected.authorizationIdentityHash ||
+            (descriptor.productionPreconditionIdentityHash !== undefined &&
+                descriptor.productionPreconditionIdentityHash !== expected.productionPreconditionIdentityHash) ||
             descriptor.artifactDigest !== expected.artifactDigest) return fail("operation_identity_mismatch");
         try { claimHandle = fsApi.openSync(`${descriptor.artifactPath}.claim`, fs.constants.O_CREAT |
             fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600); }
@@ -80,7 +86,8 @@ async function consume({ descriptor, expected, openDatabase, fsApi = fs } = {}) 
             artifact, expected);
         if (digest !== expected.artifactDigest || !verified.ok) return fail("artifact_authorization_mismatch");
         databaseOpened = true;
-        const value = await openDatabase(verified.plan);
+        const value = await openDatabase(verified.plan, Object.freeze({ artifact,
+            identities: verified.identities, productionPrecondition: verified.productionPrecondition }));
         const cleanupResult = cleanup(descriptor, fsApi);
         return Object.freeze({ ok: true, databaseOpened, value, cleanup: cleanupResult });
     } finally { if (claimHandle !== null) try { fsApi.closeSync(claimHandle); } catch (_error) {} }

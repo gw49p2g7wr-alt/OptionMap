@@ -8,6 +8,7 @@ const Schema = require("../js/marketCalendarHistory/productionSchemaV1.js");
 const Mapper = require("../js/marketCalendarHistory/storageRecordMapper.js");
 const Integrity = require("../js/marketCalendarHistory/historyIntegrity.js");
 const Writer = require("../js/marketCalendarHistory/productionHistoryWriter.js");
+const Authorization = require("../js/marketCalendarHistory/planAuthorization.js");
 const T1 = "2026-09-16T06:00:00.000Z", T2 = "2026-09-16T07:00:00.000Z",
     T3 = "2026-09-16T08:00:00.000Z", SOURCE = "jp-jpx-market-holidays";
 const storeCounts = (entries = 0, revisions = 0, evidence = 0, observations = 0, runs = 0, cursors = 0) => ({
@@ -51,6 +52,18 @@ const writer = (databaseName, extra = {}) => Writer.createProductionHistoryWrite
 async function commit(value, databaseName, expectedStoreCounts, expectedCursor = null, options = {}) {
     return writer(databaseName).write({ authorization: "AUTHORIZED", plan: value.plan,
         expectedPlanHash: await Canon.sha256(value.plan), expectedStoreCounts, expectedCursor, ...options }); }
+async function v2Precondition(snapshot, counts, cursor = null) { return {
+    productionSnapshotFingerprint: await Authorization.productionSnapshotFingerprint(snapshot),
+    storeCounts: counts, schemaFingerprint: Schema.EXPECTED_FINGERPRINT, sourceCursor: cursor }; }
+async function commitV2(value, databaseName, precondition) { const artifact =
+    await Authorization.createV2(value.plan, precondition); return writer(databaseName).write({
+        authorization: "AUTHORIZED", approvalArtifact: artifact,
+        expectedArtifactDigest: await Authorization.artifactDigest(artifact),
+        expectedAuthorizationIdentityHash: artifact.authorizationIdentityHash }); }
+async function mutate(name, stores, callback) { const database = await open(name), tx =
+    database.transaction(stores, "readwrite"); await callback(tx); await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); tx.onerror = () => undefined; });
+    database.close(); }
 
 test("production schema v1 fingerprintと明示storage mappingを固定", async () => {
     assert.equal(await Schema.fingerprint(), Schema.EXPECTED_FINGERPRINT);
@@ -67,7 +80,7 @@ test("production schema v1 fingerprintと明示storage mappingを固定", async 
 test("JPX 41件の初回commitとsemantic unchanged再取得", async () => {
     const name = await createDatabase("jpx"), firstEvents = await events(T1, "r1"), firstPlan = await plan(
         Planner.emptySnapshot(), firstEvents, "r1", T1), first = await commit(firstPlan, name, storeCounts());
-    assert.equal(first.saved, true); assert.deepEqual(first.semantic.counts,
+    assert.equal(first.saved, true, JSON.stringify(first)); assert.deepEqual(first.semantic.counts,
         { entries: 41, revisions: 41, evidence: 41, observations: 41 });
     assert.equal(first.snapshot.runs.length, 1); assert.equal(first.snapshot.cursors.length, 1);
     const beforeEntries = first.snapshot.entries.map(value => ({ ...value })), secondEvents = await events(T2, "r2"),
@@ -145,4 +158,66 @@ test("storage integrityは必須keyPath/index field欠損をreject", async () =>
     assert.equal(Integrity.auditStorageSnapshot(snapshot).valid, true);
     delete snapshot.revisions[0].sourceId;
     assert.ok(Integrity.auditStorageSnapshot(snapshot).errors.includes("revision:sourceId_missing"));
+});
+
+test("v2 artifact由来preconditionはtransaction前と内部で一致時だけcommit", async () => {
+    const name = await createDatabase("v2-commit"), values = await events(T1, "r1"), value =
+        await plan(Planner.emptySnapshot(), values, "r1", T1), precondition = await v2Precondition(
+            Planner.emptySnapshot(), storeCounts()), result = await commitV2(value, name, precondition);
+    assert.equal(result.saved, true, JSON.stringify(result)); assert.equal(result.outcome, "committed");
+    assert.deepEqual([result.snapshot.runs.length, result.snapshot.entries.length,
+        result.snapshot.revisions.length, result.snapshot.evidence.length,
+        result.snapshot.observations.length, result.snapshot.cursors.length], [1, 41, 41, 41, 41, 1]);
+});
+
+test("v2承認後のsnapshot/counts/cursor変化はfake IndexedDBでwrite 0", async () => {
+    for (const mode of ["snapshot", "counts", "cursor"]) { const name = await createDatabase(`v2-${mode}`),
+        initial = await events(T1, "r1"), firstPlan = await plan(Planner.emptySnapshot(), initial, "r1", T1),
+        first = await commit(firstPlan, name, storeCounts()), nextEvents = await events(T2, "r2"), nextPlan =
+        await plan(first.snapshot, nextEvents, "r2", T2), approved = await Authorization.createV2(nextPlan.plan,
+            await v2Precondition(first.snapshot, storeCounts(41, 41, 41, 41, 1, 1), first.snapshot.cursors[0]));
+        if (mode === "snapshot") await mutate(name, ["marketCalendarEventEntries"], async tx => {
+            const store = tx.objectStore("marketCalendarEventEntries"), current = await new Promise((resolve,
+                reject) => { const request = store.get(first.snapshot.entries[0].eventKey);
+                request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+            store.put({ ...current, firstKnownAt: T2 }); });
+        if (mode === "counts") await mutate(name, ["marketCalendarSourceRuns"], async tx => {
+            tx.objectStore("marketCalendarSourceRuns").add({ sourceId: "other", runId: "tamper",
+                runKey: "other|tamper", acceptedAt: T2, fetchedAt: [T2], status: "accepted",
+                semanticSetHash: "a".repeat(64), contractVersion: 1 }); });
+        if (mode === "cursor") await mutate(name, ["marketCalendarSourceCursors"], async tx => {
+            tx.objectStore("marketCalendarSourceCursors").put({ sourceId: SOURCE, runId: "tamper",
+                runKey: `${SOURCE}|tamper`, acceptedAt: T2 }); });
+        const result = await writer(name).write({ authorization: "AUTHORIZED", approvalArtifact: approved,
+            expectedArtifactDigest: await Authorization.artifactDigest(approved),
+            expectedAuthorizationIdentityHash: approved.authorizationIdentityHash });
+        assert.equal(result.saved, false); assert.equal(result.outcome, "rolled_back");
+        const database = await open(name), tx = database.transaction(Object.keys(Schema.STORES), "readonly"),
+            evidenceCount = await new Promise((resolve, reject) => { const request = tx.objectStore(
+                "marketCalendarAcquisitionEvidence").count(); request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error); }); database.close();
+        assert.equal(evidenceCount, 41); }
+});
+
+test("v2 preconditionはtransaction開始直前のraceもtransaction内部でwrite 0", async () => {
+    const name = await createDatabase("v2-inside-race"), initial = await events(T1, "r1"), firstPlan =
+        await plan(Planner.emptySnapshot(), initial, "r1", T1), first = await commit(firstPlan, name,
+            storeCounts()), nextEvents = await events(T2, "r2"), nextPlan = await plan(first.snapshot,
+            nextEvents, "r2", T2), artifact = await Authorization.createV2(nextPlan.plan,
+            await v2Precondition(first.snapshot, storeCounts(41, 41, 41, 41, 1, 1), first.snapshot.cursors[0])),
+        instance = writer(name, { beforeWriteTransaction: async database => { const tx = database.transaction(
+            "marketCalendarEventEntries", "readwrite"), store = tx.objectStore("marketCalendarEventEntries"),
+            current = await new Promise((resolve, reject) => { const request = store.get(
+                first.snapshot.entries[0].eventKey); request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error); }); store.put({ ...current, firstKnownAt: T2 });
+            await new Promise((resolve, reject) => { tx.oncomplete = resolve;
+                tx.onabort = () => reject(tx.error); }); } }), result = await instance.write({
+            authorization: "AUTHORIZED", approvalArtifact: artifact,
+            expectedArtifactDigest: await Authorization.artifactDigest(artifact),
+            expectedAuthorizationIdentityHash: artifact.authorizationIdentityHash });
+    assert.equal(result.saved, false); assert.equal(result.error, "production_precondition_failed");
+    const database = await open(name), tx = database.transaction("marketCalendarAcquisitionEvidence", "readonly"),
+        count = await new Promise((resolve, reject) => { const request = tx.objectStore(
+            "marketCalendarAcquisitionEvidence").count(); request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error); }); database.close(); assert.equal(count, 41);
 });

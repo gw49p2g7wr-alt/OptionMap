@@ -24,6 +24,11 @@ async function fixture() { const artifact = await Authorization.create(plan()); 
         authorizationIdentityHash: artifact.authorizationIdentityHash,
         artifactDigest: await Canon.sha256(artifact) } }; }
 const operationId = () => crypto.randomUUID();
+const v2Precondition = () => ({ productionSnapshotFingerprint: "b".repeat(64), storeCounts: {
+    marketCalendarSourceRuns: 7, marketCalendarEventEntries: 102,
+    marketCalendarSemanticRevisions: 102, marketCalendarAcquisitionEvidence: 170,
+    marketCalendarEventObservations: 170, marketCalendarSourceCursors: 4 },
+    schemaFingerprint: "c".repeat(64), sourceCursor: null });
 
 test("secure file deliveryはartifact bytesをbyte-equivalentに渡しdigest/identity後だけDBを開く", async () => {
     const value = await fixture(), descriptor = await Delivery.stage({ artifactBytes: value.bytes,
@@ -99,4 +104,27 @@ test("stagingは0700 directory・0600 file・small descriptor・Unicode/newline�
     assert.equal(fs.statSync(path.dirname(descriptor.artifactPath)).mode & 0o777, 0o700);
     assert.equal(fs.statSync(descriptor.artifactPath).mode & 0o777, 0o600);
     assert.equal("canonicalPayload" in descriptor, false); Delivery.cleanup(descriptor);
+});
+
+test("v2 delivery operation identityはproduction precondition identityを束縛する", async () => {
+    const artifact = await Authorization.createV2(plan(), v2Precondition()), expected = {
+        sourceId: artifact.sourceId, acceptedAt: artifact.acceptedAt, runId: artifact.runId,
+        semanticPlanHash: artifact.semanticPlanHash,
+        acquisitionEvidenceIdentityHash: artifact.acquisitionEvidenceIdentityHash,
+        storageMutationHash: artifact.storageMutationHash,
+        productionPreconditionIdentityHash: artifact.productionPreconditionIdentityHash,
+        authorizationIdentityHash: artifact.authorizationIdentityHash,
+        artifactDigest: await Canon.sha256(artifact) }, descriptor = await Delivery.stage({
+            artifactBytes: Delivery.jsonBytes(artifact), expected, operationId: operationId() });
+    assert.equal(descriptor.productionPreconditionIdentityHash,
+        artifact.productionPreconditionIdentityHash); let opened = 0;
+    const tampered = { ...descriptor, productionPreconditionIdentityHash: "d".repeat(64) }, rejected =
+        await Delivery.consume({ descriptor: tampered, expected,
+            openDatabase: async () => { opened += 1; } });
+    assert.deepEqual([rejected.ok, rejected.reason, opened],
+        [false, "operation_identity_mismatch", 0]);
+    const accepted = await Delivery.consume({ descriptor, expected,
+        openDatabase: async (_plan, context) => { opened += 1; assert.deepEqual(
+            context.productionPrecondition, v2Precondition()); return "accepted"; } });
+    assert.deepEqual([accepted.ok, accepted.value, opened], [true, "accepted", 1]);
 });
