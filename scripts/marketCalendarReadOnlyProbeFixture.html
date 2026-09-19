@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Isolated probe fixture</title>
+<script src="../js/marketCalendarHistory/productionSchemaV1.js"></script>
+<script>
+const request = indexedDB.open("optionMapMarketCalendarHistory", 1);
+request.onupgradeneeded = () => OptionMapMarketCalendarProductionSchemaV1.createInUpgrade(request.result);
+request.onsuccess = () => { request.result.close(); console.log("OPTIONMAP_FIXTURE_READY"); };
+request.onerror = () => console.error(`OPTIONMAP_FIXTURE_ERROR ${request.error}`);
+</script></html>
