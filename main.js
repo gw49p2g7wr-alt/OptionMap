@@ -1,3 +1,18 @@
+const auditCoordinator = require("./js/marketCalendarHistory/readOnlyAuditCoordinator.js");
+const auditArguments = auditCoordinator.classifyArguments(process.argv);
+auditCoordinator.configureDevelopmentProfile();
+if (auditArguments === "invalid_audit_flag") {
+  console.error("Invalid read-only audit invocation");
+  require("electron").app.exit(2);
+} else if (auditArguments === "audit") {
+  auditCoordinator.runAudit().then(result => {
+    console.log(`OPTIONMAP_AUDIT_RESULT ${JSON.stringify(result)}`);
+    require("electron").app.exit(result.ok ? 0 : 2);
+  }, error => {
+    console.error(`OPTIONMAP_AUDIT_FATAL ${error?.stack || error}`);
+    require("electron").app.exit(1);
+  });
+} else {
 const {
   app,
   BrowserWindow,
@@ -97,7 +112,11 @@ if (!gotTheSingleInstanceLock) {
 } else {
 console.log("OptionMap single-instance lock acquired");
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
+  if (auditCoordinator.classifyArguments(argv) !== "normal") {
+    console.error("Read-only audit invocation rejected: existing process");
+    return;
+  }
   console.log("Second instance blocked; focusing existing window");
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -573,4 +592,5 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+}
 }

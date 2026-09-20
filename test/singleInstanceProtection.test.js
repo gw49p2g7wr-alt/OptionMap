@@ -52,10 +52,12 @@ test("second instance only restores, shows and focuses a live main window", () =
     assert.doesNotMatch(handler, /createWindow|new BrowserWindow|BrowserWindow\.getAllWindows/);
 });
 
-test("second-instance data is ignored and never forwarded or interpreted", () => {
+test("second-instance arguments are used only to reject audit invocation, never forwarded", () => {
     const handler = blockBetween('app.on("second-instance"', 'ipcMain.handle("fetch-jpx');
-    assert.match(handler, /app\.on\("second-instance", \(\) =>/);
-    assert.doesNotMatch(handler, /argv|commandLine|workingDirectory|additionalData|ipcMain|webContents\.send/);
+    assert.match(handler, /app\.on\("second-instance", \(_event, argv\) =>/);
+    assert.match(handler, /auditCoordinator\.classifyArguments\(argv\) !== "normal"/);
+    assert.match(handler, /Read-only audit invocation rejected: existing process/);
+    assert.doesNotMatch(handler, /commandLine|workingDirectory|additionalData|ipcMain|webContents\.send/);
     assert.doesNotMatch(handler, /\beval\b|executeJavaScript|openURL|openExternal|loadURL|readFile|require\("fs"\)|\bshell\b/);
 });
 

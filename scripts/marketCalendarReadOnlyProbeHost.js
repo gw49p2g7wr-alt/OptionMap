@@ -3,7 +3,12 @@ const { app, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const isolatedProfile = fs.mkdtempSync(path.join(os.tmpdir(), "optionmap-readonly-probe-"));
+const requestedProfile = process.env.OPTIONMAP_AUDIT_TEST_PROFILE;
+const isolatedProfile = requestedProfile ? fs.realpathSync(requestedProfile) :
+    fs.mkdtempSync(path.join(os.tmpdir(), "optionmap-readonly-probe-"));
+if (requestedProfile && (path.dirname(isolatedProfile) !== fs.realpathSync(os.tmpdir()) ||
+    !path.basename(isolatedProfile).startsWith("optionmap-audit-dev-")))
+    throw new Error("isolated_profile_invalid");
 app.setPath("userData", isolatedProfile);
 let complete = false;
 app.whenReady().then(() => {
@@ -32,7 +37,8 @@ app.whenReady().then(() => {
     window.loadFile(path.join(__dirname, "marketCalendarReadOnlyProbe.html"), { query: {
         isolated: "1", sourceId: "us-bea-calendar", session: `isolated:${isolatedProfile}` } });
     };
-    if (!process.argv.includes("--fixture")) { launchProbe(); return; }
+    if (!process.argv.includes("--fixture") && !process.argv.includes("--fixture-only")) {
+        launchProbe(); return; }
     const fixture = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false,
         contextIsolation: true, sandbox: true } });
     const timeout = setTimeout(() => { console.error("FIXTURE_FAILED timeout"); app.exit(1); }, 15000);
@@ -41,7 +47,11 @@ app.whenReady().then(() => {
     fixture.webContents.on("console-message", (_event, _level, message) => {
         if (message.startsWith("OPTIONMAP_FIXTURE_ERROR")) { console.error(message); app.exit(1); }
         if (message !== "OPTIONMAP_FIXTURE_READY") return;
-        clearTimeout(timeout); fixture.close(); launchProbe();
+        clearTimeout(timeout); fixture.close();
+        if (process.argv.includes("--fixture-only")) { console.log("OPTIONMAP_FIXTURE_READY");
+            app.exit(0); return; }
+        launchProbe();
     });
-    fixture.loadFile(path.join(__dirname, "marketCalendarReadOnlyProbeFixture.html"));
+    fixture.loadFile(path.join(__dirname, "marketCalendarReadOnlyProbeFixture.html"), { query: {
+        mismatch: process.argv.includes("--fixture-mismatch") ? "1" : "0" } });
 });

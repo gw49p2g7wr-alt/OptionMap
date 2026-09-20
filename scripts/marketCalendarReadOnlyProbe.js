@@ -5,7 +5,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
-    function createGuard(indexedDB, databaseName, log) {
+    function createGuard(indexedDB, databaseName, log, options = {}) {
         let catalogSeen = false, exists = false, openConnections = 0, activeTransactions = 0,
             openAttempts = 0;
         const connections = new Set(), wrappedDatabases = new WeakMap(), pending = new Set();
@@ -36,6 +36,8 @@
                     log("connection_close"); },
                 transaction(names, mode, ...rest) {
                     if (mode !== "readonly") throw new Error("readwrite_transaction_forbidden");
+                    if (options.failTransaction === true)
+                        throw new Error("isolated_transaction_failure");
                     return transaction(value.transaction(names, mode, ...rest), names); } });
             wrappedDatabases.set(value, wrapped); connections.add(wrapped); return wrapped; };
         const guard = Object.freeze({ async databases() { const values = await indexedDB.databases();
@@ -46,6 +48,7 @@
             throw new Error("unverified_database_open_forbidden");
             openAttempts += 1;
             if (openAttempts === 2) log("schema_inventory_passed");
+            if (options.failOpen === true) throw new Error("isolated_open_failure");
             log("indexeddb_open_started"); const request = indexedDB.open(name);
             request.addEventListener("success", () => log("indexeddb_open_success"));
             request.addEventListener("error", () => log("indexeddb_open_failure"));
@@ -58,24 +61,35 @@
                 get onblocked() { return request.onblocked; }, set onblocked(handler) {
                     request.onblocked = handler; }, get onupgradeneeded() {
                     return request.onupgradeneeded; }, set onupgradeneeded(handler) {
-                    request.onupgradeneeded = handler; }, get transaction() { return request.transaction; } }; } });
-        return { guard, state: () => ({ catalogSeen, exists, openConnections, activeTransactions }),
+                    request.onupgradeneeded = handler; }, get transaction() {
+                    return request.transaction ? Object.freeze({ abort: () =>
+                        request.transaction.abort() }) : null; } }; } });
+        return { guard, state: () => ({ catalogSeen, exists, openConnections, activeTransactions,
+            openAttempts }),
             closeAll: () => { for (const connection of [...connections]) connection.close(); },
             settle: async () => { if (!pending.size) return;
                 await Promise.race([Promise.all([...pending]), new Promise(resolve =>
                     setTimeout(resolve, 1000))]); } };
     }
-    async function run({ indexedDB, gateTools, sourceId, databaseName, origin, session,
+    async function run({ indexedDB, guardContext, guardFactory, guardOptions, gateTools, sourceId,
+        databaseName,
+        origin, session,
+        mode = "preflight",
         emit = () => {} } = {}) {
         const stages = [], log = (stage, detail = {}) => { const value = Object.freeze({ stage,
             at: new Date().toISOString(), ...clone(detail) }); stages.push(value); emit(value); },
-            wrapped = createGuard(indexedDB, databaseName, log);
+            wrapped = guardContext || (guardFactory ? guardFactory(log, guardOptions) :
+                createGuard(indexedDB, databaseName, log));
         log("probe_started"); log("origin_session_confirmed", { origin, session });
         let result = null, error = null;
-        try { if (!gateTools || typeof gateTools.preflight !== "function")
-            throw new Error("gate_tools_unavailable");
-            result = await gateTools.preflight({ indexedDB: wrapped.guard, databaseName, sourceId });
-            if (result.ok) { log("schema_inventory_confirmed", { status: result.inventory?.status });
+        try { if (mode === "catalog") { const catalog = await wrapped.guard.databases();
+                result = { ok: true, outcome: "catalog_only_complete", catalog:
+                    catalog.map(value => ({ name: value.name, version: value.version })) }; }
+            else { if (mode !== "preflight" || !gateTools || typeof gateTools.preflight !== "function")
+                throw new Error("gate_tools_unavailable");
+                result = await gateTools.preflight({ indexedDB: wrapped.guard, databaseName, sourceId }); }
+            if (result.ok && mode === "preflight") { log("schema_inventory_confirmed",
+                { status: result.inventory?.status });
                 log("snapshot_counts_fingerprint_acquired", { counts: result.counts,
                     fingerprint: result.productionSnapshotFingerprint });
                 log("source_cursor_acquired", { present: Boolean(result.sourceCursor) });
@@ -87,7 +101,7 @@
         const state = wrapped.state();
         if (state.openConnections || state.activeTransactions) log("resource_leak_detected", state);
         const ok = !error && result?.ok === true && state.openConnections === 0 &&
-            state.activeTransactions === 0;
+            state.activeTransactions === 0 && (mode !== "catalog" || state.openAttempts === 0);
         log("probe_finished", { ok, outcome: result?.outcome || null });
         return Object.freeze({ ok, error, outcome: result?.outcome || null, stages: clone(stages),
             result: clone(result), resources: state });

@@ -39,7 +39,19 @@ test("isolated normal snapshot uses browser-compatible read-only Gate tools and 
 });
 test("absent target is rejected without any open", async () => { const value = await run(new IDBFactory());
     assert.equal(value.ok, false); assert.equal(value.result.inventory.status, "absent");
+    assert.equal(value.resources.openAttempts, 0);
+    assert.equal(value.resources.activeTransactions, 0);
     assert.equal(stages(value).includes("indexeddb_open_started"), false);
+});
+test("catalog-only mode never opens a database", async () => {
+    const indexedDB = new IDBFactory(); await create(indexedDB);
+    const value = await Probe.run({ indexedDB, mode: "catalog", databaseName: name,
+        origin: "file://isolated", session: "isolated-test" });
+    assert.equal(value.ok, true);
+    assert.equal(value.outcome, "catalog_only_complete");
+    assert.equal(value.resources.openAttempts, 0);
+    assert.equal(value.resources.openConnections, 0);
+    assert.equal(value.resources.activeTransactions, 0);
 });
 test("schema mismatch is rejected and its inventory connection closes", async () => {
     const indexedDB = new IDBFactory(); await create(indexedDB, false); const value = await run(indexedDB);
@@ -90,6 +102,22 @@ test("readwrite transaction is blocked at the guard boundary", async () => {
         throw Error("guard_verified"); } }, value = await run(indexedDB, gateTools);
     assert.equal(value.ok, false); assert.equal(value.resources.openConnections, 0);
 });
+test("open request exposes abort only, and database facade exposes no writer", async () => {
+    const indexedDB = new IDBFactory(); await create(indexedDB);
+    const guard = Probe.createGuard(indexedDB, name, () => {});
+    await guard.guard.databases();
+    const database = await new Promise((resolve, reject) => { const request = guard.guard.open(name);
+        request.onsuccess = () => { assert.equal(request.transaction, null);
+            resolve(request.result); }; request.onerror = () => reject(request.error); });
+    assert.deepEqual(Object.keys(database).sort(), ["close", "name", "objectStoreNames",
+        "transaction", "version"].sort());
+    assert.equal(database.createObjectStore, undefined);
+    assert.equal(database.deleteObjectStore, undefined);
+    assert.throws(() => database.transaction([], "readwrite"), /readwrite_transaction_forbidden/);
+    guard.closeAll(); await guard.settle();
+    assert.equal(guard.state().openConnections, 0);
+    assert.equal(guard.state().activeTransactions, 0);
+});
 test("probe and host expose no mutation or dynamic module injection", () => {
     const source = fs.readFileSync(path.resolve(__dirname,
         "../scripts/marketCalendarReadOnlyProbe.js"), "utf8"), html = fs.readFileSync(path.resolve(__dirname,
@@ -106,7 +134,9 @@ test("probe and host expose no mutation or dynamic module injection", () => {
 test("packaged probe includes only read-only browser assets", () => {
     const files = require("../package.json").build.files;
     for (const file of ["scripts/marketCalendarReadOnlyProbe.html",
-        "scripts/marketCalendarReadOnlyProbe.js", "scripts/marketCalendarReadOnlyProbeBoot.js",
+        "scripts/marketCalendarReadOnlyProbeEarly.js", "scripts/marketCalendarReadOnlyProbe.js",
+        "scripts/marketCalendarReadOnlyProbeBoot.js",
+        "scripts/marketCalendarReadOnlyAuditReportPreload.js",
         "scripts/marketCalendarReadOnlySchema.js"]) assert.ok(files.includes(file), file);
     assert.equal(files.includes("scripts/marketCalendarReadOnlyProbeFixture.html"), false);
     assert.equal(files.includes("scripts/marketCalendarReadOnlyProbeHost.js"), false);
