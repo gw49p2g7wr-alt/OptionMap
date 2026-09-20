@@ -5,25 +5,42 @@ const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, session, ipcMain } = require("electron");
+const registry = require("../marketCalendar/sourceRegistry.js");
 
 const AUDIT_FLAG = "--optionmap-calendar-readonly-audit";
+const SOURCE_FLAG = "--optionmap-calendar-audit-source=";
 const REPORT_CHANNEL = "optionmap:calendar-readonly-audit-report";
 let active = false;
 
 function classifyArguments(argv) {
     const auditLike = argv.filter(value => typeof value === "string" &&
-        value.startsWith(AUDIT_FLAG));
+        (value.startsWith(AUDIT_FLAG) || value.startsWith(SOURCE_FLAG) ||
+            value.startsWith("--optionmap-calendar-audit-source")));
     if (!auditLike.length) return "normal";
-    return auditLike.length === 1 && auditLike[0] === AUDIT_FLAG ? "audit" : "invalid_audit_flag";
+    const flags = auditLike.filter(value => value === AUDIT_FLAG), sources = auditLike.filter(
+        value => value.startsWith(SOURCE_FLAG));
+    return auditLike.length === 2 && flags.length === 1 && sources.length === 1 &&
+        allowedSourceId(sources[0].slice(SOURCE_FLAG.length)) ? "audit" : "invalid_audit_flag";
+}
+function allowedSourceId(sourceId) {
+    return typeof sourceId === "string" && /^[a-z][a-z0-9-]*$/.test(sourceId) &&
+        registry.getSource(sourceId)?.formalEligible === true;
+}
+function sourceIdFromArguments(argv) {
+    if (classifyArguments(argv) !== "audit") return null;
+    return argv.find(value => value.startsWith(SOURCE_FLAG)).slice(SOURCE_FLAG.length);
 }
 function configureDevelopmentProfile(env = process.env) {
     const profile = env.OPTIONMAP_AUDIT_TEST_PROFILE;
     if (!profile) return null;
-    const resolved = fs.realpathSync(profile), temporaryRoot = fs.realpathSync(os.tmpdir());
-    if (app.isPackaged || path.dirname(resolved) !== temporaryRoot ||
+    const resolved = fs.realpathSync(profile), temporaryRoots =
+        [fs.realpathSync(os.tmpdir()), fs.realpathSync("/private/tmp")];
+    const packagedTest = app.isPackaged && app.getName() === "OptionMap Audit Test";
+    if ((app.isPackaged && !packagedTest) || !temporaryRoots.includes(path.dirname(resolved)) ||
         !path.basename(resolved).startsWith("optionmap-audit-dev-"))
         throw new Error("isolated_profile_invalid");
     app.setPath("userData", resolved);
+    app.setPath("sessionData", resolved);
     return resolved;
 }
 function createReportGate(expectedSenderId, expectedNonce) {
@@ -37,7 +54,9 @@ function createReportGate(expectedSenderId, expectedNonce) {
         return { accepted: true, result: message.result };
     }, get consumed() { return consumed; } });
 }
-async function runAudit({ env = process.env, timeoutMs = 15000 } = {}) {
+async function runAudit({ env = process.env, argv = process.argv, timeoutMs = 15000 } = {}) {
+    const sourceId = sourceIdFromArguments(argv);
+    if (!sourceId) return { ok: false, outcome: "audit_source_rejected" };
     if (active) return { ok: false, outcome: "duplicate_probe_invocation" };
     if (!app.requestSingleInstanceLock()) return { ok: false, outcome: "existing_process_rejected" };
     active = true;
@@ -77,6 +96,7 @@ async function runAudit({ env = process.env, timeoutMs = 15000 } = {}) {
                 if (value.stages?.at(-1)?.stage !== "probe_finished" ||
                     !value.stages?.some(stage => stage.stage === "origin_session_confirmed" &&
                         stage.origin === "file://" && stage.session === "default") ||
+                    (mode === "preflight" && value.result?.sourceId !== sourceId) ||
                     (mode === "catalog" && value.outcome !== "catalog_only_complete"))
                     return complete("probe_report_gate_failed", value);
                 if (value.ok !== true) return complete("probe_rejected", value);
@@ -107,8 +127,8 @@ async function runAudit({ env = process.env, timeoutMs = 15000 } = {}) {
                 contents.on("unresponsive", () => complete("renderer_unresponsive"));
                 ipcMain.on(REPORT_CHANNEL, onReport);
                 timer = setTimeout(() => complete("audit_timeout"), timeoutMs);
-                window.loadFile(file, { query: { audit: "1", mode, nonce, sourceId:
-                    "us-bea-calendar", session: "default", testTransactionFailure:
+                window.loadFile(file, { query: { audit: "1", mode, nonce, sourceId,
+                    session: "default", testTransactionFailure:
                     !app.isPackaged && env.OPTIONMAP_AUDIT_TEST_PROFILE &&
                     env.OPTIONMAP_AUDIT_TEST_TRANSACTION_FAILURE === "1" ? "1" : "0",
                     testOpenFailure: !app.isPackaged && env.OPTIONMAP_AUDIT_TEST_PROFILE &&
@@ -124,5 +144,6 @@ async function runAudit({ env = process.env, timeoutMs = 15000 } = {}) {
         });
     } finally { active = false; }
 }
-module.exports = Object.freeze({ AUDIT_FLAG, REPORT_CHANNEL, classifyArguments,
+module.exports = Object.freeze({ AUDIT_FLAG, SOURCE_FLAG, REPORT_CHANNEL, classifyArguments,
+    allowedSourceId, sourceIdFromArguments,
     configureDevelopmentProfile, createReportGate, runAudit });

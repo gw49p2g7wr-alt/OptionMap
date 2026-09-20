@@ -5,16 +5,19 @@
     if (isolated === audit) return;
     const emit = value => console.log(`OPTIONMAP_PROBE_STAGE ${JSON.stringify(value)}`);
     const nonce = params.get("nonce"), mode = audit ? params.get("mode") : "preflight";
+    const sourceId = params.get("sourceId"), source =
+        root.OptionMapMarketEventSourceRegistry?.getSource(sourceId);
     if (root.location.origin !== "file://" || (audit && (!nonce ||
         !["catalog", "preflight"].includes(mode) ||
-        typeof root.optionMapReadOnlyAuditReport?.send !== "function"))) {
+        typeof root.optionMapReadOnlyAuditReport?.send !== "function")) ||
+        !sourceId || source?.formalEligible !== true || source.sourceId !== sourceId) {
         console.error("OPTIONMAP_PROBE_FATAL audit_configuration_invalid"); return; }
     root.OptionMapMarketCalendarReadOnlyProbe.run({
         guardFactory: root.OptionMapMarketCalendarTakeReadOnlyGuard,
         guardOptions: { failTransaction: audit && params.get("testTransactionFailure") === "1",
             failOpen: audit && params.get("testOpenFailure") === "1" },
         gateTools: root.OptionMapMarketCalendarReadOnlyGateTools,
-        sourceId: params.get("sourceId") || "us-bea-calendar",
+        sourceId,
         databaseName: "optionMapMarketCalendarHistory", origin: root.location.origin,
         session: params.get("session"), mode, emit }).then(value => {
         root.document.getElementById("status").textContent = value.ok ? "Probe complete" : "Probe rejected";
