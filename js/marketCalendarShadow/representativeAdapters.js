@@ -48,36 +48,30 @@
         htmlAdapter("us-bls-calendar", parsers.parseBls),
         htmlAdapter("us-fed-fomc-calendar", parsers.parseFed),
         jpxAdapter({ XLSX })]); }
-    function createStatCpi() { const sourceId = "jp-stat-cpi"; return Object.freeze({ sourceId,
+    function statXmlAdapter(sourceId, xmlPath, parse) { return Object.freeze({ sourceId,
         async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), landing =
             await fetcher(sourceId, source.canonicalUrl); if (landing.status !== "success")
             return { fetches: [landing], records: [], diagnostics: [`fetch:${landing.reason}`] };
-            const xmlUrl = new URL("/data/kouhyou/e-stat_cpi.xml", source.canonicalUrl).href,
+            const xmlUrl = new URL(xmlPath, source.canonicalUrl).href,
                 xmlFetch = await fetcher(sourceId, xmlUrl); if (xmlFetch.status !== "success")
                 return { fetches: [landing, xmlFetch], records: [], diagnostics:
                     [`child_fetch:${xmlFetch.reason}`] };
             const decoded = encoding.decodeUtf16Xml(xmlFetch.bytes, xmlFetch.contentType);
             if (!decoded.ok) return { fetches: [landing, xmlFetch], records: [],
                 diagnostics: [`encoding:${decoded.reason}`], encoding: decoded };
-            const parsed = parsers.parseStatCpiXml(decoded.text, context(source, xmlFetch, runId,
-                xmlUrl, xmlFetch.contentHash));
+            const metadata = encoding.acquisitionMetadata(decoded);
+            if (!metadata.ok) return { fetches: [landing, xmlFetch], records: [],
+                diagnostics: [`encoding:${metadata.reason}`], encoding: metadata };
+            const base = context(source, xmlFetch, runId, xmlUrl, xmlFetch.contentHash),
+                parsed = parse(decoded.text, { ...base, httpMetadata: { ...base.httpMetadata,
+                    encodingEvidence: metadata.evidence, encodingWarnings: metadata.warnings } });
             return { fetches: [landing, xmlFetch], ...parsed, encoding: { ok: true,
-                encoding: decoded.encoding, evidence: decoded.evidence } }; } }); }
-    function createStatLabor() { const sourceId = "jp-stat-labor"; return Object.freeze({ sourceId,
-        async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), landing =
-            await fetcher(sourceId, source.canonicalUrl); if (landing.status !== "success")
-            return { fetches: [landing], records: [], diagnostics: [`fetch:${landing.reason}`] };
-            const xmlUrl = new URL("/data/kouhyou/e-stat_roudou.xml", source.canonicalUrl).href,
-                xmlFetch = await fetcher(sourceId, xmlUrl); if (xmlFetch.status !== "success")
-                return { fetches: [landing, xmlFetch], records: [], diagnostics:
-                    [`child_fetch:${xmlFetch.reason}`] };
-            const decoded = encoding.decodeUtf16Xml(xmlFetch.bytes, xmlFetch.contentType);
-            if (!decoded.ok) return { fetches: [landing, xmlFetch], records: [],
-                diagnostics: [`encoding:${decoded.reason}`], encoding: decoded };
-            const parsed = parsers.parseStatLaborXml(decoded.text, context(source, xmlFetch, runId,
-                xmlUrl, xmlFetch.contentHash));
-            return { fetches: [landing, xmlFetch], ...parsed, encoding: { ok: true,
-                encoding: decoded.encoding, evidence: decoded.evidence } }; } }); }
+                encoding: decoded.encoding, evidence: metadata.evidence,
+                warnings: metadata.warnings } }; } }); }
+    const createStatCpi = () => statXmlAdapter("jp-stat-cpi", "/data/kouhyou/e-stat_cpi.xml",
+        parsers.parseStatCpiXml);
+    const createStatLabor = () => statXmlAdapter("jp-stat-labor", "/data/kouhyou/e-stat_roudou.xml",
+        parsers.parseStatLaborXml);
     function createEsri(sourceId, parser) { return Object.freeze({ sourceId,
         async acquire({ fetcher, runId }) { const source = registry.getSource(sourceId), fetched =
             await fetcher(sourceId, source.canonicalUrl); if (fetched.status !== "success")

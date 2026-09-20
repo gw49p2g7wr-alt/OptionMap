@@ -25,8 +25,9 @@ test("UTF-16 XMLはHTTP・BOM・declaration一致時だけ明示decode", () => {
     assert.equal(decoded.ok, true); assert.equal(decoded.encoding, "utf-16le");
     assert.match(decoded.text, /東京都区部（中旬速報値）/);
     assert.deepEqual(decoded.evidence, { mediaType: "application/xml", httpCharset: "utf-16",
-        bomEncoding: "utf-16le",
-        xmlCharset: "utf-16" });
+        bomEncoding: "utf-16le", xmlCharset: "utf-16", resolvedEncoding: "utf-16le",
+        resolutionPolicyVersion: 1 });
+    assert.deepEqual(decoded.warnings, []);
 });
 
 test("encoding不明・矛盾・decode failureはUTF-8 fallbackせずfail-closed", () => {
@@ -77,6 +78,9 @@ test("jp-stat-cpi shadowは除外理由を保持し月次2件だけFormal化", a
     assert.equal(source.formalCanonicalSet.length, 2); assert.equal(source.exclusions.length, 4);
     assert.equal(source.formalCanonicalSet[0].source.requestId, "request-1");
     assert.equal(source.formalCanonicalSet[0].source.runId, "run-1");
+    assert.deepEqual(source.formalCanonicalSet[0].acquisitionEvidence.httpMetadata.encodingEvidence,
+        source.encoding.evidence);
+    assert.deepEqual(source.formalCanonicalSet[0].acquisitionEvidence.httpMetadata.encodingWarnings, []);
 });
 
 test("jp-stat-cpi再取得はsemantic revision安定・acquisition evidence更新", async () => {

@@ -4,7 +4,25 @@
     if (root) root.OptionMapMarketCalendarXmlEncoding = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
+    const RESOLUTION_POLICY_VERSION = 1;
     const normalize = value => String(value || "").trim().toLowerCase().replace(/_/g, "-");
+    function acquisitionMetadata(decoded) {
+        const evidence = decoded?.evidence, resolved = decoded?.encoding;
+        const valid = decoded?.ok === true && typeof decoded.text === "string" && evidence &&
+            ["application/xml", "text/xml"].includes(evidence.mediaType) &&
+            ["utf-16le", "utf-16be"].includes(resolved) &&
+            evidence.bomEncoding === resolved && evidence.resolvedEncoding === resolved &&
+            (evidence.httpCharset === null || ["utf-16", resolved].includes(evidence.httpCharset)) &&
+            ["utf-16", resolved].includes(evidence.xmlCharset) &&
+            evidence.resolutionPolicyVersion === RESOLUTION_POLICY_VERSION &&
+            Array.isArray(decoded.warnings) && decoded.warnings.every(value =>
+                typeof value === "string" && value.length > 0);
+        return valid ? { ok: true, evidence: { mediaType: evidence.mediaType,
+            httpCharset: evidence.httpCharset, bomEncoding: evidence.bomEncoding,
+            xmlCharset: evidence.xmlCharset, resolvedEncoding: evidence.resolvedEncoding,
+            resolutionPolicyVersion: evidence.resolutionPolicyVersion },
+        warnings: [...decoded.warnings] } : { ok: false, reason: "encoding_evidence_invalid" };
+    }
     function decodeUtf16Xml(bytes, contentType) {
         const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []),
             mediaType = String(contentType || "").split(";", 1)[0].trim().toLowerCase(),
@@ -27,7 +45,9 @@
         if (!["utf-16", bomEncoding].includes(xmlCharset))
             return { ok: false, reason: "encoding_xml_bom_conflict", text: null };
         return { ok: true, reason: null, text, encoding: bomEncoding,
-            evidence: { mediaType, httpCharset, bomEncoding, xmlCharset } };
+            evidence: { mediaType, httpCharset, bomEncoding, xmlCharset,
+                resolvedEncoding: bomEncoding, resolutionPolicyVersion: RESOLUTION_POLICY_VERSION },
+            warnings: [] };
     }
-    return Object.freeze({ decodeUtf16Xml });
+    return Object.freeze({ RESOLUTION_POLICY_VERSION, decodeUtf16Xml, acquisitionMetadata });
 });

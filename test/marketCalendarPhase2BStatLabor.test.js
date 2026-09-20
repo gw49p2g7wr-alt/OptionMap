@@ -3,9 +3,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const Parsers = require("../js/marketCalendarShadow/representativeParsers.js");
 const Adapters = require("../js/marketCalendarShadow/representativeAdapters.js");
+const Encoding = require("../js/marketCalendarShadow/xmlEncoding.js");
 const Shadow = require("../js/marketCalendarShadow/shadowAcquisition.js");
 const Registry = require("../js/marketCalendar/sourceRegistry.js");
 const Canonicalizer = require("../js/marketCalendar/marketEventCanonicalizer.js");
+const Planner = require("../js/marketCalendarHistory/transitionPlanner.js");
+const Authorization = require("../js/marketCalendarHistory/planAuthorization.js");
 const Fixture = require("./fixtures/marketCalendar/statLaborXmlFixture.js");
 
 const fetchedAt = "2026-09-15T00:00:00.000Z", hash = "a".repeat(64);
@@ -67,6 +70,65 @@ test("jp-stat-labor shadowは月次だけをFormal canonical setへ昇格", asyn
     assert.equal(source.formalCanonicalSet[0].source.requestId, "request-1");
     assert.equal(source.formalCanonicalSet[0].source.runId, "run-1");
     assert.equal(source.formalCanonicalSet[0].source.httpMetadata.httpStatus, 200);
+    assert.deepEqual(source.encoding.evidence, { mediaType: "application/xml", httpCharset: null,
+        bomEncoding: "utf-16le", xmlCharset: "utf-16", resolvedEncoding: "utf-16le",
+        resolutionPolicyVersion: 1 });
+    assert.deepEqual(source.encoding.warnings, []);
+    for (const event of source.formalCanonicalSet) {
+        assert.deepEqual(event.acquisitionEvidence.httpMetadata.encodingEvidence,
+            source.encoding.evidence);
+        assert.deepEqual(event.acquisitionEvidence.httpMetadata.encodingWarnings, []);
+    }
+});
+
+test("XML encoding evidence欠落・不正値はFormal伝播前にfail-closed", async () => {
+    const decoded = Encoding.decodeUtf16Xml(Fixture.utf16le(), "application/xml");
+    assert.equal(decoded.ok, true);
+    assert.equal(Encoding.acquisitionMetadata({ ...decoded, evidence: null }).reason,
+        "encoding_evidence_invalid");
+    assert.equal(Encoding.acquisitionMetadata({ ...decoded, evidence: {
+        ...decoded.evidence, resolvedEncoding: "utf-16be" } }).reason,
+    "encoding_evidence_invalid");
+    assert.equal(Encoding.acquisitionMetadata({ ...decoded, warnings: [null] }).reason,
+        "encoding_evidence_invalid");
+    assert.deepEqual(Encoding.acquisitionMetadata({ ...decoded, warnings: ["declared_charset_generic"] })
+        .warnings, ["declared_charset_generic"]);
+    assert.equal(Encoding.decodeUtf16Xml(Fixture.utf16le(Fixture.xml.replace("UTF-16", "UTF-8")),
+        "application/xml").reason, "encoding_xml_bom_conflict");
+    const brokenFetcher = (sourceId, url) => Promise.resolve(url.endsWith(".xml") ? response(sourceId, url,
+        Fixture.utf16le(Fixture.xml, false)) : response(sourceId, url,
+        new TextEncoder().encode("landing"), { contentType: "text/html" }));
+    const source = (await Shadow.create({ adapters: [Adapters.createStatLabor()],
+        fetcher: brokenFetcher }).run()).sources[0];
+    assert.equal(source.formalEligible, false);
+    assert.equal(source.formalCanonicalSet.length, 0);
+    assert.match(source.diagnostics.join(" "), /encoding_bom_missing/);
+});
+
+test("XML encoding metadataのみの差分はsemantic identityを変えずEvidence identityへ反映", async () => {
+    const adapter = Adapters.createStatLabor(), plain = (await Shadow.create({ adapters: [adapter],
+        fetcher: fetcher(), runId: "run-1" }).run()).sources[0], declared =
+        (await Shadow.create({ adapters: [adapter], fetcher: fetcher({
+            contentType: "application/xml; charset=UTF-16" }), runId: "run-1" }).run()).sources[0];
+    assert.equal(plain.formalEligible, true);
+    assert.equal(declared.formalEligible, true);
+    assert.equal(plain.semanticSetHash, declared.semanticSetHash);
+    assert.deepEqual(plain.formalCanonicalSet.map(event => event.revisionKey),
+        declared.formalCanonicalSet.map(event => event.revisionKey));
+    assert.notEqual(plain.acquisitionEvidenceSetHash, declared.acquisitionEvidenceSetHash);
+    assert.equal(plain.encoding.evidence.httpCharset, null);
+    assert.equal(declared.encoding.evidence.httpCharset, "utf-16");
+    const run = { sourceId: adapter.sourceId, runId: "run-1", acceptedAt: fetchedAt,
+        fetchedAt: [fetchedAt], status: "accepted", semanticSetHash: plain.semanticSetHash };
+    const plainPlan = Planner.planTransition({ run, canonicalSet: plain.formalCanonicalSet }),
+        declaredPlan = Planner.planTransition({ run, canonicalSet: declared.formalCanonicalSet });
+    assert.equal(plainPlan.ok, true);
+    assert.equal(declaredPlan.ok, true);
+    const plainIdentity = await Authorization.identities(plainPlan.plan),
+        declaredIdentity = await Authorization.identities(declaredPlan.plan);
+    assert.equal(plainIdentity.semanticPlanHash, declaredIdentity.semanticPlanHash);
+    assert.notEqual(plainIdentity.acquisitionEvidenceIdentityHash,
+        declaredIdentity.acquisitionEvidenceIdentityHash);
 });
 
 test("jp-stat-labor連続取得はrevision安定・acquisition evidence更新", async () => {
