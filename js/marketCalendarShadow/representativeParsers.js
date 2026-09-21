@@ -370,23 +370,51 @@
         const records = [], diagnostics = [], exclusions = [], table = html.match(
             /<table[^>]*>[\s\S]*?機械受注統計調査[\s\S]*?<\/table>/i);
         if (!table) return { records, exclusions, diagnostics: ["esri_machinery_table_not_found"] };
+        const body = table[0].match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+        if (!body) return { records, exclusions, diagnostics: ["esri_machinery_tbody_not_found"] };
+        const header = table[0].match(/<thead[^>]*>([\s\S]*?)<\/thead>/i),
+            expectedCells = header ? [...header[1].matchAll(/<th\b/gi)].length : 0;
+        if (expectedCells < 3) return { records, exclusions,
+            diagnostics: ["esri_machinery_column_inventory_invalid"] };
+        const notes = [...html.matchAll(/<(?:li|p)[^>]*>([\s\S]*?)<\/(?:li|p)>/gi)]
+            .map(value => strip(value[1])).filter(value => value.includes("機械受注統計調査") &&
+                value.includes("公表"));
+        const releaseTimes = notes.map(value => value.slice(value.indexOf("機械受注統計調査"))
+            .match(/(\d{1,2}):(\d{2})\s*公表/))
+            .filter(Boolean).map(value => `${pad(value[1])}:${value[2]}`);
+        if (releaseTimes.length !== 1 || releaseTimes[0] !== "08:50")
+            diagnostics.push("esri_machinery_release_time_unresolved");
         let releaseYear = null, lastReleaseMonth = null, rowCount = 0;
-        for (const row of table[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) { const values = cells(row[1]);
-            if (values.length < 3) continue; const value = values[2], date = value.match(
-                /(?:(?:令和)?(\d{1,2})年\s*)?(\d{1,2})月\s*(\d{1,2})日\s*\((\d{1,2})月分\)/);
-            if (!date) { if (value && value !== "&nbsp;") exclusions.push({ label: value,
+        for (const row of body[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) { const values = cells(row[1]);
+            if (!values.length) continue;
+            if (values.length !== expectedCells) { diagnostics.push("esri_machinery_cell_missing"); continue; }
+            const value = values[2], explicitlyNonMonthly = /月期|四半期|年平均|年度/.test(value) &&
+                !/月\s*分/.test(value), candidate = value.length > 0 && !explicitlyNonMonthly;
+            if (!candidate) { exclusions.push({ label: value,
                 reason: "non_monthly_or_empty_machinery_cell" }); continue; }
+            const date = value.match(/^(?:(?:令和)?(\d{1,2})年\s*)?(\d{1,2})月\s*(\d{1,2})日\s*[（(](\d{1,2})月分[）)]$/);
+            if (!date) { diagnostics.push(`esri_machinery_monthly_row_incomplete:${value}`); continue; }
             rowCount += 1; const releaseMonth = Number(date[2]), referenceMonth = Number(date[4]);
-            if (date[1]) releaseYear = 2018 + Number(date[1]);
-            else if (releaseYear && lastReleaseMonth && releaseMonth < lastReleaseMonth) releaseYear += 1;
-            if (!releaseYear) { diagnostics.push(`esri_machinery_year_context_missing:${value}`); continue; }
+            const releaseDay = Number(date[3]), candidateYear = date[1] ? 2018 + Number(date[1]) :
+                releaseYear && lastReleaseMonth && releaseMonth < lastReleaseMonth ? releaseYear + 1 :
+                    releaseYear;
+            if (!candidateYear) { diagnostics.push(`esri_machinery_year_context_missing:${value}`); continue; }
+            const validDate = releaseMonth >= 1 && releaseMonth <= 12 &&
+                referenceMonth >= 1 && referenceMonth <= 12 &&
+                new Date(Date.UTC(candidateYear, releaseMonth - 1, releaseDay)).getUTCMonth() ===
+                    releaseMonth - 1 &&
+                new Date(Date.UTC(candidateYear, releaseMonth - 1, releaseDay)).getUTCDate() === releaseDay;
+            if (!validDate) { diagnostics.push(`esri_machinery_monthly_row_invalid:${value}`); continue; }
+            releaseYear = candidateYear;
             lastReleaseMonth = releaseMonth; const referenceYear = referenceMonth > releaseMonth
                 ? releaseYear - 1 : releaseYear;
+            if (releaseTimes.length !== 1 || releaseTimes[0] !== "08:50") continue;
             records.push(record(context, { eventType: "JP_MACHINERY_ORDERS", edition: "initial",
                 scope: "national", sourceTitle: `機械受注統計調査 ${date[4]}月分`, titleJa: "機械受注",
                 titleEn: "Machinery Orders", referencePeriod: `${referenceYear}-${pad(referenceMonth)}`,
                 releaseKind: "monthly", sourceLocalSchedule: local("instant",
-                    `${releaseYear}-${pad(releaseMonth)}-${pad(date[3])}`, "08:50", "Asia/Tokyo") })); }
+                    `${releaseYear}-${pad(releaseMonth)}-${pad(releaseDay)}`, releaseTimes[0],
+                    "Asia/Tokyo") })); }
         if (!rowCount) diagnostics.push("esri_machinery_monthly_rows_not_found");
         return { records, diagnostics, exclusions };
     }
