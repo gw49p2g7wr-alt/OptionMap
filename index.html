@@ -1532,6 +1532,10 @@
 <script src="js/wallHistoryDrawerView.js"></script>
 <script src="js/weeklyFuturesHistory.js"></script>
 <script src="js/weeklyFuturesHistoryReadOnlyDiagnostic.js"></script>
+<script src="js/jpxDerivativesOpenInterest/sourceContract.js"></script>
+<script src="js/jpxDerivativesOpenInterest/historySchemaV1.js"></script>
+<script src="js/jpxDerivativesOpenInterest/historyContract.js"></script>
+<script src="js/jpxDerivativesOpenInterest/readOnlyConsumer.js"></script>
 <script src="js/weeklyFuturesParticipantCodeShadow.js"></script>
 <script src="js/weeklyFuturesExpansionShadow.js"></script>
 <script src="js/weeklyFuturesTwelveGroupShadow.js"></script>
@@ -1853,7 +1857,10 @@ window.OptionMapFullExportUi.configure({
                 readWeeklyFuturesHistory: () => weeklyFuturesHistory,
                 readWeeklyOptionsHistory: () => window.OptionMapWeeklyOptionsHistoryStore
                     .readWeeklyOptionsHistory(),
-                readParticipantCache: () => activeParticipantCache
+                readParticipantCache: () => activeParticipantCache,
+                readJpxDerivativesOpenInterest: () => window
+                    .OptionMapJpxDerivativesOpenInterestReadOnlyConsumer.create()
+                    .readActive()
             }, v1Export);
         return window.OptionMapFullExportV2.build(v1Export, sourceFaithfulCanonical);
     }

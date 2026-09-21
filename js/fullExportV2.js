@@ -28,7 +28,7 @@
         const errors = [];
         if (!object(value) || value.contractVersion !== 1) return ["source_contract_invalid"];
         const expected = ["selectionPolicy", "qriOpenInterest", "qriImpliedVolatility",
-            "weeklyFutures", "weeklyOptions", "participants"];
+            "weeklyFutures", "weeklyOptions", "participants", "jpxDerivativesOpenInterestDaily"];
         for (const key of expected) if (!Object.hasOwn(value, key)) errors.push(`${key}_missing`);
         const policy = value.selectionPolicy;
         if (!object(policy) || policy.scope !== "export_basis_revisions" ||
@@ -42,6 +42,15 @@
                     file.records.some(item => item?.provenance?.fileRole !== role ||
                         !object(item.record))) errors.push(`participant_${role}_invalid`);
             }
+        }
+        const daily = value.jpxDerivativesOpenInterestDaily;
+        if (daily?.status === "available") {
+            const futures = daily.canonical?.blocks?.oseIndexFutures?.records;
+            const options = daily.canonical?.blocks?.oseIndexOptions?.records;
+            if (daily.selectionPolicy?.aggregation !== "none" || daily.selectionPolicy?.filtering !== "none" ||
+                daily.selectionPolicy?.rawExcelIncluded !== false || !Array.isArray(futures) ||
+                !Array.isArray(options) || futures.length + options.length === 0 ||
+                !object(daily.sourceProvenance?.evidence)) errors.push("jpx_derivatives_open_interest_invalid");
         }
         return errors;
     }

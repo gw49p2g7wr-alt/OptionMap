@@ -109,12 +109,39 @@
                 fileRoleRetainedPerRecord: true }) };
     }
 
+    function jpxDerivativesOpenInterest(active) {
+        if (active?.status !== "available" || !active.revision || !active.evidence) return {
+            status: "unavailable", reason: active?.status || "history_unavailable",
+            selectionPolicy: { sourceId: "jp-jpx-derivatives-open-interest-daily",
+                scope: "active_revision_for_export_basis", aggregation: "none",
+                filtering: "none", rawExcelIncluded: false }, canonical: null,
+            sourceProvenance: null, lossDisclosure: loss({ wholeAcceptedBlocksIncluded: false,
+                rowsFiltered: false, officialTotalsRetained: false,
+                cellAddressesRetained: false, displayFormattingRetained: false }) };
+        return { status: "available", reason: null, selectionPolicy: {
+            sourceId: "jp-jpx-derivatives-open-interest-daily",
+            scope: "active_revision_for_export_basis", aggregation: "none",
+            filtering: "none", rawExcelIncluded: false }, sourceDate: active.revision.sourceDate,
+        revisionIdentity: { revisionKey: active.revision.revisionKey,
+            semanticIdentity: active.revision.semanticIdentity },
+        canonical: clone(active.revision.canonical), sourceProvenance: {
+            acquisitionEvidenceIdentity: active.evidence.acquisitionEvidenceIdentity,
+            acceptedAt: active.evidence.acceptedAt, evidence: clone(active.evidence.evidence) },
+        lossDisclosure: loss({ wholeAcceptedBlocksIncluded: true, rowsFiltered: false,
+            officialTotalsRetained: true, cellAddressesRetained: true,
+            displayFormattingRetained: true }) };
+    }
+
     async function collect(configuration = {}, v1Export) {
         const [qriHistory, weeklyFuturesHistory, weeklyOptionsLoaded] = await Promise.all([
             configuration.readQriHistory?.(), configuration.readWeeklyFuturesHistory?.(),
             configuration.readWeeklyOptionsHistory?.()
         ]);
-        const participantCache = await configuration.readParticipantCache?.();
+        const [participantCache, dailyOpenInterest] = await Promise.all([
+            configuration.readParticipantCache?.(), Promise.resolve()
+                .then(() => configuration.readJpxDerivativesOpenInterest?.())
+                .catch(error => ({ status: error?.message || "history_unavailable" }))
+        ]);
         return { contractVersion: 1, selectionPolicy: {
             scope: "export_basis_revisions", wholeHistoryIncluded: false,
             rawHtmlIncluded: false, rawExcelIncluded: false },
@@ -124,8 +151,10 @@
             "weeklyFutures"),
         weeklyOptions: weekly(v1Export, weeklyOptionsLoaded?.history || weeklyOptionsLoaded,
             "weeklyOptions"),
-        participants: participants(participantCache) };
+        participants: participants(participantCache),
+        jpxDerivativesOpenInterestDaily: jpxDerivativesOpenInterest(dailyOpenInterest) };
     }
 
-    return Object.freeze({ FILE_ROLES, collect, participants, revisionByVersion });
+    return Object.freeze({ FILE_ROLES, collect, participants, revisionByVersion,
+        jpxDerivativesOpenInterest });
 });

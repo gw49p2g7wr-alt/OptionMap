@@ -105,6 +105,37 @@ test("participantは4 file roleを各recordへ結び付け0を維持", () => {
     assert.equal(projected.lossDisclosure.rawExcelRetained, false);
 });
 
+test("JPX日次建玉残高はaccepted active 179 recordsを無選別で追加", async () => {
+    const parser = require("../js/jpxDerivativesOpenInterest/workbookParser.js");
+    const XLSX = require("xlsx");
+    const workbook = fs.readFileSync(path.join(__dirname,
+        "fixtures/jpx-derivatives-open-interest/20260918open_interest.xlsx"));
+    const parsed = parser.parse({ XLSX, bytes: workbook, listingDate: "2026-09-18",
+        workbookUrl: "https://www.jpx.co.jp/markets/derivatives/trading-volume/" +
+            "tvdivq00000014nn-att/20260918open_interest.xlsx",
+        listingUrl: "https://www.jpx.co.jp/markets/derivatives/trading-volume/index.html",
+        fetchedAt: "2026-09-18T10:26:39Z",
+        workbookSha256: crypto.createHash("sha256").update(workbook).digest("hex"),
+        httpMetadata: { status: 200 } });
+    const identities = await require("../js/jpxDerivativesOpenInterest/identity.js")
+        .derive(parsed.canonical, parsed.evidence);
+    const active = { status: "available", revision: { revisionKey: identities.revisionKey,
+        semanticIdentity: identities.semanticIdentity, sourceDate: parsed.canonical.sourceDate,
+        canonical: parsed.canonical }, evidence: { acquisitionEvidenceIdentity:
+            identities.acquisitionEvidenceIdentity, acceptedAt: "2026-09-18T10:30:00Z",
+        evidence: parsed.evidence } };
+    const faithful = await source.collect({ readJpxDerivativesOpenInterest: async () => active }, v1Fixture());
+    const daily = faithful.jpxDerivativesOpenInterestDaily;
+    assert.equal(daily.status, "available");
+    assert.equal(daily.canonical.blocks.oseIndexFutures.records.length, 161);
+    assert.equal(daily.canonical.blocks.oseIndexOptions.records.length, 18);
+    assert.equal(daily.selectionPolicy.aggregation, "none");
+    assert.equal(daily.selectionPolicy.filtering, "none");
+    assert.equal(daily.lossDisclosure.rawExcelRetained, false);
+    const output = v2.build(v1Fixture(), faithful);
+    assert.equal(v2.validate(output).valid, true);
+});
+
 test("participant role mismatchとraw payloadはfail-closed", async () => {
     const first = v1Fixture();
     const faithful = await source.collect({ readParticipantCache: async () => participantCache() }, first);
@@ -119,7 +150,7 @@ test("v2 filename/schemaを許可し50MB超過は拒否", () => {
     const faithful = { contractVersion: 1, selectionPolicy: { scope: "export_basis_revisions",
         wholeHistoryIncluded: false, rawHtmlIncluded: false, rawExcelIncluded: false },
     qriOpenInterest: {}, qriImpliedVolatility: {}, weeklyFutures: {}, weeklyOptions: {},
-    participants: {} };
+    participants: {}, jpxDerivativesOpenInterestDaily: { status: "unavailable" } };
     const value = v2.build(first, faithful);
     const request = { fileName: "OptionMap-Full-Export-v2-2026-09-21T123456-JST.json",
         json: v2.serialize(value) };
@@ -140,7 +171,8 @@ test("UIはv1を既定に保ち明示v2だけ別filenameで保存", async () => 
     const faithful = { contractVersion: 1, selectionPolicy: { scope: "export_basis_revisions",
         wholeHistoryIncluded: false, rawHtmlIncluded: false, rawExcelIncluded: false },
     qriOpenInterest: { unknownCanonicalField: false }, qriImpliedVolatility: {},
-    weeklyFutures: {}, weeklyOptions: {}, participants: {} };
+    weeklyFutures: {}, weeklyOptions: {}, participants: {},
+    jpxDerivativesOpenInterestDaily: { status: "unavailable" } };
     const second = v2.build(first, faithful); const calls = [];
     const controller = ui.createController({ collect: async () => first,
         collectV2: async value => { assert.equal(value, first); return second; },

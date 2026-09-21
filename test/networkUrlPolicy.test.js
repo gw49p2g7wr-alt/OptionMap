@@ -127,6 +127,19 @@ test("Excelもhost・protocol・credentials・port・query/hashを拒否する",
   rejected(policy.validateExcelUrl, `https://www.jpx.co.jp${path}#x`, "invalid_hash");
 });
 
+test("日次建玉残高Excelはlistingで発見したexact URLだけ許可", () => {
+  const url = "https://www.jpx.co.jp/markets/derivatives/trading-volume/" +
+    "tvdivq00000014nn-att/20260918open_interest.xlsx";
+  assert.equal(policy.validateJpxPageUrl(
+    "https://www.jpx.co.jp/markets/derivatives/trading-volume/index.html").ok, true);
+  assert.equal(policy.validateDailyOpenInterestExcelUrl(url, url).ok, true);
+  assert.equal(policy.validateDailyOpenInterestExcelUrl(url,
+    url.replace("20260918", "20260917")).errorCode, "invalid_redirect");
+  assert.equal(policy.validateDailyOpenInterestExcelUrl(url + "?x=1", url).ok, false);
+  assert.equal(policy.validateDailyOpenInterestExcelUrl(
+    "https://evil.example/20260918open_interest.xlsx", url).ok, false);
+});
+
 test("requested/finalの同一policy検証で不正redirectを拒否する", () => {
   const requested = "https://svc.qri.jp/jpx/nkopm/";
   assert.equal(policy.validateFinalUrl(policy.validateQriUrl,

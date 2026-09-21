@@ -78,7 +78,8 @@ function validateQriUrl(value) {
 
 const JPX_TARGET_PATHS = new Set([
   "/markets/derivatives/open-interest/index.html",
-  "/markets/derivatives/participant-volume/index.html"
+  "/markets/derivatives/participant-volume/index.html",
+  "/markets/derivatives/trading-volume/index.html"
 ]);
 const JPX_INTERNAL_PATHS = new Set([
   "/",
@@ -157,6 +158,21 @@ function validateExcelUrl(value) {
     : result(false, null, ERROR_CODES.INVALID_PATH);
 }
 
+function validateDailyOpenInterestExcelUrl(value, discoveredUrl) {
+  const parsed = parseHttpsUrl(value, "www.jpx.co.jp");
+  if (!parsed.ok) return parsed;
+  const url = new URL(parsed.url);
+  const match = url.pathname.match(
+    /^\/markets\/derivatives\/trading-volume\/[a-z0-9]+-att\/(20\d{6})open_interest\.xlsx$/
+  );
+  if (!match) return result(false, null, ERROR_CODES.INVALID_PATH);
+  if (!validCalendarDate(match[1])) return result(false, null, ERROR_CODES.INVALID_DATE);
+  if (typeof discoveredUrl !== "string" || parsed.url !== discoveredUrl) {
+    return result(false, null, ERROR_CODES.INVALID_REDIRECT);
+  }
+  return result(true, parsed.url, null, "daily_derivatives_open_interest_excel");
+}
+
 function validateFinalUrl(validator, requestedUrl, finalUrl) {
   if (typeof validator !== "function" || !validator(requestedUrl).ok ||
       !validator(finalUrl).ok) {
@@ -173,5 +189,6 @@ module.exports = Object.freeze({
   validateOpenInterestJsonUrl,
   validateParticipantJsonUrl,
   validateExcelUrl,
+  validateDailyOpenInterestExcelUrl,
   validateFinalUrl
 });
