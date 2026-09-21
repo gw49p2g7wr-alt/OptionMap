@@ -7,8 +7,14 @@
 })(typeof window !== "undefined" ? window : globalThis, function (readModel) {
     "use strict";
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+    const FINAL_OBSERVATION_MATCH_TOLERANCE_MS = 10;
+    const SERIES_COLORS = Object.freeze(["#174f91", "#c77b1d", "#6f42c1", "#23856d", "#c83e3e"]);
     const jstTime = value => Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ja-JP", {
         timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).format(new Date(value)) : "時刻不明";
+    const jstDateTime = value => Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+        hourCycle: "h23"
     }).format(new Date(value)) : "時刻不明";
     const number = value => typeof value === "number" && Number.isFinite(value) ? value : null;
     function japaneseDate(value) {
@@ -61,7 +67,71 @@
     function qualityLabel(value) {
         return ({ complete: "正常", partial: "一部不足", unavailable: "利用不可" })[value] || "確認できません";
     }
-    function render(panel, result) {
+    function finalObservationSnapshot(snapshots, observation) {
+        if (!observation?.currentPrice?.available || number(observation.currentPrice.value) === null ||
+            !Number.isFinite(Date.parse(observation.observedAt))) return null;
+        const matches = (snapshots || []).filter(item => item.marketDate === observation.marketDate &&
+            item.price === observation.currentPrice.value && Number.isFinite(Date.parse(item.observedAt)) &&
+            Math.abs(Date.parse(item.observedAt) - Date.parse(observation.observedAt)) <=
+                FINAL_OBSERVATION_MATCH_TOLERANCE_MS);
+        return matches.length === 1 ? matches[0] : null;
+    }
+    function priceChartModel(snapshots, latestObservation) {
+        const valid = (snapshots || []).filter(item => validDate(item?.marketDate) &&
+            Number.isFinite(Date.parse(item?.observedAt)) && number(item?.price) !== null &&
+            typeof item?.contract === "string" && item.contract.trim()).slice()
+            .sort((a, b) => a.observedAt.localeCompare(b.observedAt) ||
+                String(a.snapshotId).localeCompare(String(b.snapshotId)));
+        const finalSnapshot = finalObservationSnapshot(valid, latestObservation), grouped = new Map();
+        valid.forEach(item => { if (!grouped.has(item.contract)) grouped.set(item.contract, []);
+            grouped.get(item.contract).push(item); });
+        const series = [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right, "ja"))
+            .map(([contract, values], index) => Object.freeze({ contract,
+                color: SERIES_COLORS[index % SERIES_COLORS.length], showLine: values.length > 1,
+                points: Object.freeze(values.map(item => Object.freeze({ x: Date.parse(item.observedAt),
+                    y: item.price, observedAt: item.observedAt, snapshotId: item.snapshotId,
+                    finalObservation: item.snapshotId === finalSnapshot?.snapshotId }))) }));
+        const prices = valid.map(item => item.price);
+        return Object.freeze({ count: valid.length, firstObservedAt: valid[0]?.observedAt || null,
+            lastObservedAt: valid.at(-1)?.observedAt || null,
+            minimumPrice: prices.length ? Math.min(...prices) : null,
+            maximumPrice: prices.length ? Math.max(...prices) : null,
+            finalObservationMatched: Boolean(finalSnapshot), series: Object.freeze(series) });
+    }
+    function renderPriceChart(panel, result, ChartConstructor) {
+        const summary = panel.querySelector("#timeTravelPriceChartSummary"), range = panel.querySelector(
+            "#timeTravelPriceChartRange"), empty = panel.querySelector("#timeTravelPriceChartEmpty"),
+            container = panel.querySelector("#timeTravelPriceChartContainer"), canvas = panel.querySelector(
+                "#timeTravelPriceChartCanvas"), model = priceChartModel(result.priceSnapshots, result.latestObservation);
+        summary.textContent = ""; range.textContent = ""; empty.textContent = ""; container.hidden = true;
+        if (!model.count) { empty.textContent = "この日の価格snapshotは保存されていません"; return { chart: null, model }; }
+        summary.textContent = `保存点数：${model.count}点 ／ 最初：${jstDateTime(model.firstObservedAt)} JST ／ ` +
+            `最後：${jstDateTime(model.lastObservedAt)} JST`;
+        range.textContent = `保存snapshotの価格範囲：${price(model.minimumPrice)}〜${price(model.maximumPrice)}`;
+        container.hidden = false;
+        if (typeof ChartConstructor !== "function") { empty.textContent = "価格推移chartを表示できません";
+            container.hidden = true; return { chart: null, model }; }
+        const chart = new ChartConstructor(canvas, { type: "line", data: { datasets: model.series.map(series => ({
+            label: series.contract, data: series.points, parsing: false, showLine: series.showLine,
+            borderColor: series.color, backgroundColor: series.color, borderWidth: 2, tension: 0,
+            pointRadius: context => context.raw?.finalObservation ? 7 : 4,
+            pointHoverRadius: context => context.raw?.finalObservation ? 8 : 6,
+            pointBackgroundColor: context => context.raw?.finalObservation ? "#fff" : series.color,
+            pointBorderColor: series.color, pointBorderWidth: context => context.raw?.finalObservation ? 3 : 1
+        })) }, options: { responsive: true, maintainAspectRatio: false, animation: false,
+            interaction: { mode: "nearest", intersect: false },
+            scales: { x: { type: "linear", title: { display: true, text: "保存時刻（JST）" },
+                ticks: { callback: value => jstDateTime(new Date(Number(value)).toISOString()) } },
+            y: { title: { display: true, text: "保存価格（円）" },
+                ticks: { callback: value => Number(value).toLocaleString("ja-JP") } } },
+            plugins: { tooltip: { callbacks: { title: items => items[0]?.raw?.observedAt ?
+                `${jstDateTime(items[0].raw.observedAt)} JST` : "",
+            label: context => `${context.dataset.label}：${price(context.raw?.y)}`,
+            afterLabel: context => context.raw?.finalObservation ? "最終保存断面と同時刻・同価格" : "" } } }
+        } });
+        return { chart, model };
+    }
+    function render(panel, result, ChartConstructor = globalThis.Chart) {
         panel.querySelector("#timeTravelSelectedDate").textContent = japaneseDate(result.calendarDate);
         const observation = panel.querySelector("#timeTravelObservation"), morning = panel.querySelector(
             "#timeTravelMorning"), qri = panel.querySelector("#timeTravelQriStatus");
@@ -99,16 +169,18 @@
         }
         qri.textContent = result.qri.available ? `保存済み限月：${result.qri.contracts.join("、")}。下のQRI Time Travelに表示します。` :
             "QRI Time Travel：この日の保存なし";
+        return renderPriceChart(panel, result, ChartConstructor);
     }
     function create({ document = globalThis.document, indexedDB = globalThis.indexedDB,
         localStorage = globalThis.localStorage, now = () => new Date(),
-        openQri = input => globalThis.openQriTimeTravel?.(input), read = readModel.read } = {}) {
+        openQri = input => globalThis.openQriTimeTravel?.(input), read = readModel.read,
+        ChartConstructor = globalThis.Chart } = {}) {
         const action = document.getElementById("marketCalendarTimeTravelAction"),
             actionStatus = document.getElementById("marketCalendarTimeTravelStatus"),
             button = document.getElementById("marketCalendarTimeTravelButton"),
             panel = document.getElementById("optionMapHistoricalView"),
             close = document.getElementById("timeTravelReturnToday");
-        let selectedDate = null, availabilityGeneration = 0, viewGeneration = 0;
+        let selectedDate = null, availabilityGeneration = 0, viewGeneration = 0, priceChart = null;
         const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo",
             year: "numeric", month: "2-digit", day: "2-digit" }).format(now());
         async function selected(event) {
@@ -131,11 +203,12 @@
             if (own !== viewGeneration || date !== selectedDate) return;
             button.disabled = false;
             if (!result.available) { actionStatus.textContent = "この日のOptionMap保存データはありません"; return; }
-            render(panel, result); panel.hidden = false; panel.scrollIntoView?.({ block: "start" });
+            priceChart?.destroy?.(); priceChart = render(panel, result, ChartConstructor).chart;
+            panel.hidden = false; panel.scrollIntoView?.({ block: "start" });
             if (result.qri.available) openQri({ selectedTradingDate: date,
                 selectedContract: result.qri.selectedContract });
         }
-        function returnToday() { ++viewGeneration; panel.hidden = true;
+        function returnToday() { ++viewGeneration; priceChart?.destroy?.(); priceChart = null; panel.hidden = true;
             document.getElementById("marketCalendarToday")?.click?.(); }
         document.addEventListener("optionmap:calendar-date-selected", selected);
         button.addEventListener("click", open); close.addEventListener("click", returnToday);
@@ -146,5 +219,6 @@
         if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
         else mount();
     }
-    return Object.freeze({ create, render, observationView, morningView, japaneseDate });
+    return Object.freeze({ FINAL_OBSERVATION_MATCH_TOLERANCE_MS, create, render, renderPriceChart,
+        priceChartModel, finalObservationSnapshot, observationView, morningView, japaneseDate });
 });

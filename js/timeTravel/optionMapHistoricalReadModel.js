@@ -9,6 +9,8 @@
     const DATABASES = Object.freeze({
         observations: Object.freeze({ name: "optionMapMarketObservations", version: 1,
             stores: Object.freeze(["observations"]) }),
+        prices: Object.freeze({ name: "optionMapPriceSnapshots", version: 1,
+            stores: Object.freeze(["snapshots"]) }),
         qri: Object.freeze({ name: "optionMapQriOptionsHistory", version: 1,
             stores: Object.freeze(["qriOptionsHistoryMeta", "qriOptionsEntries", "qriOptionsRevisions"]) })
     });
@@ -63,6 +65,16 @@
             return clone(entries).sort((a, b) => a.contract.localeCompare(b.contract));
         });
     }
+    async function priceSnapshotsFor(indexedDB, calendarDate) {
+        return readDatabase(indexedDB, DATABASES.prices, async database => {
+            const transaction = database.transaction("snapshots", "readonly"), done = transactionDone(transaction);
+            const records = await requestValue(transaction.objectStore("snapshots")
+                .index("byMarketDate").getAll(calendarDate));
+            await done;
+            return clone(records).sort((a, b) => a.observedAt.localeCompare(b.observedAt) ||
+                String(a.snapshotId).localeCompare(String(b.snapshotId)));
+        });
+    }
     async function morningFor(storage, calendarDate) {
         let raw = null;
         try { raw = storage?.getItem?.(morningStorage.STORAGE_KEY) ?? null; }
@@ -87,21 +99,24 @@
         localStorage = root?.localStorage } = {}) {
         if (!validDate(calendarDate)) return Object.freeze({ status: "invalid", calendarDate,
             available: false });
-        const [observations, morning, qri] = await Promise.all([
+        const [observations, morning, qri, prices] = await Promise.all([
             observationsFor(indexedDB, calendarDate), morningFor(localStorage, calendarDate),
-            qriFor(indexedDB, calendarDate)
+            qriFor(indexedDB, calendarDate), priceSnapshotsFor(indexedDB, calendarDate)
         ]);
         const observationList = observations.value || [], morningList = morning.value || [],
-            qriEntries = qri.value || [], latestObservation = observationList.at(-1) || null,
+            qriEntries = qri.value || [], priceSnapshots = prices.value || [],
+            latestObservation = observationList.at(-1) || null,
             contracts = [...new Set(qriEntries.map(item => item.contract))].sort();
-        return Object.freeze({ status: statusOf([observations, morning, qri]), calendarDate,
-            available: Boolean(latestObservation || morningList.length || contracts.length),
+        return Object.freeze({ status: statusOf([observations, morning, qri, prices]), calendarDate,
+            available: Boolean(latestObservation || morningList.length || contracts.length || priceSnapshots.length),
             latestObservation: clone(latestObservation), observationCount: observationList.length,
-            morningBaselines: clone(morningList), qri: Object.freeze({ available: contracts.length > 0,
+            morningBaselines: clone(morningList), priceSnapshots: clone(priceSnapshots),
+            qri: Object.freeze({ available: contracts.length > 0,
                 contracts, selectedContract: contracts[0] || null }),
             availability: Object.freeze({ observation: observations.status, morning: morning.status,
-                qri: qri.status, weeklyOptions: "not_queried", weeklyFutures: "not_queried",
+                qri: qri.status, priceSnapshots: prices.status,
+                weeklyOptions: "not_queried", weeklyFutures: "not_queried",
                 participant: "not_queried", jpxSnapshot: "not_queried" }) });
     }
-    return Object.freeze({ DATABASES, read, observationsFor, qriFor, morningFor });
+    return Object.freeze({ DATABASES, read, observationsFor, priceSnapshotsFor, qriFor, morningFor });
 });

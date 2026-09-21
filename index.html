@@ -83,6 +83,20 @@
             </div>
             <button id="timeTravelReturnToday" type="button">今日に戻る</button>
         </header>
+        <section class="optionmap-historical-price-chart" aria-labelledby="timeTravelPriceChartTitle">
+            <div class="optionmap-historical-chart-heading">
+                <div>
+                    <h3 id="timeTravelPriceChartTitle">OptionMap保存時点の価格推移</h3>
+                    <p id="timeTravelPriceChartSummary"></p>
+                </div>
+                <p id="timeTravelPriceChartRange" class="optionmap-historical-chart-range"></p>
+            </div>
+            <p id="timeTravelPriceChartEmpty" class="time-travel-empty" role="status"></p>
+            <div id="timeTravelPriceChartContainer" class="optionmap-historical-chart-canvas" hidden>
+                <canvas id="timeTravelPriceChartCanvas" aria-label="OptionMap保存時点の価格推移"></canvas>
+            </div>
+            <p class="optionmap-historical-chart-note">OptionMapが保存した時点の価格のみを結んでいます。保存間の市場値動きは含みません。</p>
+        </section>
         <div class="optionmap-historical-grid">
             <section id="timeTravelObservation" class="optionmap-historical-card"></section>
             <section id="timeTravelMorning" class="optionmap-historical-card"></section>

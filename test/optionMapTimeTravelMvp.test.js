@@ -29,6 +29,18 @@ async function createQriDb(factory, name, entries = []) {
         entries.forEach(value => transaction.objectStore("qriOptionsEntries").put(value)); await done(transaction); }
     db.close();
 }
+async function createPriceDb(factory, records = [], wrong = false) {
+    const db = await new Promise((resolve, reject) => { const open = factory.open("optionMapPriceSnapshots", 1);
+        open.onupgradeneeded = () => { const store = open.result.createObjectStore(
+            wrong ? "wrong" : "snapshots", { keyPath: "snapshotId" });
+        if (!wrong) store.createIndex("byMarketDate", "marketDate"); };
+        open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
+    if (!wrong && records.length) { const transaction = db.transaction("snapshots", "readwrite");
+        records.forEach(value => transaction.objectStore("snapshots").put(value)); await done(transaction); }
+    db.close();
+}
+const priceSnapshot = (snapshotId, marketDate, observedAt, price, contract = "26年12月限") =>
+    ({ snapshotId, marketDate, observedAt, price, contract });
 function observation(id, observedAt, date = "2026-09-18") {
     return { observationId: id, marketDate: date, observedAt,
         overallV2: { available: true, direction: 42, confidence: 80, coverage: 100 },
@@ -86,7 +98,9 @@ function documentFixture() {
     const ids = ["marketCalendarTimeTravelAction", "marketCalendarTimeTravelStatus",
         "marketCalendarTimeTravelButton", "optionMapHistoricalView", "timeTravelReturnToday",
         "timeTravelSelectedDate", "timeTravelObservation", "timeTravelMorning", "timeTravelQriStatus",
-        "marketCalendarToday"], nodes = Object.fromEntries(ids.map(id => [id, node()]));
+        "timeTravelPriceChartSummary", "timeTravelPriceChartRange", "timeTravelPriceChartEmpty",
+        "timeTravelPriceChartContainer", "timeTravelPriceChartCanvas", "marketCalendarToday"],
+        nodes = Object.fromEntries(ids.map(id => [id, node()]));
     const listeners = {}, document = { getElementById: id => nodes[id],
         addEventListener(type, callback) { listeners[type] = callback; }, createElement() { const value = node();
             value.ownerDocument = document; return value; } };
@@ -117,7 +131,8 @@ test("historical viewは保存断面・Morning・QRIを専用領域へ描画", a
     const { document, nodes } = documentFixture(), qriCalls = [];
     const result = { calendarDate: "2026-09-18", status: "available", available: true,
         latestObservation: observation("x", "2026-09-18T06:00:00.000Z"), observationCount: 1,
-        morningBaselines: [], qri: { available: true, contracts: ["2026-10"], selectedContract: "2026-10" } };
+        morningBaselines: [], priceSnapshots: [],
+        qri: { available: true, contracts: ["2026-10"], selectedContract: "2026-10" } };
     const controller = View.create({ document, read: async () => result,
         openQri: value => qriCalls.push(value), now: () => new Date("2026-09-21T00:00:00Z") });
     await controller.selected({ detail: { calendarDate: "2026-09-18" } }); await controller.open();
@@ -129,6 +144,46 @@ test("historical viewは保存断面・Morning・QRIを専用領域へ描画", a
     assert.match(nodes.timeTravelMorning.children.at(-1).textContent, /保存なし/);
     assert.deepEqual(qriCalls, [{ selectedTradingDate: "2026-09-18", selectedContract: "2026-10" }]);
 });
+test("Price Snapshotはexact marketDateだけreadonly取得しconnectionをclose", async () => {
+    const factory = new IDBFactory(); await createPriceDb(factory, [
+        priceSnapshot("a", "2026-09-18", "2026-09-18T01:00:00.000Z", 42000),
+        priceSnapshot("b", "2026-09-19", "2026-09-19T01:00:00.000Z", 42100)]);
+    const modes = [], originalTransaction = IDBDatabase.prototype.transaction,
+        originalClose = IDBDatabase.prototype.close; let closes = 0;
+    IDBDatabase.prototype.transaction = function (stores, mode) { modes.push(mode);
+        return originalTransaction.call(this, stores, mode); };
+    IDBDatabase.prototype.close = function () { closes++; return originalClose.call(this); };
+    try { const result = await Model.priceSnapshotsFor(factory, "2026-09-18");
+        assert.equal(result.status, "available"); assert.deepEqual(result.value.map(value => value.snapshotId), ["a"]);
+        assert.deepEqual(modes, ["readonly"]); assert.equal(closes, 1);
+    } finally { IDBDatabase.prototype.transaction = originalTransaction;
+        IDBDatabase.prototype.close = originalClose; }
+});
+test("価格chartは0点・1点・複数contract・不均等timestampを保持", () => {
+    const empty = View.priceChartModel([], null); assert.equal(empty.count, 0);
+    const one = View.priceChartModel([
+        priceSnapshot("one", "2026-09-18", "2026-09-18T01:00:00.000Z", 42000)], null);
+    assert.equal(one.series[0].showLine, false);
+    const values = [priceSnapshot("a", "2026-09-18", "2026-09-18T01:00:00.000Z", 42000, "A"),
+        priceSnapshot("b", "2026-09-18", "2026-09-18T01:05:00.000Z", 42100, "A"),
+        priceSnapshot("c", "2026-09-18", "2026-09-18T03:00:00.000Z", 41900, "A"),
+        priceSnapshot("d", "2026-09-18", "2026-09-18T02:00:00.000Z", 43000, "B")];
+    const model = View.priceChartModel(values, null);
+    assert.equal(model.series.length, 2); assert.equal(model.series[0].showLine, true);
+    assert.equal(model.series[1].showLine, false);
+    assert.deepEqual(model.series[0].points.map(value => value.x), [Date.parse(values[0].observedAt),
+        Date.parse(values[1].observedAt), Date.parse(values[2].observedAt)]);
+    assert.notEqual(model.series[0].points[1].x - model.series[0].points[0].x,
+        model.series[0].points[2].x - model.series[0].points[1].x);
+});
+test("最終保存断面markerは同日・同価格・10ms以内の一意snapshotだけ", () => {
+    const latest = observation("o", "2026-09-18T06:00:00.000Z");
+    const match = priceSnapshot("match", "2026-09-18", "2026-09-18T06:00:00.002Z", 42000);
+    assert.equal(View.finalObservationSnapshot([match], latest).snapshotId, "match");
+    assert.equal(View.finalObservationSnapshot([{ ...match, price: 42001 }], latest), null);
+    assert.equal(View.finalObservationSnapshot([{ ...match, observedAt: "2026-09-18T06:00:00.011Z" }], latest), null);
+    assert.equal(View.finalObservationSnapshot([match, { ...match, snapshotId: "ambiguous" }], latest), null);
+});
 test("runtimeにwriter、readwrite、推測日付補正を持たない", () => {
     const model = fs.readFileSync(path.resolve(__dirname,
         "../js/timeTravel/optionMapHistoricalReadModel.js"), "utf8");
@@ -137,4 +192,7 @@ test("runtimeにwriter、readwrite、推測日付補正を持たない", () => {
     assert.match(html, /⏪ この日のOptionMapを見る/);
     assert.match(html, /過去データ表示中/);
     assert.match(html, /今日に戻る/);
+    assert.match(html, /OptionMap保存時点の価格推移/);
+    assert.match(html, /保存間の市場値動きは含みません/);
+    assert.doesNotMatch(html, /ローソク足|OHLC/);
 });
