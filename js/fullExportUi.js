@@ -1,11 +1,12 @@
 (function (root, factory) {
     const commonJs = typeof module === "object" && module.exports && !(root && root.document);
     const fullExportApi = commonJs ? require("./fullExport.js") : root?.OptionMapFullExport;
-    const api = factory(fullExportApi, root);
+    const fullExportV2Api = commonJs ? require("./fullExportV2.js") : root?.OptionMapFullExportV2;
+    const api = factory(fullExportApi, fullExportV2Api, root);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportUi = api;
 })(typeof window !== "undefined" ? window : globalThis,
-function (fullExportApi, root) {
+function (fullExportApi, fullExportV2Api, root) {
     "use strict";
     let browserConfiguration = null;
 
@@ -30,6 +31,12 @@ function (fullExportApi, root) {
             `${parts.hour}${parts.minute}${parts.second}-JST.json`;
     }
 
+    function createV2FileName(generatedAt) {
+        const parts = jstParts(generatedAt);
+        return `OptionMap-Full-Export-v2-${parts.year}-${parts.month}-${parts.day}T` +
+            `${parts.hour}${parts.minute}${parts.second}-JST.json`;
+    }
+
     function safeReason(error) {
         const message = typeof error?.message === "string" ? error.message : "";
         if (message.startsWith("security_validation_failed:")) return "安全性検査に失敗しました";
@@ -45,17 +52,26 @@ function (fullExportApi, root) {
 
     function createController(configuration) {
         let running = false;
-        async function run() {
+        async function run(requestedFormat = "v1") {
             if (running) return { success: false, cancelled: false, reason: "already_running" };
             running = true;
             configuration.setBusy?.(true);
             configuration.setStatus?.("collecting", "AI用データを準備しています…");
             try {
-                const exportValue = await configuration.collect();
-                const validation = fullExportApi.validateFullExport(exportValue);
+                const v1Value = await configuration.collect();
+                const exportValue = requestedFormat === "v2"
+                    ? await configuration.collectV2?.(v1Value) : v1Value;
+                const api = requestedFormat === "v2" ? fullExportV2Api : fullExportApi;
+                const validation = api?.validate?.(exportValue) ||
+                    api?.validateFullExport?.(exportValue);
                 if (!validation.valid) throw new Error("full_export_invalid");
-                const json = fullExportApi.serializeFullExport(exportValue, 2) + "\n";
-                const fileName = createFileName(exportValue.exportMeta.generatedAt);
+                const json = (api?.serialize?.(exportValue, 2) ||
+                    api?.serializeFullExport?.(exportValue, 2)) + "\n";
+                if (new TextEncoder().encode(json).byteLength > 50 * 1024 * 1024)
+                    throw new Error("full_export_size_limit");
+                const fileName = requestedFormat === "v2"
+                    ? createV2FileName(exportValue.exportMeta.generatedAt)
+                    : createFileName(exportValue.exportMeta.generatedAt);
                 const saved = await configuration.save({ fileName, json });
                 if (saved?.cancelled) {
                     configuration.setStatus?.("cancelled", "保存をキャンセルしました");
@@ -87,6 +103,7 @@ function (fullExportApi, root) {
         if (!button || !status || !browserConfiguration) return null;
         const controller = createController({
             collect: browserConfiguration.collect,
+            collectV2: browserConfiguration.collectV2,
             save: request => root.optionMapBridge.saveFullExportJson(request),
             setBusy: busy => { button.disabled = busy; button.setAttribute("aria-busy", String(busy)); },
             setStatus: (state, message, summary) => {
@@ -95,11 +112,16 @@ function (fullExportApi, root) {
                     `・利用不可 ${summary.unavailable}・警告 ${summary.warnings}）` : message;
             }
         });
-        button.addEventListener("click", () => { void controller.run(); });
+        button.addEventListener("click", () => {
+            const selected = root.document?.querySelector?.(
+                'input[name="fullExportFormat"]:checked')?.value;
+            void controller.run(selected === "v2" ? "v2" : "v1");
+        });
         return controller;
     }
 
     root.document?.addEventListener?.("DOMContentLoaded", initialize);
-    return Object.freeze({ generatedAtJst, createFileName, safeReason, statusCounts,
+    return Object.freeze({ generatedAtJst, createFileName, createV2FileName,
+        safeReason, statusCounts,
         createController, configure, initialize });
 });

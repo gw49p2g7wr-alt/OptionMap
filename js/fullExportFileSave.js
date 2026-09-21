@@ -7,7 +7,7 @@
     "use strict";
 
     const MAX_JSON_BYTES = 50 * 1024 * 1024;
-    const FILE_NAME = /^OptionMap-Full-Export-\d{4}-\d{2}-\d{2}T\d{6}-JST\.json$/;
+    const FILE_NAME = /^OptionMap-Full-Export(?:-v2)?-\d{4}-\d{2}-\d{2}T\d{6}-JST\.json$/;
 
     function validateRequest(request) {
         if (!request || typeof request !== "object" ||
@@ -18,7 +18,8 @@
         }
         try {
             const parsed = JSON.parse(request.json);
-            if (parsed?.schemaVersion !== "optionmap-full-export-v1") {
+            if (!["optionmap-full-export-v1", "optionmap-full-export-v2"]
+                .includes(parsed?.schemaVersion)) {
                 return { valid: false, reason: "invalid_export_schema" };
             }
         } catch (_error) {

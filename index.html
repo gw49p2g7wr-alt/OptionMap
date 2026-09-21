@@ -117,6 +117,14 @@
             <p>現在の正式データと利用可能な履歴を、AIへ渡せる1つのJSONに保存します。</p>
         </div>
         <div class="full-export-actions">
+            <fieldset class="full-export-format">
+                <legend>出力形式</legend>
+                <label><input type="radio" name="fullExportFormat" value="v1" checked>
+                    標準（整理済み・軽量）</label>
+                <label><input type="radio" name="fullExportFormat" value="v2">
+                    詳細（元データに近い情報も含む）</label>
+                <p>保存済みの公式source canonical・取得情報を追加します。元HTML・Excelファイルそのものは含みません。</p>
+            </fieldset>
             <button id="fullExportJsonButton" type="button">AI用データを書き出す</button>
             <p id="fullExportStatus" role="status" aria-live="polite">未実行</p>
         </div>
@@ -1549,6 +1557,8 @@
 <script src="js/wallHistoryDrawerRuntime.js"></script>
 <script src="js/fullExportSecurity.js"></script>
 <script src="js/fullExport.js"></script>
+<script src="js/fullExportV2.js"></script>
+<script src="js/fullExportSourceFaithfulCanonical.js"></script>
 <script src="js/fullExportAiSummary.js"></script>
 <script src="js/fullExportQriOptionIv.js"></script>
 <script src="js/fullExportCollector.js"></script>
@@ -1835,6 +1845,17 @@ window.OptionMapFullExportUi.configure({
             getSectionFreshness: freshnessAdapter.getSectionFreshness
         });
         return collector.collect({ market: "Nikkei 225 derivatives" });
+    },
+    collectV2: async v1Export => {
+        const sourceFaithfulCanonical = await window.OptionMapFullExportSourceFaithfulCanonical
+            .collect({
+                readQriHistory: () => window.OptionMapQriOptionsHistoryStore.loadHistory(),
+                readWeeklyFuturesHistory: () => weeklyFuturesHistory,
+                readWeeklyOptionsHistory: () => window.OptionMapWeeklyOptionsHistoryStore
+                    .readWeeklyOptionsHistory(),
+                readParticipantCache: () => activeParticipantCache
+            }, v1Export);
+        return window.OptionMapFullExportV2.build(v1Export, sourceFaithfulCanonical);
     }
 });
 const qriOptionsHistoryPersistence =
