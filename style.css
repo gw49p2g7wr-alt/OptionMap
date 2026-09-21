@@ -401,6 +401,84 @@ h1{
     border-left: 4px solid var(--ui-category-accent, #737983);
 }
 
+.market-calendar-panel { min-width: 0; max-width: 100%; box-sizing: border-box; margin: 24px 0;
+    padding: 20px; background: #fff; border-radius: 10px; overflow-x: clip;
+    --calendar-critical: #c83e3e; --calendar-high: #c77b1d; --calendar-medium: #8995a5; }
+.market-calendar-toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.market-calendar-toolbar h3 { margin: 0 4px; min-width: 120px; font-size: 1.25rem; white-space: nowrap; }
+.market-calendar-toolbar button { min-width: 38px; min-height: 38px; margin: 0; }
+.market-calendar-toolbar #marketCalendarToday { margin-left: auto; padding: 0 14px; }
+.market-calendar-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(285px, .9fr);
+    gap: 18px; align-items: start; }
+.market-calendar-month, .market-calendar-detail { min-width: 0; }
+.market-calendar-weekdays, .market-calendar-grid { display: grid; min-width: 0;
+    grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.market-calendar-weekdays span { padding: 8px 2px; text-align: center; color: #536176;
+    font-size: .85rem; font-weight: 700; }
+.market-calendar-grid { border-top: 1px solid #d9e2ed; border-left: 1px solid #d9e2ed;
+    gap: 0; align-content: start; }
+.market-calendar-day { min-width: 0; max-width: 100%; min-height: 64px; box-sizing: border-box;
+    margin: 0; padding: 4px; text-align: left; overflow: hidden;
+    display: flex; flex-direction: column; gap: 2px; border: 0; border-right: 1px solid #d9e2ed;
+    border-bottom: 1px solid #d9e2ed; border-radius: 0; background: #fff; color: #1d2d46;
+    cursor: pointer; }
+.market-calendar-day:hover { background: #f1f6fd; }
+.market-calendar-day.is-outside { background: #f8fafc; color: #97a2b2; }
+.market-calendar-day.is-today .market-calendar-day-number { background: #dcecff; color: #174d9c;
+    border-radius: 999px; }
+.market-calendar-day.is-selected { background: #eaf3ff; box-shadow: inset 0 0 0 2px #3b79cf; }
+.market-calendar-day:focus-visible { outline: 3px solid #1e63b3; outline-offset: -3px; }
+.market-calendar-day-number { align-self: flex-start; min-width: 22px; padding: 2px; text-align: center;
+    font-weight: 700; font-variant-numeric: tabular-nums; }
+.market-calendar-day-previews { display: flex; flex-direction: column; gap: 2px;
+    min-width: 0; max-width: 100%; width: 100%; overflow: hidden; }
+.market-calendar-preview { display: flex; align-items: center; gap: 3px; min-width: 0;
+    max-width: 100%; overflow: hidden; white-space: nowrap; font-size: .7rem; line-height: 1.1; }
+.market-calendar-marker { flex: 0 0 auto; font-size: .7rem; color: var(--calendar-medium); }
+.market-calendar-marker.importance-critical { color: var(--calendar-critical); }
+.market-calendar-marker.importance-high { color: var(--calendar-high); }
+.market-calendar-preview-label { display: block; min-width: 0; max-width: 100%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+.market-calendar-more { font-size: .7rem; line-height: 1.1; color: #426a9f; font-weight: 700; }
+.market-calendar-mobile-count { display: none; font-size: .68rem; white-space: nowrap; }
+.market-calendar-mobile-count { color: var(--calendar-medium); }
+.market-calendar-mobile-count.importance-critical { color: var(--calendar-critical); }
+.market-calendar-mobile-count.importance-high { color: var(--calendar-high); }
+.market-calendar-detail { border: 1px solid #d9e2ed; border-radius: 8px; padding: 14px; }
+.market-calendar-detail h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.market-calendar-detail p { margin: 0 0 8px; }
+.market-calendar-events { list-style: none; padding: 0; margin: 12px 0 0; }
+.market-calendar-event { display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px; align-items: center;
+    padding: 10px 0; border-top: 1px solid #e4e8f0; }
+.market-calendar-event .market-calendar-title { grid-column: 1 / -1; }
+.market-calendar-event .market-calendar-source { grid-column: 1 / -1; }
+.market-calendar-date, .market-calendar-time { font-variant-numeric: tabular-nums; }
+.market-calendar-importance { border-radius: 999px; padding: 3px 9px; text-align: center; background: #edf0f3; }
+.market-calendar-importance.importance-critical { background: #f9e5e5; color: #8d2626; }
+.market-calendar-importance.importance-high { background: #fff0d8; color: #80520b; }
+.market-calendar-source { color: #555f6d; font-size: .9em; }
+@media (max-width: 900px) {
+    .market-calendar-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+    .market-calendar-panel { padding: 10px; }
+    .market-calendar-toolbar { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px auto;
+        gap: 3px; margin: 8px 0 5px; }
+    .market-calendar-toolbar button { min-width: 30px; min-height: 30px; padding: 0 4px; }
+    .market-calendar-toolbar h3 { min-width: 0; margin: 0; text-align: center;
+        font-size: .95rem; white-space: nowrap; }
+    .market-calendar-toolbar #marketCalendarToday { grid-column: auto; margin-left: 0;
+        justify-self: end; min-width: 42px; }
+    .market-calendar-weekdays span { padding: 5px 1px; }
+    .market-calendar-day { min-height: 55px; padding: 2px; }
+    .market-calendar-day-number { min-width: 21px; font-size: .82rem; }
+    .market-calendar-day-previews { display: none; }
+    .market-calendar-mobile-count { display: block; max-width: 100%; overflow: hidden;
+        text-overflow: ellipsis; }
+    .market-calendar-detail { padding: 10px; }
+}
+
 .ui-category-title {
     display: flex;
     min-width: 0;

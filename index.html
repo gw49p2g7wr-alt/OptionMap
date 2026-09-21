@@ -42,6 +42,33 @@
         ></div>
     </section>
 
+    <section id="marketCalendarPanel" class="market-calendar-panel ui-category-panel category-system"
+        aria-labelledby="marketCalendarTitle">
+        <h2 id="marketCalendarTitle" class="ui-category-title">📅 Market Calendar
+            <span class="ui-category-badge">経済イベント</span>
+        </h2>
+        <div class="market-calendar-toolbar">
+            <button id="marketCalendarPreviousMonth" type="button" aria-label="前月">‹</button>
+            <h3 id="marketCalendarMonthTitle"></h3>
+            <button id="marketCalendarNextMonth" type="button" aria-label="次月">›</button>
+            <button id="marketCalendarToday" type="button">今日</button>
+        </div>
+        <p id="marketCalendarStatus" role="status" aria-live="polite">経済イベントを読み込み中…</p>
+        <div class="market-calendar-layout">
+            <div class="market-calendar-month" aria-label="月間Market Calendar">
+                <div class="market-calendar-weekdays" aria-hidden="true">
+                    <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+                </div>
+                <div id="marketCalendarGrid" class="market-calendar-grid"></div>
+            </div>
+            <section class="market-calendar-detail" aria-labelledby="marketCalendarDetailTitle">
+                <h3 id="marketCalendarDetailTitle">選択日の予定</h3>
+                <p id="marketCalendarDetailStatus" role="status" aria-live="polite"></p>
+                <ul id="marketCalendarEvents" class="market-calendar-events" aria-label="選択日の予定"></ul>
+            </section>
+        </div>
+    </section>
+
     <section class="full-export-controls ui-category-panel category-system"
         aria-labelledby="fullExportTitle">
         <div>
@@ -1468,6 +1495,14 @@
 <script src="js/backfill/adapters/weeklyFuturesBackfillAdapter.js"></script>
 <script src="js/overallV2OptionQriBinding.js"></script>
 <script src="js/qriOptionOpenInterestComparisonDiagnostics.js"></script>
+<script src="js/calendarDate/calendarDate.js"></script>
+<script src="js/calendarDate/calendarDateNavigation.js"></script>
+<script src="js/marketCalendar/marketEventSchedule.js"></script>
+<script src="js/marketCalendar/importancePolicy.js"></script>
+<script src="js/marketCalendar/marketEventPresentation.js"></script>
+<script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
+<script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
+<script src="js/marketCalendarMvp.js"></script>
 <script src="js/jpxSnapshotSafety.js"></script>
 <script src="js/script.js"></script>
 <script src="js/wallHistoryDrawerRuntime.js"></script>

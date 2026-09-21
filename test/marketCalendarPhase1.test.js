@@ -154,5 +154,5 @@ test("Phase 1G foundationはstorage・network・DOM・scheduler・Time Travel・
     assert.doesNotMatch(source,
         /require\([^)]*(?:qriTimeTravel|wallHistory|participantHistory|overallJudgmentV2)|OptionMapOverallV2/);
     const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-    assert.doesNotMatch(html, /js\/(?:calendarDate|marketCalendar)\//);
+    assert.match(html, /js\/marketCalendarMvp\.js/);
 });
