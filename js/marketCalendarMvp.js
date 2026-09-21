@@ -174,7 +174,11 @@
             const requestId = ++daySequence, date = selectedDate;
             panel.querySelector("#marketCalendarDetailStatus").textContent = "経済イベントを読み込み中…";
             const result = await consumer.query({ indexedDB, keyRange, startDate: date, endDate: date });
-            if (requestId === daySequence && date === selectedDate) renderDetail(panel, result, date);
+            if (requestId === daySequence && date === selectedDate) {
+                renderDetail(panel, result, date);
+                document.dispatchEvent(new CustomEvent("optionmap:calendar-date-selected",
+                    { detail: { calendarDate: date } }));
+            }
         }
         function selectDate(date) {
             selectedDate = date;

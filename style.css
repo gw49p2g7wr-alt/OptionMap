@@ -408,6 +408,35 @@ h1{
 .market-calendar-toolbar h3 { margin: 0 4px; min-width: 120px; font-size: 1.25rem; white-space: nowrap; }
 .market-calendar-toolbar button { min-width: 38px; min-height: 38px; margin: 0; }
 .market-calendar-toolbar #marketCalendarToday { margin-left: auto; padding: 0 14px; }
+.market-calendar-time-travel-action { margin-top: 14px; padding-top: 12px; border-top: 1px solid #dbe4ef; }
+.market-calendar-time-travel-action button { width: 100%; padding: 10px 12px; border: 1px solid #8fb5e8;
+    border-radius: 9px; background: #eef6ff; color: #143f76; font-weight: 700; cursor: pointer; }
+.market-calendar-time-travel-action p { margin: 8px 0 0; color: #64748b; font-size: 13px; }
+.optionmap-historical-view { border: 2px solid #8fb5e8; background: #f7fbff; }
+.optionmap-historical-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.optionmap-historical-header h2 { margin: 6px 0; }
+.optionmap-historical-header p { margin: 0; color: #52647a; }
+.optionmap-historical-badge { display: inline-block; padding: 4px 9px; border-radius: 999px;
+    background: #174f91; color: white; font-size: 12px; font-weight: 700; }
+.optionmap-historical-header button { flex: 0 0 auto; padding: 9px 14px; }
+.optionmap-historical-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.optionmap-historical-card { min-width: 0; padding: 14px; border: 1px solid #dbe7f5;
+    border-radius: 10px; background: white; }
+.optionmap-historical-card h3 { margin: 0 0 10px; }
+.optionmap-historical-card p { margin: 6px 0; overflow-wrap: anywhere; }
+.optionmap-historical-saved-at { color: #52647a; font-size: 13px; }
+.optionmap-historical-metrics, .optionmap-historical-components { display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.optionmap-historical-metric { min-width: 0; padding: 9px 10px; border-radius: 8px; background: #f3f7fc; }
+.optionmap-historical-metric span, .optionmap-historical-metric strong { display: block; }
+.optionmap-historical-metric span { margin-bottom: 3px; color: #64748b; font-size: 12px; }
+.optionmap-historical-metric strong { color: #173d6b; font-size: 15px; overflow-wrap: anywhere; }
+.optionmap-historical-direction strong { font-size: 17px; }
+.optionmap-historical-price { margin: 12px 0; background: #eaf3ff; }
+.optionmap-historical-price strong { font-size: 19px; }
+.optionmap-historical-quality { color: #40556e; font-weight: 700; }
+.optionmap-historical-warnings { padding: 8px 10px; border-radius: 7px; background: #fff5dc; color: #715113; }
+.optionmap-historical-note, .time-travel-empty { color: #64748b; }
 .market-calendar-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(285px, .9fr);
     gap: 18px; align-items: start; }
 .market-calendar-month, .market-calendar-detail { min-width: 0; }
@@ -462,6 +491,9 @@ h1{
     .market-calendar-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
+    .optionmap-historical-header { flex-direction: column; }
+    .optionmap-historical-header button { width: 100%; }
+    .optionmap-historical-grid { grid-template-columns: 1fr; }
     .market-calendar-panel { padding: 10px; }
     .market-calendar-toolbar { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px auto;
         gap: 3px; margin: 8px 0 5px; }

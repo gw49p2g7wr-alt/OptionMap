@@ -65,6 +65,31 @@
                 <h3 id="marketCalendarDetailTitle">選択日の予定</h3>
                 <p id="marketCalendarDetailStatus" role="status" aria-live="polite"></p>
                 <ul id="marketCalendarEvents" class="market-calendar-events" aria-label="選択日の予定"></ul>
+                <div id="marketCalendarTimeTravelAction" class="market-calendar-time-travel-action" hidden>
+                    <button id="marketCalendarTimeTravelButton" type="button" hidden>⏪ この日のOptionMapを見る</button>
+                    <p id="marketCalendarTimeTravelStatus" role="status" aria-live="polite"></p>
+                </div>
+            </section>
+        </div>
+    </section>
+
+    <section id="optionMapHistoricalView" class="optionmap-historical-view ui-category-panel category-system"
+        aria-labelledby="optionMapHistoricalTitle" hidden>
+        <header class="optionmap-historical-header">
+            <div>
+                <span class="optionmap-historical-badge">過去データ表示中</span>
+                <h2 id="optionMapHistoricalTitle"><span id="timeTravelSelectedDate"></span>のOptionMap</h2>
+                <p>この日に実際に保存された情報だけを表示しています。現在値ではありません。</p>
+            </div>
+            <button id="timeTravelReturnToday" type="button">今日に戻る</button>
+        </header>
+        <div class="optionmap-historical-grid">
+            <section id="timeTravelObservation" class="optionmap-historical-card"></section>
+            <section id="timeTravelMorning" class="optionmap-historical-card"></section>
+            <section class="optionmap-historical-card">
+                <h3>QRI Time Travel</h3>
+                <p id="timeTravelQriStatus"></p>
+                <p class="optionmap-historical-note">保存済みCALL / PUT建玉、IV、前回保存日との差を既存のread-only表示で確認します。出来高とoption priceは表示しません。</p>
             </section>
         </div>
     </section>
@@ -1502,6 +1527,8 @@
 <script src="js/marketCalendar/marketEventPresentation.js"></script>
 <script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
+<script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>
+<script src="js/optionMapTimeTravelMvp.js"></script>
 <script src="js/marketCalendarMvp.js"></script>
 <script src="js/jpxSnapshotSafety.js"></script>
 <script src="js/script.js"></script>
