@@ -4,8 +4,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const vm = require("node:vm");
 const XLSX = require("xlsx");
-const { indexedDB } = require("fake-indexeddb");
+const { indexedDB, IDBFactory } = require("fake-indexeddb");
 const parser = require("../js/jpxDerivativesOpenInterest/workbookParser.js");
 const source = require("../js/jpxDerivativesOpenInterest/sourceContract.js");
 const identity = require("../js/jpxDerivativesOpenInterest/identity.js");
@@ -140,6 +141,62 @@ test("6-store controlled writer、readonly consumer、stale precondition rejecti
         expectedPreconditionIdentity: precondition }); assert.equal(rejected.saved, false);
     assert.match(rejected.error, /stale_precondition/);
 });
+
+test("browser UMDの引数なしconsumerはglobal IndexedDBから通常v2へ179件をreadonly投影", async () => {
+    const browserIndexedDB = new IDBFactory(), empty = history.snapshotEmpty(), candidate = parsed();
+    const plan = await history.makePlan(empty, candidate, { runId: "browser-runtime",
+        acceptedAt: AT });
+    const writer = writerApi.create({ indexedDB: browserIndexedDB, enabled: true,
+        authorizationToken: "fixture-only", allowCreate: true });
+    assert.equal((await writer.write({ authorization: "fixture-only", plan,
+        expectedPreconditionIdentity: await identity.preconditionIdentity(empty) })).saved, true);
+
+    const context = vm.createContext({ indexedDB: browserIndexedDB, console, setTimeout,
+        clearTimeout, structuredClone, TextEncoder, TextDecoder });
+    context.globalThis = context; context.window = context;
+    for (const relative of ["sourceContract.js", "identity.js", "historySchemaV1.js",
+        "historyContract.js", "readOnlyConsumer.js"]) vm.runInContext(fs.readFileSync(
+        path.join(__dirname, "../js/jpxDerivativesOpenInterest", relative), "utf8"), context,
+    { filename: relative });
+
+    const browserReader = context.OptionMapJpxDerivativesOpenInterestReadOnlyConsumer.create();
+    const active = await browserReader.readActive();
+    assert.equal(active.status, "available");
+    const faithful = await require("../js/fullExportSourceFaithfulCanonical.js").collect({
+        readJpxDerivativesOpenInterest: () => active }, v1FixtureForRuntime());
+    const daily = faithful.jpxDerivativesOpenInterestDaily;
+    assert.equal(daily.status, "available");
+    assert.equal(daily.canonical.blocks.oseIndexFutures.records.length, 161);
+    assert.equal(daily.canonical.blocks.oseIndexOptions.records.length, 18);
+    assert.equal(daily.selectionPolicy.aggregation, "none");
+    assert.equal(daily.selectionPolicy.filtering, "none");
+
+    const code = fs.readFileSync(path.join(__dirname,
+        "../js/jpxDerivativesOpenInterest/readOnlyConsumer.js"), "utf8");
+    assert.match(code, /transaction\(names, "readonly"\)/);
+    assert.doesNotMatch(code, /transaction\([^\n]*"readwrite"/);
+    let blocked = false; const deletion = browserIndexedDB.deleteDatabase(schema.DATABASE_NAME);
+    deletion.onblocked = () => { blocked = true; };
+    await new Promise((resolve, reject) => { deletion.onsuccess = resolve;
+        deletion.onerror = () => reject(deletion.error); });
+    assert.equal(blocked, false);
+});
+
+function v1FixtureForRuntime() {
+    const fullExport = require("../js/fullExport.js");
+    const envelope = () => ({ status: "unavailable", reason: "fixture", authority: {
+        source: null, sourceClass: null, origin: null, formalStatus: null, versionKey: null,
+        signature: null }, asOf: { tradingDate: null, sourceDate: null, snapshotDate: null,
+        pageUpdatedAt: null, fetchedAt: null, confirmedAt: null }, freshness: {
+        status: "unavailable", reason: "fixture" }, summary: null, details: null });
+    return fullExport.buildFullExport({ exportMeta: { generatedAt: "2026-09-18T19:26:39+09:00",
+        timeZone: "Asia/Tokyo", profile: "full", appVersion: "1.1.0-beta.5", readOnly: true },
+    compactSummary: { generatedAt: "2026-09-18T19:26:39+09:00", market: "Nikkei 225 derivatives",
+        session: {}, currentPrice: {}, currentContract: null, overallV2: {
+            interpretation: fullExport.SAFE_INTERPRETATION }, morningChange: {}, importantLevels: {},
+        qriHighlights: [], freshnessIssues: [], warnings: [] }, sections: Object.fromEntries(
+        fullExport.REQUIRED_SECTION_KEYS.map(key => [key, envelope()])), warnings: [] });
+}
 
 test("read-only consumerはDB不存在時にopenせずschema mismatchを拒否", async () => {
     let opens = 0; const fake = { databases: async () => [], open: () => { opens += 1; } };

@@ -2,9 +2,9 @@
     const common = typeof module === "object" && module.exports && !(root && root.document);
     const schema = common ? require("./historySchemaV1.js") : root?.OptionMapJpxDerivativesOpenInterestHistorySchemaV1;
     const history = common ? require("./historyContract.js") : root?.OptionMapJpxDerivativesOpenInterestHistoryContract;
-    const api = factory(schema, history); if (common) module.exports = api;
+    const api = factory(schema, history, root); if (common) module.exports = api;
     if (root) root.OptionMapJpxDerivativesOpenInterestReadOnlyConsumer = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (schema, history) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (schema, history, root) {
     "use strict";
     const request = value => new Promise((resolve, reject) => { value.onsuccess = () => resolve(value.result);
         value.onerror = () => reject(value.error || new Error("indexeddb_request_failed")); });
