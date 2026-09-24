@@ -43,10 +43,20 @@
     </section>
 
     <section id="marketCalendarPanel" class="market-calendar-panel ui-category-panel category-system"
+        data-calendar-update-ui-enabled="true"
         aria-labelledby="marketCalendarTitle">
         <h2 id="marketCalendarTitle" class="ui-category-title">📅 Market Calendar
             <span class="ui-category-badge">経済イベント</span>
         </h2>
+        <section id="marketCalendarUpdateRegion" class="market-calendar-update-region"
+            aria-labelledby="marketCalendarUpdateStatus">
+            <div>
+                <p id="marketCalendarUpdateStatus" role="status" aria-live="polite">公式データ：未確認</p>
+                <p id="marketCalendarUpdateQualifier" class="market-calendar-update-qualifier">保存は行っていません</p>
+            </div>
+            <button id="marketCalendarUpdateButton" type="button">公式データを確認</button>
+            <pre id="marketCalendarUpdateDetails" class="market-calendar-update-details" hidden></pre>
+        </section>
         <div class="market-calendar-toolbar">
             <button id="marketCalendarPreviousMonth" type="button" aria-label="前月">‹</button>
             <h3 id="marketCalendarMonthTitle"></h3>
@@ -1555,6 +1565,8 @@
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
 <script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>
 <script src="js/optionMapTimeTravelMvp.js"></script>
+<script src="js/marketCalendarRuntime/calendarUpdatePresentation.js"></script>
+<script src="js/marketCalendarRuntime/calendarUpdateUiController.js"></script>
 <script src="js/marketCalendarMvp.js"></script>
 <script src="js/jpxSnapshotSafety.js"></script>
 <script src="js/startupBootstrap.js"></script>
@@ -1578,6 +1590,7 @@ import {
 
 const optionMapBridge = window.optionMapBridge;
 const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
+    "checkCalendarSources",
     "downloadJpxExcel",
     "fetchJpxPage",
     "fetchOpenInterestListing",

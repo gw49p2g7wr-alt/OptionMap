@@ -28,6 +28,9 @@ const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
 const calendarAcquisition = require(
   "./js/marketCalendarRuntime/calendarAcquisitionService.js"
 );
+const calendarManualCheck = require(
+  "./js/marketCalendarRuntime/calendarManualCheckService.js"
+);
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -38,6 +41,9 @@ const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
 const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID });
 const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisitionService({
   fetchImpl: (url, options) => net.fetch(url, options)
+});
+const calendarManualCheckService = calendarManualCheck.createCalendarManualCheckService({
+  acquire: request => calendarAcquisitionService.acquire(request)
 });
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
@@ -206,6 +212,15 @@ ipcMain.handle("request-market-calendar-source", async (event, request) => {
     return { success: false, reason: "acquisition_failed", retryable: false,
       documents: [], diagnostics: [] };
   }
+});
+
+ipcMain.handle("check-market-calendar-sources", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { state: "unavailable", mode: "writer_disabled",
+    reasonClass: "invalid_sender", sources: [], failedSourceIds: [] };
+  try { return await calendarManualCheckService.check(request); }
+  catch (_error) { return { state: "failed", mode: "writer_disabled",
+    reasonClass: "manual_check_failed", sources: [], failedSourceIds: [] }; }
 });
 
 ipcMain.handle("save-full-export-json", (event, request) => {

@@ -10,6 +10,7 @@ const preloadSource = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const expectedKeys = [
+  "checkCalendarSources",
   "downloadJpxExcel",
   "fetchJpxPage",
   "fetchOpenInterestListing",
@@ -18,7 +19,8 @@ const expectedKeys = [
   "requestCalendarSource",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["requestCalendarSource", "saveFullExportJson"].includes(key));
+const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "requestCalendarSource",
+  "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
   fetchJpxPage: "fetch-daytrading-page",
@@ -80,7 +82,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact seven-method narrow bridge", () => {
+test("preload publishes only the exact eight-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -126,6 +128,13 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
   assert.equal(calls.length, 1);
   await api.fetchQriOptionPage("x".repeat(4096));
   assert.equal(calls.length, 2);
+  await api.checkCalendarSources({ sourceIds: ["jp-boj-calendar", "jp-boj-calendar"] });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))), ["check-market-calendar-sources",
+    { sourceIds: ["jp-boj-calendar"] }]);
+  const before = calls.length;
+  for (const value of [null, [], { sourceIds: [] }, { sourceIds: ["bad id"] }, { extra: true }])
+    assert.equal((await api.checkCalendarSources(value)).errorCode, "invalid_argument");
+  assert.equal(calls.length, before);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {
@@ -139,6 +148,7 @@ test("renderer fail-fast validates exact bridge before XLSX and startup work", (
   assert.match(html.slice(bridge, xlsx), /Object\.keys\(optionMapBridge\)\.sort\(\)/);
   assert.match(html.slice(bridge, xlsx), /typeof optionMapBridge\[key\] !== "function"/);
   assert.match(html.slice(bridge, xlsx), /"requestCalendarSource"/);
+  assert.match(html.slice(bridge, xlsx), /"checkCalendarSources"/);
 });
 
 test("all 20 renderer callsites use the narrow bridge with no raw Electron access", () => {

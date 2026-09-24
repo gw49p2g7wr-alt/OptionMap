@@ -46,6 +46,21 @@ function invokeCalendarSource(args) {
   }));
 }
 
+function invokeCalendarCheck(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).some(key => key !== "sourceIds") ||
+      (request.sourceIds !== undefined && (!Array.isArray(request.sourceIds) ||
+        request.sourceIds.length === 0 || request.sourceIds.length > 12 ||
+        request.sourceIds.some(sourceId => typeof sourceId !== "string" ||
+          !/^[a-z][a-z0-9-]{2,80}$/.test(sourceId))))) {
+    return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  }
+  return ipcRenderer.invoke("check-market-calendar-sources", Object.freeze({
+    ...(request.sourceIds ? { sourceIds: Object.freeze([...new Set(request.sourceIds)]) } : {})
+  }));
+}
+
 contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   fetchQriOptionPage: (...args) => invokeUrlChannel("fetch-option-page", args),
   fetchJpxPage: (...args) => invokeUrlChannel("fetch-daytrading-page", args),
@@ -55,6 +70,7 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
     invokeUrlChannel("fetch-jpx-participant-json", args),
   downloadJpxExcel: (...args) =>
     invokeUrlChannel("download-daytrading-excel", args),
+  checkCalendarSources: (...args) => invokeCalendarCheck(args),
   requestCalendarSource: (...args) => invokeCalendarSource(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)
 }));
