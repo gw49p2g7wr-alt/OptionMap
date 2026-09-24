@@ -54,7 +54,8 @@
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "include": "build/installer-upgrade-compat.nsh"
     }
   },
   "devDependencies": {
