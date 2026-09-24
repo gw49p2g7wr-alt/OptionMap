@@ -1,3 +1,8 @@
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports && !root?.document) module.exports = api;
+  if (root) root.OptionMapCalendarSourceUpdateState = api;
+})(typeof window !== "undefined" ? window : globalThis, function () {
 "use strict";
 
 const RUNTIME_STATE_FIELDS = Object.freeze(["coordinatorVersion", "lastAttemptAt",
@@ -76,5 +81,6 @@ function createRuntimeState(value) {
   return freeze({ valid: true, reason: null, state: result.state });
 }
 
-module.exports = Object.freeze({ OUTCOMES, DIAGNOSTIC_CLASSES, RETRY_CLASSIFICATION,
+return Object.freeze({ OUTCOMES, DIAGNOSTIC_CLASSES, RETRY_CLASSIFICATION,
   classifyDiagnostic, retryAfterFor, validateRuntimeState, createRuntimeState });
+});

@@ -1,16 +1,20 @@
+(function (root, factory) {
+  const node = typeof module === "object" && module.exports && !root?.document;
+  const api = factory(node ? require("../marketCalendarRuntime/sourceUpdateState.js") : root.OptionMapCalendarSourceUpdateState,
+    node ? require("../marketCalendar/sourceRegistry.js") : root.OptionMapMarketEventSourceRegistry);
+  if (node) module.exports = api;
+  if (root) root.OptionMapCalendarRuntimeStateStore = api;
+})(typeof window !== "undefined" ? window : globalThis, function (B1, Registry) {
 "use strict";
-
-const B1 = require("../marketCalendarRuntime/sourceUpdateState.js");
-const Registry = require("../marketCalendar/sourceRegistry.js");
 const DATABASE_NAME = "optionMapMarketCalendarRuntimeState", VERSION = 1,
   STORE_NAME = "sourceUpdateStates", TIMEOUT_MS = 8000;
 const sourceValid = id => Registry.getSource(id)?.formalEligible === true;
 const valid = (state, id) => sourceValid(id) && state != null &&
   B1.validateRuntimeState(state, id).valid;
 
-// No default browser factory: D2a is an explicitly isolated capability only.
+// Explicit factory only; production composition exposes fixed operations, never a generic DB API.
 function createRuntimeStateStore({ indexedDB, targetEnvironment } = {}) {
-  if (targetEnvironment !== "isolated_test" || !indexedDB?.databases || !indexedDB?.open)
+  if (!["isolated_test", "browser_runtime"].includes(targetEnvironment) || !indexedDB?.databases || !indexedDB?.open)
     throw new TypeError("isolated_test_configuration_required");
   const counts = { databaseCreateAttempts: 0, successfulCreates: 0,
     readonlyTransactions: 0, readwriteTransactions: 0, successfulWrites: 0,
@@ -113,4 +117,5 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment } = {}) {
   }
   return Object.freeze({ read, readAll, write, diagnostics: () => ({ ...counts }) });
 }
-module.exports = Object.freeze({ DATABASE_NAME, VERSION, STORE_NAME, TIMEOUT_MS, createRuntimeStateStore });
+return Object.freeze({ DATABASE_NAME, VERSION, STORE_NAME, TIMEOUT_MS, createRuntimeStateStore });
+});

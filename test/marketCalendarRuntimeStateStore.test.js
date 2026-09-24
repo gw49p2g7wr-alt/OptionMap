@@ -223,9 +223,9 @@ test("runtime DB disappearance leaves all six Formal stores byte-identical", asy
   assert.equal((await store.readAll()).status, "absent"); assert.equal(await snapshot(), before);
 });
 
-test("isolated-only capability, fixed DB/store, and no production wiring/export/writer dependencies", () => {
+test("explicit capability, fixed DB/store, and no main-world storage/export/writer dependencies", () => {
   assert.throws(() => Store.createRuntimeStateStore({ indexedDB: new IDBFactory() }), /isolated_test/);
-  for (const file of ["main.js", "preload.js", "index.html"])
+  for (const file of ["main.js", "preload.js"])
     assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", file), "utf8"),
       /marketCalendarRuntimeStateStore|calendarRuntimeStateIntegration|restoreState:/);
   for (const file of ["js/storage/marketCalendarRuntimeStateStore.js",

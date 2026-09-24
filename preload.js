@@ -49,7 +49,10 @@ function invokeCalendarSource(args) {
 function invokeCalendarCheck(args) {
   const request = args[0];
   if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request) ||
-      Object.keys(request).some(key => key !== "sourceIds") ||
+      Object.keys(request).some(key => !["sourceIds", "trigger", "runtimeStates", "sessionStates"].includes(key)) ||
+      (request.trigger !== undefined && !["manual", "startup"].includes(request.trigger)) ||
+      [request.runtimeStates, request.sessionStates].some(value => value !== undefined &&
+        (!value || typeof value !== "object" || Array.isArray(value))) ||
       (request.sourceIds !== undefined && (!Array.isArray(request.sourceIds) ||
         request.sourceIds.length === 0 || request.sourceIds.length > 12 ||
         request.sourceIds.some(sourceId => typeof sourceId !== "string" ||
@@ -57,7 +60,10 @@ function invokeCalendarCheck(args) {
     return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
   }
   return ipcRenderer.invoke("check-market-calendar-sources", Object.freeze({
-    ...(request.sourceIds ? { sourceIds: Object.freeze([...new Set(request.sourceIds)]) } : {})
+    ...(request.sourceIds ? { sourceIds: Object.freeze([...new Set(request.sourceIds)]) } : {}),
+    ...(request.trigger ? { trigger: request.trigger } : {}),
+    ...(request.runtimeStates ? { runtimeStates: request.runtimeStates } : {}),
+    ...(request.sessionStates ? { sessionStates: request.sessionStates } : {})
   }));
 }
 

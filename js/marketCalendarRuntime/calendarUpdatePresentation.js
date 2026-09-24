@@ -33,7 +33,10 @@
         const restoredDate = input.restored && Number.isFinite(Date.parse(input.checkedAt)) ?
             new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric",
                 month: "2-digit", day: "2-digit" }).format(new Date(input.checkedAt)) : null;
-        return Object.freeze({ state, statusText: restoredDate ?
+        return Object.freeze({ state, statusText: input.runtimePhase === "restoring" ?
+            "公式データ：確認状態を読み込み中…" : input.runtimePhase === "cooldown" ?
+            "公式データ：再試行待ち（確認間隔の制限中）" : input.runtimePhase === "blocked" ?
+            "公式データ：安全条件により確認を停止" : restoredDate ?
             `${values[0].replace("本日 ", "")}（最終確認 ${restoredDate} ${checked}）` : values[0],
             buttonText: values[1], buttonDisabled: state === "checking",
             detailsHidden: failed.length === 0 && persistWarnings.length === 0,

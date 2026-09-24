@@ -1,8 +1,14 @@
+(function (root, factory) {
+  const node = typeof module === "object" && module.exports && !root?.document;
+  const api = factory(node ? require("./sourceUpdateState.js") : root.OptionMapCalendarSourceUpdateState,
+    node ? require("../marketCalendar/sourceRegistry.js") : root.OptionMapMarketEventSourceRegistry,
+    node ? require("./calendarManualCheckService.js").SOURCE_NAMES : null);
+  if (node) module.exports = api;
+  if (root) root.OptionMapCalendarRuntimeStateIntegration = api;
+})(typeof window !== "undefined" ? window : globalThis, function (B1, Registry, sourceNames) {
 "use strict";
-
-const B1 = require("./sourceUpdateState.js");
-const Registry = require("../marketCalendar/sourceRegistry.js");
-const { SOURCE_NAMES } = require("./calendarManualCheckService.js");
+const SOURCE_NAMES = sourceNames || Object.fromEntries(Object.values(Registry.SOURCES)
+  .map(source => [source.sourceId, source.authority]));
 const diagnosticClass = source => {
   if (B1.classifyDiagnostic(source.reasonClass)) return source.reasonClass;
   return ({ request_timeout: "timeout", network_failed: "network_failure",
@@ -11,18 +17,27 @@ const diagnosticClass = source => {
       source.candidateStatus === "rejected" ? "parser_structure_change" : "security_violation");
 };
 
-// Optional isolated composition. main/preload never instantiate this adapter in D2a.
+// The application composes only the fixed Runtime State capability and narrow check bridge.
 function createRuntimeStateIntegration({ service, store, targetEnvironment } = {}) {
-  if (targetEnvironment !== "isolated_test" || !service?.check || !store?.readAll || !store?.write)
+  if (!["isolated_test", "browser_runtime"].includes(targetEnvironment) || !service?.check || !store?.readAll || !store?.write)
     throw new TypeError("isolated_test_configuration_required");
-  let active = null;
+  let active = null, startupPromise = null;
+  const sessionStates = {};
   async function execute(input) {
-    const result = await service.check(input), diagnostics = [];
+    const diagnostics = [];
     let existing;
     try { existing = await store.readAll(); } catch (_) { existing = { status: "unavailable" }; }
+    if (input?.trigger === "startup" && !["ok", "absent"].includes(existing.status))
+      return { state: "unavailable", mode: "writer_disabled", sources: [], failedSourceIds: [],
+        runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
+    const result = await service.check({ ...input,
+      runtimeStates: Object.fromEntries((existing.value || []).map(x => [x.sourceId, x])),
+      sessionStates: input?.trigger === "startup" ? structuredClone(sessionStates) : {} });
     if (!["ok", "absent"].includes(existing.status))
       return { ...result, runtimeStateDiagnostics: ["runtime_state_persist_failed"] };
     for (const source of result.sources || []) {
+      if (source.acquisitionStatus === "not_attempted") continue;
+      sessionStates[source.sourceId] = { attemptCount: (sessionStates[source.sourceId]?.attemptCount || 0) + 1 };
       const previous = existing.value?.find(x => x.sourceId === source.sourceId), success =
         source.status === "success", failureClass = success ? null : diagnosticClass(source),
         at = result.checkedAt, candidate = { sourceId: source.sourceId, lastAttemptAt: at,
@@ -40,6 +55,10 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
   function check(input) {
     if (active) return active;
     active = execute(input).finally(() => { active = null; }); return active;
+  }
+  function startup() {
+    if (!startupPromise) startupPromise = check({ trigger: "startup" });
+    return startupPromise;
   }
   async function restore() {
     let saved;
@@ -61,6 +80,7 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
       checkedAt: saved.value.map(x => x.lastAttemptAt).filter(Boolean)
         .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null };
   }
-  return Object.freeze({ check, restore });
+  return Object.freeze({ check, startup, restore });
 }
-module.exports = Object.freeze({ createRuntimeStateIntegration });
+return Object.freeze({ createRuntimeStateIntegration });
+});

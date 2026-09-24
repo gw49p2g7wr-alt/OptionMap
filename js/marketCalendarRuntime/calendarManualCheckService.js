@@ -48,11 +48,11 @@ function createCalendarManualCheckService(configuration = {}) {
   if (typeof acquire !== "function") throw new TypeError("acquire_required");
   let active = null, logicalRequestCount = 0, joinedRequestCount = 0;
 
-  async function execute(sourceIds) {
+  async function execute(sourceIds, options) {
     const requestedAt = now(), acquisitions = new Map(), coordinator = executionFactory({
       acquire: async request => { const envelope = await acquire(request);
         acquisitions.set(request.sourceId, envelope); return envelope; }
-    }), execution = await coordinator.requestUpdate({ trigger: "manual", requestedAt, sourceIds }),
+    }), execution = await coordinator.requestUpdate({ trigger: "manual", ...options, requestedAt, sourceIds }),
     sources = [];
     for (const planned of execution.sourceResults) {
       const base = { sourceId: planned.sourceId, displayName: SOURCE_NAMES[planned.sourceId] ||
@@ -63,6 +63,12 @@ function createCalendarManualCheckService(configuration = {}) {
         ...(planned.acquisition?.documents || [])].map(item => item.httpStatus)
         .filter(status => Number.isInteger(status) && status >= 100 && status <= 599);
       base.lastHttpStatus = statuses.find(status => status >= 400) ?? statuses.at(-1) ?? null;
+      base.planningDecision = planned.planningDecision;
+      base.planningReason = planned.planningReason;
+      if (planned.acquisitionStatus === "not_attempted") {
+        sources.push({ ...base, status: planned.planningDecision === "skip" ? "success" : "unavailable",
+          reasonClass: planned.planningReason }); continue;
+      }
       if (planned.acquisitionStatus !== "succeeded") {
         sources.push({ ...base, reasonClass: reasonClass(planned) }); continue;
       }
@@ -84,21 +90,27 @@ function createCalendarManualCheckService(configuration = {}) {
       failedSourceCount = sources.length - successfulSourceCount, state = sources.length === 0 ?
         "unavailable" : failedSourceCount === 0 ? "success" : successfulSourceCount === 0 ?
           "failed" : "partial";
-    return freeze({ state, mode: MODE, checkedAt: now(), requestedSourceCount: sources.length,
+    const attempted = sources.filter(source => source.acquisitionStatus !== "not_attempted").length;
+    const runtimePhase = attempted ? "checked" : sources.some(source => source.planningDecision === "cooldown")
+      ? "cooldown" : sources.every(source => source.planningDecision === "skip") ? "skipped" : "blocked";
+    const priorTime = Object.values(options.runtimeStates || {}).map(state => state?.lastSuccessAt)
+      .filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
+    return freeze({ state, runtimePhase, mode: MODE, checkedAt: attempted ? now() : priorTime,
+      restored: attempted === 0, requestedSourceCount: sources.length,
       successfulSourceCount, failedSourceCount, sources: clone(sources),
       failedSourceIds: sources.filter(source => source.status !== "success").map(source => source.sourceId),
       resources: clone(execution.resources), peakSourceConcurrency:
         execution.summary.peakSourceConcurrency });
   }
 
-  function check({ sourceIds } = {}) {
+  function check({ sourceIds, trigger = "manual", runtimeStates, sessionStates } = {}) {
     const selected = requestedSources(sourceIds);
-    if (!selected) return Promise.resolve(freeze({ state: "unavailable", mode: MODE,
+    if (!selected || !["manual", "startup"].includes(trigger)) return Promise.resolve(freeze({ state: "unavailable", mode: MODE,
       checkedAt: now(), requestedSourceCount: 0, successfulSourceCount: 0, failedSourceCount: 0,
       sources: [], failedSourceIds: [], reasonClass: "source_selection_invalid" }));
     logicalRequestCount += 1;
     if (active) { joinedRequestCount += 1; return active; }
-    active = execute(selected).finally(() => { active = null; });
+    active = execute(selected, { trigger, runtimeStates, sessionStates }).finally(() => { active = null; });
     return active;
   }
   return Object.freeze({ check, diagnostics: () => freeze({ logicalRequestCount,

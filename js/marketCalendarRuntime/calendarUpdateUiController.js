@@ -1,10 +1,12 @@
 (function (root, factory) {
     const presentation = typeof module === "object" && module.exports && !(root && root.document)
         ? require("./calendarUpdatePresentation.js") : root?.OptionMapMarketCalendarUpdatePresentation;
-    const api = factory(presentation);
+    const startup = typeof module === "object" && module.exports && !(root && root.document)
+        ? require("./calendarStartupRuntime.js") : root?.OptionMapCalendarStartupRuntime;
+    const api = factory(presentation, startup);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketCalendarUpdateUiController = api;
-})(typeof window !== "undefined" ? window : globalThis, function (presentation) {
+})(typeof window !== "undefined" ? window : globalThis, function (presentation, startup) {
     "use strict";
     function render(nodes, state) {
         const view = presentation.build(state);
@@ -18,7 +20,7 @@
         return view;
     }
     function mount({ document = globalThis.document, bridge = globalThis.optionMapBridge,
-        enabled, restoreState } = {}) {
+        enabled, restoreState, autoStartup = false, runtime } = {}) {
         const panel = document?.getElementById("marketCalendarPanel"), region =
             document?.getElementById("marketCalendarUpdateRegion");
         if (!panel || !region) return null;
@@ -33,17 +35,33 @@
             qualifier: document.getElementById("marketCalendarUpdateQualifier") };
         let state = { state: "idle", mode: "writer_disabled", failedSourceIds: [] }, activePromise = null,
             manualStarted = false;
+        if (autoStartup) {
+            try { runtime = runtime || startup.create({ bridge }); }
+            catch (_) { state = { ...state, state: "unavailable" }; render(nodes, state);
+                return Object.freeze({ enabled: true, ready: Promise.resolve(), getState: () => structuredClone(state) }); }
+            restoreState = runtime.restore;
+            state = { ...state, runtimePhase: "restoring" };
+        }
         render(nodes, state);
         const ready = typeof restoreState === "function" ? Promise.resolve().then(restoreState)
             .then(restored => { if (!manualStarted && restored) { state = restored; render(nodes, state); } },
                 () => { if (!manualStarted) { state = { ...state,
                     runtimeStateDiagnostics: ["runtime_state_restore_failed"] }; render(nodes, state); } })
             : Promise.resolve();
+        const startupReady = ready.then(() => {
+            if (!autoStartup || manualStarted) return;
+            state = { ...state, state: "checking", runtimePhase: "checking" }; render(nodes, state);
+            activePromise = Promise.resolve().then(() => runtime.startup())
+                .then(result => { state = result || { state: "unavailable" }; }, () => {
+                    state = { state: "failed", runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
+                }).finally(() => { activePromise = null; render(nodes, state); });
+            return activePromise;
+        });
         function check(sourceIds) {
             if (activePromise) return activePromise;
             manualStarted = true;
             state = { ...state, state: "checking" }; render(nodes, state);
-            activePromise = Promise.resolve(bridge.checkCalendarSources(sourceIds?.length ?
+            activePromise = Promise.resolve((runtime ? runtime.check : bridge.checkCalendarSources)(sourceIds?.length ?
                 { sourceIds } : {})).then(result => { state = result && typeof result === "object" ?
                     result : { state: "unavailable", mode: "writer_disabled", failedSourceIds: [] };
                 return state; }, () => { state = { state: "failed", mode: "writer_disabled",
@@ -54,10 +72,10 @@
         }
         nodes.button.addEventListener("click", () => check(state.state === "partial"
             ? state.failedSourceIds : undefined));
-        return Object.freeze({ enabled: true, check, ready, getState: () => structuredClone(state) });
+        return Object.freeze({ enabled: true, check, ready: startupReady, getState: () => structuredClone(state) });
     }
     if (typeof document !== "undefined") {
-        const start = () => mount();
+        const start = () => mount({ autoStartup: true });
         if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
         else start();
     }
