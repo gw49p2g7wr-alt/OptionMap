@@ -65,6 +65,39 @@ function sourceValues(values, sourceId) {
   return { entries: own("entries"), revisions: own("revisions"), evidence: own("evidence"),
     observations: own("observations"), runs: own("runs"), cursors: own("cursors") };
 }
+async function assessExistingTransaction(database, transaction, sourceId) {
+  const inspected = BootstrapSchema.inspect(database, transaction), values = await snapshot(transaction),
+    schemaFingerprint = await Schema.fingerprint(inspected);
+  if (database.version !== Schema.VERSION || schemaFingerprint !== Schema.EXPECTED_FINGERPRINT)
+    return frozen({ status: "schema_mismatch", reason: "schema_fingerprint_mismatch",
+      sourceId, currentState: null });
+  const semantic = await Integrity.audit(values), storage = Integrity.auditStorageSnapshot(values),
+    linkage = linkageErrors(values);
+  if (!semantic.valid || !storage.valid || linkage.length)
+    return frozen({ status: "integrity_invalid", reason: "database_integrity_invalid",
+      sourceId, errors: [...semantic.errors, ...storage.errors, ...linkage], currentState: null });
+  const own = sourceValues(values, sourceId), cursor = own.cursors[0] || null;
+  if (own.cursors.length > 1) return frozen({ status: "integrity_invalid",
+    reason: "source_cursor_ambiguous", sourceId, currentState: null });
+  const latestRun = own.runs.slice().sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) ||
+    b.runId.localeCompare(a.runId))[0] || null;
+  if ((cursor && (!latestRun || cursor.runId !== latestRun.runId ||
+      cursor.acceptedAt !== latestRun.acceptedAt)) || (!cursor && (own.entries.length || own.runs.length)))
+    return frozen({ status: "integrity_invalid", reason: "source_cursor_mismatch",
+      sourceId, currentState: null });
+  const activeRevisionIdentities = own.entries.map(entry => ({ eventKey: entry.eventKey,
+    revisionKey: entry.activeRevisionKey })).sort((a, b) => a.eventKey.localeCompare(b.eventKey));
+  const counts = Object.fromEntries(BootstrapSchema.STORE_ORDER.map(([field, storeName]) =>
+    [storeName, values[field].length])), sourceCounts = Object.fromEntries(
+    Object.keys(own).map(field => [field, own[field].length]));
+  const identityInput = { schemaVersion: Schema.VERSION, schemaFingerprint, sourceId,
+    sourceCursor: cursor, latestSourceRun: latestRun, activeRevisionIdentities,
+    relevantCounts: { global: counts, source: sourceCounts }, sourceSnapshot: own };
+  const currentStateFingerprint = await Canonicalizer.sha256(canonical(identityInput)),
+    currentState = { ...identityInput, currentStateFingerprint, ...clone(own) };
+  return frozen({ status: cursor ? "valid_existing" : "source_state_missing", reason: null,
+    sourceId, currentState });
+}
 
 function createExistingDbPreconditionReader(configuration = {}) {
   if (configuration.targetEnvironment !== "isolated_test" || !configuration.indexedDB)
@@ -96,38 +129,9 @@ function createExistingDbPreconditionReader(configuration = {}) {
       metrics.databaseOpens += 1; metrics.openHandles += 1;
       const transaction = database.transaction(STORE_NAMES, "readonly");
       metrics.readonlyTransactions += 1;
-      const completed = done(transaction), inspected = BootstrapSchema.inspect(database, transaction),
-        values = await snapshot(transaction); await completed;
-      const schemaFingerprint = await Schema.fingerprint(inspected);
-      if (database.version !== Schema.VERSION || schemaFingerprint !== Schema.EXPECTED_FINGERPRINT)
-        return frozen({ status: "schema_mismatch", reason: "schema_fingerprint_mismatch",
-          sourceId, currentState: null });
-      const semantic = await Integrity.audit(values), storage = Integrity.auditStorageSnapshot(values),
-        linkage = linkageErrors(values);
-      if (!semantic.valid || !storage.valid || linkage.length)
-        return frozen({ status: "integrity_invalid", reason: "database_integrity_invalid",
-          sourceId, errors: [...semantic.errors, ...storage.errors, ...linkage], currentState: null });
-      const own = sourceValues(values, sourceId), cursor = own.cursors[0] || null;
-      if (own.cursors.length > 1) return frozen({ status: "integrity_invalid",
-        reason: "source_cursor_ambiguous", sourceId, currentState: null });
-      const latestRun = own.runs.slice().sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) ||
-        b.runId.localeCompare(a.runId))[0] || null;
-      if ((cursor && (!latestRun || cursor.runId !== latestRun.runId ||
-          cursor.acceptedAt !== latestRun.acceptedAt)) || (!cursor && (own.entries.length || own.runs.length)))
-        return frozen({ status: "integrity_invalid", reason: "source_cursor_mismatch",
-          sourceId, currentState: null });
-      const activeRevisionIdentities = own.entries.map(entry => ({ eventKey: entry.eventKey,
-        revisionKey: entry.activeRevisionKey })).sort((a, b) => a.eventKey.localeCompare(b.eventKey));
-      const counts = Object.fromEntries(BootstrapSchema.STORE_ORDER.map(([field, storeName]) =>
-        [storeName, values[field].length])), sourceCounts = Object.fromEntries(
-        Object.keys(own).map(field => [field, own[field].length]));
-      const identityInput = { schemaVersion: Schema.VERSION, schemaFingerprint, sourceId,
-        sourceCursor: cursor, latestSourceRun: latestRun, activeRevisionIdentities,
-        relevantCounts: { global: counts, source: sourceCounts }, sourceSnapshot: own };
-      const currentStateFingerprint = await Canonicalizer.sha256(canonical(identityInput));
-      const currentState = { ...identityInput, currentStateFingerprint, ...clone(own) };
-      return frozen({ status: cursor ? "valid_existing" : "source_state_missing", reason: null,
-        sourceId, currentState });
+      const completed = done(transaction), result = await assessExistingTransaction(database,
+        transaction, sourceId); await completed;
+      return result;
     } catch (error) {
       return frozen({ status: error?.message === "upgrade_forbidden" ? "schema_mismatch" :
         "integrity_invalid", reason: error?.message || "readonly_inspection_failed",
@@ -139,4 +143,5 @@ function createExistingDbPreconditionReader(configuration = {}) {
   return Object.freeze({ read, diagnostics: () => frozen(clone(metrics)) });
 }
 
-module.exports = Object.freeze({ createExistingDbPreconditionReader });
+module.exports = Object.freeze({ createExistingDbPreconditionReader, assessExistingTransaction,
+  STORE_NAMES });
