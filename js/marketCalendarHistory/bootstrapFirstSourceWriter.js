@@ -174,4 +174,5 @@ function createBootstrapFirstSourceWriter(configuration = {}) {
   return Object.freeze({ bootstrap, diagnostics: () => Object.freeze(clone(metrics)) });
 }
 
-module.exports = Object.freeze({ createBootstrapFirstSourceWriter });
+module.exports = Object.freeze({ createBootstrapFirstSourceWriter,
+  validateBootstrapInput: validate });
