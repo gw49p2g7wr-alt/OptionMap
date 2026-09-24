@@ -30,6 +30,22 @@ function invokeFullExportSave(args) {
   return ipcRenderer.invoke("save-full-export-json", request);
 }
 
+function invokeCalendarSource(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" ||
+      Array.isArray(request) || Object.keys(request).sort().join("|") !==
+        "operation|sourceId" ||
+      typeof request.sourceId !== "string" ||
+      !/^[a-z][a-z0-9-]{2,80}$/.test(request.sourceId) ||
+      request.operation !== "source-document-set") {
+    return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  }
+  return ipcRenderer.invoke("request-market-calendar-source", Object.freeze({
+    sourceId: request.sourceId,
+    operation: request.operation
+  }));
+}
+
 contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   fetchQriOptionPage: (...args) => invokeUrlChannel("fetch-option-page", args),
   fetchJpxPage: (...args) => invokeUrlChannel("fetch-daytrading-page", args),
@@ -39,5 +55,6 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
     invokeUrlChannel("fetch-jpx-participant-json", args),
   downloadJpxExcel: (...args) =>
     invokeUrlChannel("download-daytrading-excel", args),
+  requestCalendarSource: (...args) => invokeCalendarSource(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)
 }));

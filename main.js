@@ -25,6 +25,9 @@ const fs = require("node:fs/promises");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
+const calendarAcquisition = require(
+  "./js/marketCalendarRuntime/calendarAcquisitionService.js"
+);
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -33,6 +36,9 @@ require("dotenv").config();
 
 const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
 const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID });
+const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisitionService({
+  fetchImpl: (url, options) => net.fetch(url, options)
+});
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
   invalid_url: "取得先URLが不正です",
@@ -186,6 +192,21 @@ ipcMain.handle("fetch-jpx-open-interest-json", async (event, jsonUrl) => {
 ipcMain.handle("get-weekly-listing-acquisition-diagnostics", () =>
   weeklyListingDiagnostics.getState()
 );
+
+ipcMain.handle("request-market-calendar-source", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) {
+    return { success: false, reason: "invalid_sender", retryable: false,
+      documents: [], diagnostics: [] };
+  }
+  try {
+    const result = await calendarAcquisitionService.acquire(request);
+    return calendarAcquisition.sanitizeForIpc(result);
+  } catch (_error) {
+    return { success: false, reason: "acquisition_failed", retryable: false,
+      documents: [], diagnostics: [] };
+  }
+});
 
 ipcMain.handle("save-full-export-json", (event, request) => {
   const owner = BrowserWindow.fromWebContents(event.sender);

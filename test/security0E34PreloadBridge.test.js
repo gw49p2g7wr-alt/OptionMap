@@ -15,9 +15,10 @@ const expectedKeys = [
   "fetchOpenInterestListing",
   "fetchParticipantListing",
   "fetchQriOptionPage",
+  "requestCalendarSource",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => key !== "saveFullExportJson");
+const urlKeys = expectedKeys.filter(key => !["requestCalendarSource", "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
   fetchJpxPage: "fetch-daytrading-page",
@@ -79,7 +80,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact six-method narrow bridge", () => {
+test("preload publishes only the exact seven-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
