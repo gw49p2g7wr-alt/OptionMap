@@ -18,7 +18,7 @@
         return view;
     }
     function mount({ document = globalThis.document, bridge = globalThis.optionMapBridge,
-        enabled } = {}) {
+        enabled, restoreState } = {}) {
         const panel = document?.getElementById("marketCalendarPanel"), region =
             document?.getElementById("marketCalendarUpdateRegion");
         if (!panel || !region) return null;
@@ -31,10 +31,17 @@
             button: document.getElementById("marketCalendarUpdateButton"),
             details: document.getElementById("marketCalendarUpdateDetails"),
             qualifier: document.getElementById("marketCalendarUpdateQualifier") };
-        let state = { state: "idle", mode: "writer_disabled", failedSourceIds: [] }, activePromise = null;
+        let state = { state: "idle", mode: "writer_disabled", failedSourceIds: [] }, activePromise = null,
+            manualStarted = false;
         render(nodes, state);
+        const ready = typeof restoreState === "function" ? Promise.resolve().then(restoreState)
+            .then(restored => { if (!manualStarted && restored) { state = restored; render(nodes, state); } },
+                () => { if (!manualStarted) { state = { ...state,
+                    runtimeStateDiagnostics: ["runtime_state_restore_failed"] }; render(nodes, state); } })
+            : Promise.resolve();
         function check(sourceIds) {
             if (activePromise) return activePromise;
+            manualStarted = true;
             state = { ...state, state: "checking" }; render(nodes, state);
             activePromise = Promise.resolve(bridge.checkCalendarSources(sourceIds?.length ?
                 { sourceIds } : {})).then(result => { state = result && typeof result === "object" ?
@@ -47,7 +54,7 @@
         }
         nodes.button.addEventListener("click", () => check(state.state === "partial"
             ? state.failedSourceIds : undefined));
-        return Object.freeze({ enabled: true, check, getState: () => structuredClone(state) });
+        return Object.freeze({ enabled: true, check, ready, getState: () => structuredClone(state) });
     }
     if (typeof document !== "undefined") {
         const start = () => mount();

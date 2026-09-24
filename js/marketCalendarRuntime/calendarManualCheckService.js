@@ -59,6 +59,10 @@ function createCalendarManualCheckService(configuration = {}) {
         planned.sourceId || "不明なsource", status: "failed", reasonClass: null,
         acquisitionStatus: planned.acquisitionStatus, candidateStatus: "not_attempted",
         transitionStatus: "not_attempted", recordCount: 0, commitOutcome: MODE };
+      const statuses = [...(planned.acquisition?.diagnostics || []),
+        ...(planned.acquisition?.documents || [])].map(item => item.httpStatus)
+        .filter(status => Number.isInteger(status) && status >= 100 && status <= 599);
+      base.lastHttpStatus = statuses.find(status => status >= 400) ?? statuses.at(-1) ?? null;
       if (planned.acquisitionStatus !== "succeeded") {
         sources.push({ ...base, reasonClass: reasonClass(planned) }); continue;
       }

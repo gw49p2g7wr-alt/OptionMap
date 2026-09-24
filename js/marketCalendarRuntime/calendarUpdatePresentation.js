@@ -27,10 +27,19 @@
             failed: [`公式データ：${total || failed.length} sourceの確認に失敗`, "公式データを再確認"],
             unavailable: ["公式データ：確認できません", "公式データを再確認"]
         }[state];
-        return Object.freeze({ state, statusText: values[0], buttonText: values[1],
-            buttonDisabled: state === "checking", detailsHidden: failed.length === 0,
-            detailsText: failed.map(source => `${source.displayName || source.sourceId || "不明なsource"}：${
-                source.reasonClass || "確認失敗"}`).join("\n"), writerQualifier: "保存は行っていません" });
+        const persistWarnings = (input.runtimeStateDiagnostics || []).filter(value =>
+            ["runtime_state_persist_failed", "runtime_state_restore_failed"].includes(value));
+        // A restored timestamp may be from a previous day; never label it as today's check.
+        const restoredDate = input.restored && Number.isFinite(Date.parse(input.checkedAt)) ?
+            new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric",
+                month: "2-digit", day: "2-digit" }).format(new Date(input.checkedAt)) : null;
+        return Object.freeze({ state, statusText: restoredDate ?
+            `${values[0].replace("本日 ", "")}（最終確認 ${restoredDate} ${checked}）` : values[0],
+            buttonText: values[1], buttonDisabled: state === "checking",
+            detailsHidden: failed.length === 0 && persistWarnings.length === 0,
+            detailsText: [...failed.map(source => `${source.displayName || source.sourceId || "不明なsource"}：${
+                source.reasonClass || "確認失敗"}`), ...persistWarnings].join("\n"),
+            writerQualifier: "保存は行っていません" });
     }
     return Object.freeze({ STATES, build });
 });
