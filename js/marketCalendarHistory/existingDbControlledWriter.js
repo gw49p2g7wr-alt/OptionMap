@@ -12,6 +12,9 @@ const KNOWN_OPERATIONS = new Set(["append_source_run", "append_event_entry",
   "append_semantic_revision", "close_semantic_revision", "update_event_entry_active_revision",
   "update_event_entry_last_observed", "append_evidence", "append_observation",
   "update_source_cursor"]);
+const FAILURE_POINTS = new Set(["after_close_revision", "after_append_revision",
+  "after_semantic_revision", "after_event_entry", "after_evidence", "after_observation",
+  "after_source_run", "after_source_cursor"]);
 const clone = value => value == null ? value : structuredClone(value);
 const request = value => new Promise((resolve, reject) => {
   value.onsuccess = () => resolve(value.result);
@@ -106,7 +109,7 @@ async function verifyPlan(sourceId, current, candidate, simulation, expectedPlan
   return regenerated.planStatus === "planned" && regenerated.planIdentity === expectedPlan.planIdentity &&
     equal(regenerated, expectedPlan);
 }
-async function applyMapped(transaction, mapped) {
+async function applyMapped(transaction, mapped, checkpoint) {
   const stores = Object.fromEntries(STORE_NAMES.map(name => [name, transaction.objectStore(name)]));
   for (const value of mapped.closeRevisions) {
     const current = await request(stores.marketCalendarSemanticRevisions.get(value.revisionKey));
@@ -114,8 +117,11 @@ async function applyMapped(transaction, mapped) {
       throw new Error("close_revision_precondition_failed");
     await request(stores.marketCalendarSemanticRevisions.put({ ...current, validTo: value.validTo }));
   }
+  await checkpoint("after_close_revision");
   for (const value of mapped.appendRevisions)
     await request(stores.marketCalendarSemanticRevisions.add(value));
+  await checkpoint("after_append_revision");
+  await checkpoint("after_semantic_revision");
   for (const value of mapped.appendEntries)
     await request(stores.marketCalendarEventEntries.add(value));
   for (const value of mapped.updateEntries) {
@@ -125,14 +131,19 @@ async function applyMapped(transaction, mapped) {
     const next = { ...current, ...value }; delete next.expectedActiveRevisionKey;
     await request(stores.marketCalendarEventEntries.put(next));
   }
+  await checkpoint("after_event_entry");
   for (const value of mapped.appendEvidence)
     await request(stores.marketCalendarAcquisitionEvidence.add(value));
+  await checkpoint("after_evidence");
   for (const value of mapped.appendObservations)
     await request(stores.marketCalendarEventObservations.add(value));
+  await checkpoint("after_observation");
   for (const value of mapped.appendRuns)
     await request(stores.marketCalendarSourceRuns.add(value));
+  await checkpoint("after_source_run");
   for (const value of mapped.updateCursors)
     await request(stores.marketCalendarSourceCursors.put(value));
+  await checkpoint("after_source_cursor");
 }
 function expectedAfter(state, mapped) {
   const global = { ...state.relevantCounts.global }, source = { ...state.relevantCounts.source },
@@ -161,6 +172,12 @@ function createExistingDbControlledWriter(configuration = {}) {
     throw new Error("isolated_test_configuration_required");
   const indexedDB = configuration.indexedDB, enabled = configuration.enabled === true,
     beforeInsidePrecondition = configuration.beforeInsidePrecondition,
+    failureInjectionPoint = configuration.failureInjectionPoint;
+  if (failureInjectionPoint != null && !FAILURE_POINTS.has(failureInjectionPoint))
+    throw new Error("failure_injection_point_invalid");
+  const checkpoint = async point => {
+    if (failureInjectionPoint === point) throw new Error(`injected_failure_${point}`);
+  },
     metrics = { readwriteTransactionAttempts: 0, committedTransactions: 0,
       abortedTransactions: 0, readonlyReadBackTransactions: 0, openHandles: 0 };
   async function write(input = {}) {
@@ -185,7 +202,7 @@ function createExistingDbControlledWriter(configuration = {}) {
         if (!await verifyPlan(sourceId, inside, input.candidate, input.simulation, input.plan))
           throw new Error("stale_precondition");
         mapped = materialize(inside.currentState, input.candidate, input.simulation);
-        await applyMapped(transaction, mapped); stopKeepAlive(); await completed;
+        await applyMapped(transaction, mapped, checkpoint); stopKeepAlive(); await completed;
       } catch (error) {
         stopKeepAlive(); try { transaction.abort(); } catch (_error) {}
         try { await completed; } catch (_error) {}
