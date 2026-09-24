@@ -257,8 +257,10 @@ test("Electron hybrid bootstrapはXLSX guardを通過しstartup refresh scheduli
         }
     });
     const guardAt = html.indexOf("const XLSX = window.XLSX");
-    const bootstrapAt = html.indexOf("Promise.all([", guardAt);
-    const startupRefreshAt = html.indexOf(".finally(() => refreshAllMarketData());", bootstrapAt);
+    const bootstrapAt = html.indexOf("window.OptionMapStartupBootstrap.createCoordinator", guardAt);
+    const startupRefreshAt = html.indexOf(
+        "const initialMarketBootstrap = startupBootstrapCoordinator.start()", bootstrapAt
+    );
     assert.ok(guardAt >= 0);
     assert.ok(bootstrapAt > guardAt);
     assert.ok(startupRefreshAt > bootstrapAt);

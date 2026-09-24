@@ -97,5 +97,5 @@ test("production UI hides unfinished AI settings while preserving IDs and boot d
         assert.match(html, new RegExp(`id=["']${id}["']`));
     }
     assert.match(script, /getElementById\("saveAiTemplateButton"\)/);
-    assert.match(html, /<script src="js\/jpxSnapshotSafety\.js"><\/script>\s*<script src="js\/script\.js"><\/script>/);
+    assert.match(html, /<script src="js\/jpxSnapshotSafety\.js"><\/script>\s*<script src="js\/startupBootstrap\.js"><\/script>\s*<script src="js\/script\.js"><\/script>/);
 });

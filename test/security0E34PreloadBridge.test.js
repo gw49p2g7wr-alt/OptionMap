@@ -138,6 +138,7 @@ test("renderer fail-fast validates exact bridge before XLSX and startup work", (
   assert.ok(cache > xlsx && refresh > xlsx);
   assert.match(html.slice(bridge, xlsx), /Object\.keys\(optionMapBridge\)\.sort\(\)/);
   assert.match(html.slice(bridge, xlsx), /typeof optionMapBridge\[key\] !== "function"/);
+  assert.match(html.slice(bridge, xlsx), /"requestCalendarSource"/);
 });
 
 test("all 20 renderer callsites use the narrow bridge with no raw Electron access", () => {

@@ -180,7 +180,9 @@ test("renderer loads dependencies and starts boot shadow without awaiting initia
     assert.equal(positions.every(position => position >= 0), true);
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);
     const initializeAt = html.indexOf("initializeQriOptionsBootRestoreShadow({");
-    const initialRefreshAt = html.lastIndexOf(".finally(() => refreshAllMarketData())");
+    const initialRefreshAt = html.lastIndexOf(
+        "const initialMarketBootstrap = startupBootstrapCoordinator.start()"
+    );
     assert.ok(initializeAt > 0 && initializeAt < initialRefreshAt);
     assert.match(html, /void qriOptionsBootRestoreShadowPromise;/);
     assert.doesNotMatch(html, /await qriOptionsBootRestoreShadowPromise/);

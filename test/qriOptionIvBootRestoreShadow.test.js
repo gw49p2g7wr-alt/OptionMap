@@ -138,7 +138,9 @@ test("renderer loads dependencies and starts boot shadow before non-blocking ini
         assert.ok(html.indexOf(ordered[index - 1]) < html.indexOf(ordered[index]));
     }
     const initializeAt = html.indexOf("initializeQriOptionIvBootRestoreShadow({");
-    const initialRefreshAt = html.lastIndexOf(".finally(() => refreshAllMarketData())");
+    const initialRefreshAt = html.lastIndexOf(
+        "const initialMarketBootstrap = startupBootstrapCoordinator.start()"
+    );
     assert.ok(initializeAt > 0 && initializeAt < initialRefreshAt);
     assert.match(html, /void qriOptionIvBootRestoreShadowPromise;/);
     assert.doesNotMatch(html, /await qriOptionIvBootRestoreShadowPromise/);

@@ -1024,7 +1024,11 @@ async function handleRefreshAllMarketDataClick() {
         return null;
     }
 
-    if (typeof window.refreshAllMarketData !== "function") {
+    const requestRefresh = typeof window.requestStartupMarketRefresh === "function"
+        ? window.requestStartupMarketRefresh
+        : window.refreshAllMarketData;
+
+    if (typeof requestRefresh !== "function") {
         console.error("refreshAllMarketData が見つかりません");
         return null;
     }
@@ -1033,7 +1037,7 @@ async function handleRefreshAllMarketDataClick() {
     refreshAllMarketDataButton.textContent = "更新中…";
 
     try {
-        return await window.refreshAllMarketData();
+        return await requestRefresh();
     } catch (error) {
         console.error("市場データの一括更新に失敗:", error);
         return null;

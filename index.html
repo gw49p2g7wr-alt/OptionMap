@@ -1557,6 +1557,7 @@
 <script src="js/optionMapTimeTravelMvp.js"></script>
 <script src="js/marketCalendarMvp.js"></script>
 <script src="js/jpxSnapshotSafety.js"></script>
+<script src="js/startupBootstrap.js"></script>
 <script src="js/script.js"></script>
 <script src="js/wallHistoryDrawerRuntime.js"></script>
 <script src="js/fullExportSecurity.js"></script>
@@ -1582,6 +1583,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "fetchOpenInterestListing",
     "fetchParticipantListing",
     "fetchQriOptionPage",
+    "requestCalendarSource",
     "saveFullExportJson"
 ]);
 if (!optionMapBridge ||
@@ -6711,18 +6713,24 @@ function refreshAllMarketData() {
 window.refreshAllMarketData = refreshAllMarketData;
 window.isMarketRefreshInProgress = () => marketRefreshPromise !== null;
 
-const initialMarketBootstrap = Promise.all([
-    initializeWeeklyCaches(),
-    initializeParticipantCache(),
-    initializeParticipantHistory(),
-    initializeWeeklyFuturesHistory(),
-    initializeWeeklyOptionsHistoryPersistence(),
-    initializeQriOptionsHistoryPersistence()
-])
-    .catch(error => {
-        console.warn("市場データcacheの初期化に失敗しました:", error);
-    })
-    .finally(() => refreshAllMarketData());
+const startupBootstrapCoordinator =
+    window.OptionMapStartupBootstrap.createCoordinator({
+        timeoutMs: window.OptionMapStartupBootstrap.DEFAULT_TIMEOUT_MS,
+        refresh: refreshAllMarketData,
+        initializers: [
+            { name: "weekly_cache", run: initializeWeeklyCaches },
+            { name: "participant_cache", run: initializeParticipantCache },
+            { name: "participant_history", run: initializeParticipantHistory },
+            { name: "weekly_futures_history", run: initializeWeeklyFuturesHistory },
+            { name: "weekly_options_history", run: initializeWeeklyOptionsHistoryPersistence },
+            { name: "qri_options_history", run: initializeQriOptionsHistoryPersistence }
+        ]
+    });
+window.getStartupBootstrapDiagnostics = () =>
+    startupBootstrapCoordinator.getState();
+window.requestStartupMarketRefresh = () =>
+    startupBootstrapCoordinator.requestManualRefresh();
+const initialMarketBootstrap = startupBootstrapCoordinator.start();
 void initialMarketBootstrap.then(
     () => initializeFormalBaselineRetryScheduler().start(),
     () => initializeFormalBaselineRetryScheduler().start()

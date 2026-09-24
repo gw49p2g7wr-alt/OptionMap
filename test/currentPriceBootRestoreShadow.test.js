@@ -241,7 +241,7 @@ test("renderer wiring runs after legacy script and before initial refresh", () =
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const script = html.indexOf('<script src="js/script.js"></script>');
     const initialize = html.indexOf("initializeCurrentPriceBootRestoreShadow");
-    const refresh = html.indexOf(".finally(() => refreshAllMarketData())");
+    const refresh = html.indexOf("const initialMarketBootstrap = startupBootstrapCoordinator.start()");
     assert.equal(script < initialize && initialize < refresh, true);
 });
 test("live QRI path only supersedes shadow before unchanged save wiring", () => {
