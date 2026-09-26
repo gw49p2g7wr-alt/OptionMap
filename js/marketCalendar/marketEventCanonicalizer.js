@@ -12,7 +12,7 @@
     const api = factory(identity, schedule, policy, registry, contract);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketEventCanonicalizer = api;
-})(typeof window !== "undefined" ? window : globalThis, function (identity, schedules, policy, registry, contract) {
+})(typeof window !== "undefined" ? window : globalThis, function factory(identity, schedules, policy, registry, contract) {
     "use strict";
     const stable = value => { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
         if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key =>
@@ -55,5 +55,9 @@
             acquisitionEvidenceKey: `${source.sourceId}|sha256:${acquisitionEvidenceHash}`,
             validFrom: null, validTo: null, canonicalContentHash, acquisitionEvidenceHash }) };
     }
-    return Object.freeze({ stable, sha256, canonicalize });
+    const isolatedFactory = typeof module === "object" && module.exports &&
+        !(typeof window !== "undefined" && window.document)
+        ? { createCanonicalizer: sourceRegistry => factory(identity, schedules, policy, sourceRegistry,
+            contract.createSourceContract(sourceRegistry)) } : {};
+    return Object.freeze({ stable, sha256, canonicalize, ...isolatedFactory });
 });

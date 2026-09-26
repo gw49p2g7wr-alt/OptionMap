@@ -6,7 +6,7 @@
     const api = factory(taxonomy, registry);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapMarketEventSourceContract = api;
-})(typeof window !== "undefined" ? window : globalThis, function (taxonomy, registry) {
+})(typeof window !== "undefined" ? window : globalThis, function factory(taxonomy, registry) {
     "use strict";
     const SCHEDULE_KINDS = Object.freeze(["instant", "date_only", "all_day", "date_range"]);
     const PRECISIONS = Object.freeze(["exact", "date_only", "all_day", "range"]);
@@ -37,5 +37,8 @@
         if (!url?.valid) errors.push(url?.reason || "source_url_invalid");
         return { valid: errors.length === 0, errors };
     }
-    return Object.freeze({ SCHEDULE_KINDS, PRECISIONS, isoDate, time, validateSourceRecord });
+    const isolatedFactory = typeof module === "object" && module.exports &&
+        !(typeof window !== "undefined" && window.document)
+        ? { createSourceContract: sourceRegistry => factory(taxonomy, sourceRegistry) } : {};
+    return Object.freeze({ SCHEDULE_KINDS, PRECISIONS, isoDate, time, validateSourceRecord, ...isolatedFactory });
 });
