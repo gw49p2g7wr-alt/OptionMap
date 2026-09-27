@@ -28,6 +28,8 @@ function parsed() { return parser.parse({ XLSX, bytes, listingDate: "2026-09-18"
         lastModified: "Fri, 18 Sep 2026 10:26:39 GMT" } }); }
 let sequence = 0;
 function databaseName() { return `${schema.DATABASE_NAME}-test-${++sequence}-${Date.now()}`; }
+function writerDiagnostic(result) { return JSON.stringify({ ...result,
+    reason: result.reason ?? result.error ?? null, errorClass: result.errorClass ?? null }); }
 
 test("監査済みworkbook全体を161先物+18オプション=179 recordとしてFormal化", () => {
     const result = parsed(); assert.equal(result.accepted, true); assert.deepEqual(result.counts,
@@ -133,12 +135,12 @@ test("6-store controlled writer、readonly consumer、stale precondition rejecti
         plan = await history.makePlan(empty, parsed(), { runId: "run-write", acceptedAt: AT }),
         precondition = await identity.preconditionIdentity(empty);
     const committed = await writer.write({ authorization: "test-only", plan,
-        expectedPreconditionIdentity: precondition }); assert.equal(committed.saved, true);
+        expectedPreconditionIdentity: precondition }); assert.equal(committed.saved, true, writerDiagnostic(committed));
     const reader = readerApi.create({ indexedDB, databaseName: name }), active = await reader.readActive();
     assert.equal(active.status, "available"); assert.equal(active.revision.canonical.blocks.oseIndexFutures.records.length, 161);
     const rejected = await writer.write({ authorization: "test-only", plan: await history.makePlan(
         history.snapshotEmpty(), parsed(), { runId: "run-stale", acceptedAt: "2026-09-18T13:00:00Z" }),
-        expectedPreconditionIdentity: precondition }); assert.equal(rejected.saved, false);
+        expectedPreconditionIdentity: precondition }); assert.equal(rejected.saved, false, writerDiagnostic(rejected));
     assert.match(rejected.error, /stale_precondition/);
 });
 
@@ -148,8 +150,9 @@ test("browser UMDの引数なしconsumerはglobal IndexedDBから通常v2へ179�
         acceptedAt: AT });
     const writer = writerApi.create({ indexedDB: browserIndexedDB, enabled: true,
         authorizationToken: "fixture-only", allowCreate: true });
-    assert.equal((await writer.write({ authorization: "fixture-only", plan,
-        expectedPreconditionIdentity: await identity.preconditionIdentity(empty) })).saved, true);
+    const committed = await writer.write({ authorization: "fixture-only", plan,
+        expectedPreconditionIdentity: await identity.preconditionIdentity(empty) });
+    assert.equal(committed.saved, true, writerDiagnostic(committed));
 
     const context = vm.createContext({ indexedDB: browserIndexedDB, console, setTimeout,
         clearTimeout, structuredClone, TextEncoder, TextDecoder });
@@ -214,6 +217,125 @@ test("controlled writerのtransaction途中失敗は6-store全体をrollback", a
         plan = await history.makePlan(empty, parsed(), { runId: "rollback-run", acceptedAt: AT });
     const result = await writer.write({ authorization: "test-only", plan,
         expectedPreconditionIdentity: await identity.preconditionIdentity(empty), injectFailureAfter: "revision" });
-    assert.equal(result.saved, false); const loaded = await readerApi.create({ indexedDB, databaseName: name }).readSnapshot();
+    assert.equal(result.saved, false, writerDiagnostic(result)); const loaded = await readerApi.create({ indexedDB, databaseName: name }).readSnapshot();
     assert.equal(loaded.status, "empty"); assert.deepEqual(loaded.snapshot, empty);
+});
+
+function deleteFixtureDb(factory, name) { return new Promise((resolve, reject) => {
+    const request = factory.deleteDatabase(name); request.onsuccess = resolve;
+    request.onerror = () => reject(request.error); request.onblocked = () => reject(new Error("fixture_cleanup_blocked"));
+}); }
+
+test("precondition materialは旧hash入力・object key ordering・全6 storesを不変維持", async () => {
+    const empty = history.snapshotEmpty(), plan = await history.makePlan(empty, parsed(), { runId: "material", acceptedAt: AT });
+    const populated = history.simulate(empty, plan);
+    function reverseKeys(value) { return Array.isArray(value) ? value.map(reverseKeys) : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).reverse().map(key => [key, reverseKeys(value[key])])) : value; }
+    for (const state of [empty, populated]) {
+        const original = JSON.stringify(state), legacyInput = { contractVersion: "jpx-open-interest-precondition-v1", precondition: state };
+        const legacyHash = crypto.createHash("sha256").update(JSON.stringify(source.stable(legacyInput))).digest("hex");
+        assert.equal(await identity.preconditionIdentity(state), legacyHash);
+        assert.equal(identity.preconditionMaterial(state), identity.preconditionMaterial(reverseKeys(state)));
+        assert.equal(JSON.stringify(state), original);
+    }
+    for (const field of Object.keys(populated)) {
+        const changed = structuredClone(populated); changed[field][0].diagnosticProbe = "changed";
+        assert.notEqual(identity.preconditionMaterial(changed), identity.preconditionMaterial(populated), field);
+    }
+    // Arrays are intentionally NOT sorted: this preserves the previous identity contract.
+    assert.notEqual(identity.preconditionMaterial({ runs: [{ id: 1 }, { id: 2 }] }),
+        identity.preconditionMaterial({ runs: [{ id: 2 }, { id: 1 }] }));
+});
+
+for (const delay of ["baseline", "macrotask", 5, 100]) {
+    test(`transaction lifetime regression: digest ${delay}でも単一6-store commit・transaction内digest 0`, async t => {
+        const factory = new IDBFactory(), name = databaseName(), empty = history.snapshotEmpty();
+        const plan = await history.makePlan(empty, parsed(), { runId: "delay-run", acceptedAt: AT });
+        const expected = await identity.preconditionIdentity(empty);
+        const { IDBDatabase } = require("fake-indexeddb"), originalTransaction = IDBDatabase.prototype.transaction;
+        const subtle = globalThis.crypto.subtle, proto = Object.getPrototypeOf(subtle);
+        const descriptor = Object.getOwnPropertyDescriptor(proto, "digest"), originalDigest = proto.digest;
+        let activeWrites = 0, writeTransactions = 0, committed = 0, aborted = 0, digestCalls = 0, digestsDuringWrite = 0;
+        t.after(async () => { Object.defineProperty(proto, "digest", descriptor);
+            IDBDatabase.prototype.transaction = originalTransaction; await deleteFixtureDb(factory, name); });
+        IDBDatabase.prototype.transaction = function (...args) {
+            const tx = originalTransaction.apply(this, args);
+            if (this.name === name && tx.mode === "readwrite") {
+                activeWrites++; writeTransactions++;
+                assert.deepEqual(Array.from(tx.objectStoreNames).sort(), Object.values(history.stores).sort());
+                const end = event => { activeWrites--; if (event.type === "complete") committed++; else aborted++;
+                    tx.removeEventListener("complete", end); tx.removeEventListener("abort", end); };
+                tx.addEventListener("complete", end); tx.addEventListener("abort", end);
+            }
+            return tx;
+        };
+        proto.digest = async function (algorithm, data) {
+            digestCalls++; if (activeWrites) digestsDuringWrite++;
+            const result = await originalDigest.call(this, algorithm, data);
+            assert.equal(Buffer.from(result).toString("hex"), crypto.createHash("sha256").update(Buffer.from(data)).digest("hex"));
+            if (delay === "macrotask") await new Promise(resolve => setImmediate(resolve));
+            else if (typeof delay === "number") await new Promise(resolve => setTimeout(resolve, delay));
+            return result;
+        };
+        const writer = writerApi.create({ indexedDB: factory, databaseName: name, enabled: true,
+            authorizationToken: "test-only", allowCreate: true });
+        const result = await writer.write({ authorization: "test-only", plan, expectedPreconditionIdentity: expected });
+        assert.equal(result.saved, true, writerDiagnostic(result));
+        assert.equal(digestCalls, 2, "plan integrity + outside-transaction precondition only");
+        assert.equal(digestsDuringWrite, 0, "no WebCrypto call during readwrite transaction");
+        assert.deepEqual({ activeWrites, writeTransactions, committed, aborted },
+            { activeWrites: 0, writeTransactions: 1, committed: 1, aborted: 0 });
+        const loaded = await readerApi.create({ indexedDB: factory, databaseName: name }).readSnapshot();
+        assert.deepEqual(loaded.snapshot, history.simulate(empty, plan));
+    });
+}
+
+test("transaction直前に別writerがcommitしても内部再検証がstaleを拒否", async t => {
+    const factory = new IDBFactory(), name = databaseName(), empty = history.snapshotEmpty();
+    t.after(() => deleteFixtureDb(factory, name));
+    const writer = writerApi.create({ indexedDB: factory, databaseName: name, enabled: true,
+        authorizationToken: "test-only", allowCreate: true });
+    const plan = await history.makePlan(empty, parsed(), { runId: "loser", acceptedAt: AT });
+    const winningPlan = await history.makePlan(empty, parsed(), { runId: "winner", acceptedAt: AT });
+    const expected = await identity.preconditionIdentity(empty);
+    const result = await writer.write({ authorization: "test-only", plan, expectedPreconditionIdentity: expected,
+        injectBeforeTransaction: async () => {
+            const otherWriter = writerApi.create({ indexedDB: factory, databaseName: name, enabled: true,
+                authorizationToken: "test-only", allowCreate: false });
+            const won = await otherWriter.write({ authorization: "test-only", plan: winningPlan, expectedPreconditionIdentity: expected });
+            assert.equal(won.saved, true, writerDiagnostic(won));
+        } });
+    assert.equal(result.saved, false, writerDiagnostic(result));
+    assert.equal(result.error, "stale_precondition_inside_transaction", writerDiagnostic(result));
+    const loaded = await readerApi.create({ indexedDB: factory, databaseName: name }).readSnapshot();
+    assert.deepEqual(loaded.snapshot, history.simulate(empty, winningPlan));
+});
+
+test("unchanged/revision writesとrevision/evidence後rollbackは既存6-store stateを維持", async t => {
+    const factory = new IDBFactory(), name = databaseName(); t.after(() => deleteFixtureDb(factory, name));
+    const writer = writerApi.create({ indexedDB: factory, databaseName: name, enabled: true,
+        authorizationToken: "test-only", allowCreate: true });
+    const reader = readerApi.create({ indexedDB: factory, databaseName: name });
+    let state = history.snapshotEmpty(); const candidate = parsed();
+    for (let step = 0; step < 3; step++) {
+        const next = structuredClone(candidate); if (step === 2) next.canonical.blocks.oseIndexFutures.records[0].tradingVolume.value++;
+        next.evidence.acquiredAt = `2026-09-18T${10 + step}:30:00Z`;
+        const plan = await history.makePlan(state, next, { runId: `step-${step}`, acceptedAt: next.evidence.acquiredAt });
+        const expected = await identity.preconditionIdentity(state);
+        if (step === 2) for (const injection of ["revision", "evidence"]) {
+            const rejected = await writer.write({ authorization: "test-only", plan,
+                expectedPreconditionIdentity: expected, injectFailureAfter: injection });
+            assert.equal(rejected.saved, false, writerDiagnostic(rejected));
+            assert.equal(rejected.error, `injected_failure_after_${injection}`, writerDiagnostic(rejected));
+            assert.deepEqual((await reader.readSnapshot()).snapshot, state);
+        }
+        const result = await writer.write({ authorization: "test-only", plan, expectedPreconditionIdentity: expected });
+        assert.equal(result.saved, true, writerDiagnostic(result));
+        const simulated = history.simulate(state, plan), loaded = (await reader.readSnapshot()).snapshot;
+        // getAll returns primary-key order, while pure simulation preserves append order.
+        for (const field of Object.keys(simulated)) assert.deepEqual(new Set(loaded[field].map(row => JSON.stringify(source.stable(row)))),
+            new Set(simulated[field].map(row => JSON.stringify(source.stable(row)))), field);
+        state = loaded;
+    }
+    assert.equal(state.revisions.length, 2); assert.equal(state.revisions.filter(r => r.closedAt === null).length, 1);
 });

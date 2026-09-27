@@ -16,7 +16,10 @@
     }
     async function storageMutationIdentity(plan) { return contract.sha256({
         contractVersion: "jpx-open-interest-storage-plan-v1", plan }); }
-    async function preconditionIdentity(precondition) { return contract.sha256({
-        contractVersion: "jpx-open-interest-precondition-v1", precondition }); }
-    return Object.freeze({ derive, storageMutationIdentity, preconditionIdentity });
+    // Exactly the existing hash input: recursively sorted object keys, unchanged array order.
+    // getAll() supplies primary-key ordered records; do not invent a second normalization in writers.
+    function preconditionMaterial(precondition) { return JSON.stringify(contract.stable({
+        contractVersion: "jpx-open-interest-precondition-v1", precondition })); }
+    async function preconditionIdentity(precondition) { return contract.sha256(preconditionMaterial(precondition)); }
+    return Object.freeze({ derive, storageMutationIdentity, preconditionMaterial, preconditionIdentity });
 });

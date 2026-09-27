@@ -31,11 +31,14 @@
                 return { saved: false, outcome: "plan_identity_mismatch" };
             let db; try { db = await open(); if (!schema.matches(db)) throw new Error("schema_mismatch");
                 const beforeTx = db.transaction(names, "readonly"), beforeDone = done(beforeTx), before = await snapshot(beforeTx); await beforeDone;
+                const beforeMaterial = identity.preconditionMaterial(before);
                 if (await identity.preconditionIdentity(before) !== expectedPreconditionIdentity) throw new Error("stale_precondition");
                 if (injectBeforeTransaction) await injectBeforeTransaction(db);
                 const tx = db.transaction(names, "readwrite"), completed = done(tx);
                 try { const inside = await snapshot(tx);
-                    if (await identity.preconditionIdentity(inside) !== expectedPreconditionIdentity) throw new Error("stale_precondition_inside_transaction");
+                    // Only IndexedDB request chains may yield inside this transaction. WebCrypto can
+                    // outlive its request queue and let it auto-commit before the first write.
+                    if (identity.preconditionMaterial(inside) !== beforeMaterial) throw new Error("stale_precondition_inside_transaction");
                     const stores = Object.fromEntries(names.map(name => [name, tx.objectStore(name)]));
                     if (plan.appendDay) stores[history.stores.days].add(plan.appendDay);
                     if (plan.updateDay) { const current = await request(stores[history.stores.days].get(plan.updateDay.logicalKey));
