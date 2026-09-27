@@ -81,6 +81,50 @@ function createRuntimeState(value) {
   return freeze({ valid: true, reason: null, state: result.state });
 }
 
+const exact = (v, keys) => v && typeof v === "object" && !Array.isArray(v) &&
+  Object.keys(v).sort().join("|") === [...keys].sort().join("|");
+const positive = v => Number.isSafeInteger(v) && v > 0;
+const digest = v => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
+const BINDING_FIELDS = Object.freeze(["sourceContractVersion", "routeContractVersion", "routeKind", "routeIdentity", "activationVersion"]);
+const REEVALUATION_FIELDS = ["approvalId", "targetRouteIdentity", "status", "reservedAt", "completedAt", "previousRouteSummary"];
+const SUMMARY_FIELDS = ["routeClass", "lastOutcome", "lastDiagnosticClass", "lastAttemptAt", "lastSuccessAt", "lastHttpStatus"];
+function legacyProjection(value) { return Object.fromEntries(RUNTIME_STATE_FIELDS.map(key => [key, value[key]])); }
+function validBinding(value) {
+  return exact(value, BINDING_FIELDS) && positive(value.sourceContractVersion) && positive(value.routeContractVersion) &&
+    positive(value.activationVersion) && digest(value.routeIdentity) &&
+    ["legacy", "estat_release_calendar", "bls_fixed_schedule_pages"].includes(value.routeKind);
+}
+// Compatibility is explicit. B1's original exact eight-field validator remains unchanged.
+function validateCompatibleRuntimeState(value, sourceId = null) {
+  const invalid = () => freeze({ valid: false, reason: "runtime_state_invalid", state: null });
+  if (!value || !Object.hasOwn(value, "runtimeStateContractVersion")) {
+    const checked = validateRuntimeState(value, sourceId);
+    return freeze({ ...checked, recordKind: "legacy", routeClass: "legacy_unknown_contract" });
+  }
+  if (!exact(value, [...RUNTIME_STATE_FIELDS, "runtimeStateContractVersion", "routeBinding", "reevaluation"]) ||
+      value.runtimeStateContractVersion !== 2 || !validBinding(value.routeBinding) ||
+      !validateRuntimeState(legacyProjection(value), sourceId).valid) return invalid();
+  const r = value.reevaluation;
+  if (r !== null) {
+    if (!exact(r, REEVALUATION_FIELDS) || typeof r.approvalId !== "string" ||
+        !/^[a-z0-9_-]{1,100}$/.test(r.approvalId) || !digest(r.targetRouteIdentity) ||
+        r.targetRouteIdentity !== value.routeBinding.routeIdentity || !["reserved", "completed"].includes(r.status) ||
+        !instant(r.reservedAt) || !exact(r.previousRouteSummary, SUMMARY_FIELDS)) return invalid();
+    const p = r.previousRouteSummary;
+    if (!["legacy_unknown_contract", "legacy"].includes(p.routeClass) || p.lastOutcome !== "failure" ||
+        !DIAGNOSTIC_CLASSES.includes(p.lastDiagnosticClass) || !instant(p.lastAttemptAt) ||
+        p.lastSuccessAt !== null && (!instant(p.lastSuccessAt) || Date.parse(p.lastSuccessAt) >= Date.parse(p.lastAttemptAt)) ||
+        p.lastHttpStatus !== null && (!Number.isInteger(p.lastHttpStatus) || p.lastHttpStatus < 100 || p.lastHttpStatus > 599) ||
+        Date.parse(p.lastAttemptAt) > Date.parse(r.reservedAt)) return invalid();
+    if (r.status === "reserved" && (r.completedAt !== null || value.lastOutcome !== "none")) return invalid();
+    if (r.status === "completed" && (!instant(r.completedAt) || value.lastOutcome === "none" ||
+        !value.lastAttemptAt || Date.parse(value.lastAttemptAt) < Date.parse(r.reservedAt) ||
+        Date.parse(r.completedAt) < Date.parse(value.lastAttemptAt))) return invalid();
+  }
+  return freeze({ valid: true, reason: null, state: value, recordKind: "v2", routeClass: value.routeBinding.routeKind });
+}
+
 return Object.freeze({ OUTCOMES, DIAGNOSTIC_CLASSES, RETRY_CLASSIFICATION,
-  classifyDiagnostic, retryAfterFor, validateRuntimeState, createRuntimeState });
+  classifyDiagnostic, retryAfterFor, validateRuntimeState, createRuntimeState,
+  validateCompatibleRuntimeState, legacyProjection, validBinding, BINDING_FIELDS });
 });

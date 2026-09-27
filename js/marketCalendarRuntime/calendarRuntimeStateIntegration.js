@@ -27,11 +27,14 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
     const diagnostics = [];
     let existing;
     try { existing = await store.readAll(); } catch (_) { existing = { status: "unavailable" }; }
+    if (existing.invalidSources?.length) diagnostics.push("runtime_state_invalid");
     if (input?.trigger === "startup" && !["ok", "absent"].includes(existing.status))
       return { state: "unavailable", mode: "writer_disabled", sources: [], failedSourceIds: [],
         runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
     const result = await service.check({ ...input,
-      runtimeStates: Object.fromEntries((existing.value || []).map(x => [x.sourceId, x])),
+      // An isolated invalid source is blocked by B1, not silently treated as never acquired.
+      runtimeStates: Object.fromEntries([...(existing.value || []).map(x => [x.sourceId, x]),
+        ...(existing.invalidSources || []).filter(x => x.sourceId).map(x => [x.sourceId, {}])]),
       sessionStates: input?.trigger === "startup" ? structuredClone(sessionStates) : {} });
     if (!["ok", "absent"].includes(existing.status))
       return { ...result, runtimeStateDiagnostics: ["runtime_state_persist_failed"] };
@@ -70,7 +73,9 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
     const sources = saved.value.filter(x => x.lastOutcome !== "none").map(x => ({
       sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId],
       status: x.lastOutcome === "success" ? "success" : "failed",
-      reasonClass: x.lastDiagnosticClass })), successfulSourceCount =
+      reasonClass: x.lastDiagnosticClass })).concat((saved.invalidSources || []).filter(x => x.sourceId)
+        .map(x => ({ sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId], status: "failed",
+          reasonClass: "runtime_state_invalid" }))), successfulSourceCount =
         sources.filter(x => x.status === "success").length, failedSourceIds =
         sources.filter(x => x.status !== "success").map(x => x.sourceId), total = Object.keys(Registry.SOURCES).length;
     return { ...base, sources, failedSourceIds, successfulSourceCount,

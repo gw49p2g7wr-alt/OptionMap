@@ -110,7 +110,9 @@ test("corrupt stored record and stale candidate cannot overwrite accepted runtim
   const factory = new IDBFactory(); await seed(factory, Store.DATABASE_NAME, 1, db =>
     db.createObjectStore(Store.STORE_NAME, { keyPath: "sourceId" }).put({ sourceId: ID, rawBody: "bad" }));
   const corrupt = instance(factory);
-  assert.equal((await corrupt.readAll()).status, "unavailable");
+  assert.equal((await corrupt.readAll()).status, "ok");
+  assert.deepEqual((await corrupt.readAll()).invalidSources, [{ sourceId: ID, reason: "runtime_state_invalid" }]);
+  assert.equal((await corrupt.read(ID)).reason, "runtime_state_invalid");
   assert.equal((await corrupt.write(ID, state())).status, "unavailable");
   const store = instance(); await store.write(ID, state());
   assert.equal((await store.write(ID, state({ lastAttemptAt: "2026-09-24T00:00:00.000Z",
