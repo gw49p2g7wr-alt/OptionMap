@@ -102,7 +102,7 @@ test("failure completes new route once without fallback or automatic recovery", 
   assert.equal(r.state, "failed"); const saved = (await f.store.read()).value;
   assert.equal(saved.lastOutcome, "failure"); assert.equal(saved.reevaluation.status, "completed");
   assert.equal(saved.lastHttpStatus, 404); assert.equal(saved.lastDiagnosticClass, "http_404");
-  await f.service.check({ sourceIds: [ID] }); assert.equal(f.requests(), 1); assert.equal(f.legacyRequests.length, 0);
+  await f.service.check({ sourceIds: [ID], trigger: "startup" }); assert.equal(f.requests(), 1); assert.equal(f.legacyRequests.length, 0);
 });
 test("renderer route/approval/URL overrides rejected before DB/network", async () => {
   const f = await setup(); for (const key of ["routeIdentity", "approvalId", "url", "activationVersion"])

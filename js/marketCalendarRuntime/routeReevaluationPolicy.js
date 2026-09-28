@@ -104,5 +104,34 @@ function evaluateBoundUpdate(input, authority) {
       !sameBinding(state.routeBinding, binding(selected)))) return blocked("route_binding_mismatch");
   return B1.evaluateSourceUpdate({ ...input, runtimeState: state ? State.legacyProjection(state) : null });
 }
+// Normal acquisition is not a new transition approval. Compare the exact state read
+// before acquisition inside the storage transaction; never overwrite a newer result.
+function normalStateUpdate({ sourceId, expectedState, state, authority, result, completedAt }) {
+  const reject = reason => ({ valid: false, reason });
+  const stable = value => JSON.stringify(value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(k => [k, JSON.parse(stable(value[k]))])) : value);
+  const selected = select(sourceId, authority);
+  if (!State.validateCompatibleRuntimeState(state, sourceId).valid ||
+      !State.validateCompatibleRuntimeState(expectedState, sourceId).valid ||
+      !state || !expectedState || stable(state) !== stable(expectedState) ||
+      state.reevaluation?.status !== "completed" || !selected.valid || !selected.acquisitionAllowed ||
+      selected.activationState !== "alternative_active" || !sameBinding(state.routeBinding, binding(selected)))
+    return reject("stale_route_result");
+  if (!exact(result, ["lastAttemptAt", "lastOutcome", "lastHttpStatus", "lastDiagnosticClass"]) ||
+      !instant(result.lastAttemptAt) || !instant(completedAt) ||
+      Date.parse(result.lastAttemptAt) < Date.parse(state.lastAttemptAt) ||
+      Date.parse(completedAt) < Date.parse(result.lastAttemptAt) ||
+      !["success", "failure"].includes(result.lastOutcome)) return reject("runtime_state_invalid");
+  const success = result.lastOutcome === "success";
+  if (success && (result.lastDiagnosticClass !== null || result.lastHttpStatus !== null &&
+      !(result.lastHttpStatus >= 200 && result.lastHttpStatus < 300)) ||
+      result.lastDiagnosticClass === "http_404" && result.lastHttpStatus !== 404 ||
+      result.lastDiagnosticClass === "http_5xx" && !(result.lastHttpStatus >= 500 && result.lastHttpStatus < 600))
+    return reject("runtime_state_invalid");
+  const next = { ...state, ...result, lastSuccessAt: success ? result.lastAttemptAt : state.lastSuccessAt,
+    retryAfter: success ? null : State.retryAfterFor(result.lastDiagnosticClass, result.lastAttemptAt) };
+  return State.validateCompatibleRuntimeState(next, sourceId).valid
+    ? { valid: true, state: next } : reject("runtime_state_invalid");
+}
 module.exports = Object.freeze({ APPROVALS, binding, sameBinding, evaluate, reserveState, reservationToken,
-  completeState, evaluateBoundUpdate });
+  completeState, evaluateBoundUpdate, normalStateUpdate });

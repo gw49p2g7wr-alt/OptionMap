@@ -119,7 +119,9 @@ function validateCompatibleRuntimeState(value, sourceId = null) {
     if (r.status === "reserved" && (r.completedAt !== null || value.lastOutcome !== "none")) return invalid();
     if (r.status === "completed" && (!instant(r.completedAt) || value.lastOutcome === "none" ||
         !value.lastAttemptAt || Date.parse(value.lastAttemptAt) < Date.parse(r.reservedAt) ||
-        Date.parse(r.completedAt) < Date.parse(value.lastAttemptAt))) return invalid();
+        // completedAt describes the immutable one-shot transition, not a later
+        // normal acquisition. Initial completion ordering is checked by its policy.
+        Date.parse(r.completedAt) < Date.parse(r.reservedAt))) return invalid();
   }
   return freeze({ valid: true, reason: null, state: value, recordKind: "v2", routeClass: value.routeBinding.routeKind });
 }

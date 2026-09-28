@@ -184,7 +184,28 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
     else { counts.completionRejects++; counts.failedWrites++; }
     return output;
   }
-  return Object.freeze({ read, readAll, write, reserveReevaluation, completeReevaluation, diagnostics: () => ({ ...counts }) });
+  async function completeActiveAcquisition(input) {
+    const denied = reason => ({ status: "unavailable", reason });
+    if (!getRouteAuthority || typeof Reevaluation?.normalStateUpdate !== "function") return denied("ordinary_write_disabled");
+    const ids = { controlled_labor: "jp-stat-labor", controlled_cpi: "jp-stat-cpi", controlled_bls: "us-bls-calendar" };
+    if (ids[targetEnvironment] && input?.sourceId !== ids[targetEnvironment]) return denied("source_out_of_scope");
+    if (!input || Object.keys(input).sort().join("|") !== "completedAt|expectedState|result|sourceId" ||
+        !sourceValid(input.sourceId)) return denied("runtime_state_invalid");
+    const captured = structuredClone(input);
+    const result = await access("readwrite", (store, done, abort) => {
+      const request = store.get(captured.sourceId);
+      request.onsuccess = () => { try {
+        const checked = Reevaluation.normalStateUpdate({ ...captured, state: request.result, authority: getRouteAuthority() });
+        if (!checked.valid) { done(denied(checked.reason)); return; }
+        store.put(checked.state); done({ status: "ok", state: checked.state });
+      } catch (_) { abort("normal_completion_failed"); } };
+    }, false);
+    const output = result.status === "ok" ? result.value : denied("normal_completion_failed");
+    counts[output.status === "ok" ? "successfulWrites" : "failedWrites"]++;
+    return output;
+  }
+  return Object.freeze({ read, readAll, write, reserveReevaluation, completeReevaluation,
+    completeActiveAcquisition, diagnostics: () => ({ ...counts }) });
 }
 return Object.freeze({ DATABASE_NAME, VERSION, STORE_NAME, TIMEOUT_MS, createRuntimeStateStore });
 });
