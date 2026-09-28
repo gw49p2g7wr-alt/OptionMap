@@ -31,6 +31,9 @@ const calendarAcquisition = require(
 const calendarManualCheck = require(
   "./js/marketCalendarRuntime/calendarManualCheckService.js"
 );
+const laborProduction = require("./js/marketCalendarRuntime/laborProductionCheck.js");
+const laborState = require("./js/marketCalendarRuntime/laborRuntimeStateElectron.js");
+let laborProductionService = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -205,6 +208,8 @@ ipcMain.handle("request-market-calendar-source", async (event, request) => {
     return { success: false, reason: "invalid_sender", retryable: false,
       documents: [], diagnostics: [] };
   }
+  if (["jp-stat-labor", "jp-stat-cpi", "us-bls-calendar"].includes(request?.sourceId))
+    return { success: false, reason: "controlled_activation_required", retryable: false, documents: [], diagnostics: [] };
   try {
     const result = await calendarAcquisitionService.acquire(request);
     return calendarAcquisition.sanitizeForIpc(result);
@@ -218,7 +223,13 @@ ipcMain.handle("check-market-calendar-sources", async (event, request) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   if (!owner || owner !== mainWindow) return { state: "unavailable", mode: "writer_disabled",
     reasonClass: "invalid_sender", sources: [], failedSourceIds: [] };
-  try { return await calendarManualCheckService.check(request); }
+  try {
+    if (!laborProductionService) laborProductionService = laborProduction.createLaborProductionCheck({
+      store: laborState.createLaborRuntimeStateElectron({ webContents: event.sender }),
+      legacyService: calendarManualCheckService, fetchImpl: (url, options) => net.fetch(url, options)
+    });
+    return await laborProductionService.check(request);
+  }
   catch (_error) { return { state: "failed", mode: "writer_disabled",
     reasonClass: "manual_check_failed", sources: [], failedSourceIds: [] }; }
 });
@@ -610,6 +621,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    laborProductionService = null;
   });
   const mainDocumentUrl = pathToFileURL(
     path.join(__dirname, "index.html")

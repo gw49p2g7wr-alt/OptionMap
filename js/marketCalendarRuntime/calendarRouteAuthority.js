@@ -69,6 +69,10 @@ function createAuthoritySnapshot(overrides = {}) {
   return freeze({ authorityVersion: AUTHORITY_VERSION, entries, authorityIdentity: hash({ authorityVersion: AUTHORITY_VERSION, entries }) });
 }
 const DEFAULT_AUTHORITY = createAuthoritySnapshot();
+// D2d3-Labor: explicit production authority, independent of persisted Runtime State.
+const PRODUCTION_AUTHORITY = createAuthoritySnapshot({
+  "jp-stat-labor": { activationState: "alternative_active", activationVersion: 2 }
+});
 function validateAuthority(snapshot) {
   try {
     if (!exact(snapshot, ["authorityVersion", "entries", "authorityIdentity"]) || snapshot.authorityVersion !== AUTHORITY_VERSION ||
@@ -96,5 +100,5 @@ function selectRoute(request, snapshot = DEFAULT_AUTHORITY) {
     operation: Policy.OPERATION, acquisitionAllowed: selected.activationState !== "suspended",
     reason: selected.activationState === "suspended" ? "source_suspended" : null });
 }
-module.exports = Object.freeze({ AUTHORITY_VERSION, SOURCE_IDS, STATES, DEFAULT_AUTHORITY,
+module.exports = Object.freeze({ AUTHORITY_VERSION, SOURCE_IDS, STATES, DEFAULT_AUTHORITY, PRODUCTION_AUTHORITY,
   createAuthoritySnapshot, validateAuthority, selectRoute });

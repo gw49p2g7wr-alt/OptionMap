@@ -39,6 +39,8 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
     if (!["ok", "absent"].includes(existing.status))
       return { ...result, runtimeStateDiagnostics: ["runtime_state_persist_failed"] };
     for (const source of result.sources || []) {
+      // Labor's controlled reservation/completion is owned by the main-side authority path.
+      if (source.sourceId === "jp-stat-labor" && source.runtimeStateManaged === "main_labor") continue;
       if (source.acquisitionStatus === "not_attempted") continue;
       sessionStates[source.sourceId] = { attemptCount: (sessionStates[source.sourceId]?.attemptCount || 0) + 1 };
       const previous = existing.value?.find(x => x.sourceId === source.sourceId), success =

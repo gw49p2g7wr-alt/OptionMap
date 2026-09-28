@@ -213,7 +213,7 @@ test("I order and runtime timestamp invariant; J UI-independent; K coverage iden
   assert.notEqual(c1.coverageAssessmentIdentity, c2.coverageAssessmentIdentity);
   assert.equal(JSON.stringify(first.canonicalRecords), before);
 });
-test("production import graph cannot reach inactive route/parser; active policies unchanged", () => {
+test("renderer import graph cannot reach alternative route/parser; legacy policies unchanged", () => {
   const root = path.resolve(__dirname, ".."), visited = new Set();
   const visit = file => {
     if (visited.has(file)) return; visited.add(file);
@@ -226,7 +226,9 @@ test("production import graph cannot reach inactive route/parser; active policie
     if (file.endsWith("index.html")) for (const match of code.matchAll(/<script[^>]*src=["']([^"']+)["']/g))
       if (!match[1].startsWith("http")) visit(path.resolve(root, match[1]));
   };
-  for (const file of ["main.js", "preload.js", "index.html", "js/marketCalendarRuntime/updatePolicy.js"]) visit(path.join(root, file));
+  // D2d3-Labor authorizes the main-only Labor path. Its source/network gate is covered by
+  // marketCalendarLaborProduction.test.js; renderer and legacy acquisition stay isolated.
+  for (const file of ["preload.js", "index.html", "js/marketCalendarRuntime/updatePolicy.js"]) visit(path.join(root, file));
   const policy = require("../js/marketCalendarRuntime/calendarNetworkPolicy.js");
   for (const sourceId of [CPI, LABOR]) {
     assert.match(Registry.getSource(sourceId).canonicalUrl, /^https:\/\/www\.stat\.go\.jp\//);
