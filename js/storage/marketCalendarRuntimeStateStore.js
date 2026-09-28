@@ -14,10 +14,10 @@ const valid = (state, id) => sourceValid(id) && state != null &&
 
 // Explicit factory only; production composition exposes fixed operations, never a generic DB API.
 function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthority, reevaluationPolicy: Reevaluation } = {}) {
-  if (!["isolated_test", "browser_runtime", "controlled_labor", "controlled_cpi"].includes(targetEnvironment) || !indexedDB?.databases || !indexedDB?.open)
+  if (!["isolated_test", "browser_runtime", "controlled_labor", "controlled_cpi", "controlled_bls"].includes(targetEnvironment) || !indexedDB?.databases || !indexedDB?.open)
     throw new TypeError("isolated_test_configuration_required");
   // Trusted isolated composition injects the fixed policy; ordinary browser imports never load alternative routes.
-  if ((getRouteAuthority !== undefined || Reevaluation !== undefined) && (!["isolated_test", "controlled_labor", "controlled_cpi"].includes(targetEnvironment) ||
+  if ((getRouteAuthority !== undefined || Reevaluation !== undefined) && (!["isolated_test", "controlled_labor", "controlled_cpi", "controlled_bls"].includes(targetEnvironment) ||
       typeof getRouteAuthority !== "function" || !Reevaluation ||
       !["evaluate", "reserveState", "reservationToken", "completeState"].every(k => typeof Reevaluation[k] === "function")))
     throw new TypeError("isolated_reevaluation_required");
@@ -103,7 +103,7 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
     return { ...result, value: result.value?.find(state => state.sourceId === sourceId) || null };
   }
   async function write(sourceId, state) {
-    if (["controlled_labor", "controlled_cpi"].includes(targetEnvironment)) return { status: "unavailable", reason: "ordinary_write_disabled", value: null };
+    if (["controlled_labor", "controlled_cpi", "controlled_bls"].includes(targetEnvironment)) return { status: "unavailable", reason: "ordinary_write_disabled", value: null };
     // Existing manual persistence stays legacy-only; it cannot erase a v2 reservation/binding.
     if (!valid(state, sourceId) || !B1.validateRuntimeState(state, sourceId).valid) {
       counts.failedWrites += 1;
@@ -135,6 +135,7 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
     if (!getRouteAuthority) return denied("reevaluation_disabled");
     if (targetEnvironment === "controlled_labor" && input?.sourceId !== "jp-stat-labor") return denied("source_out_of_scope");
     if (targetEnvironment === "controlled_cpi" && input?.sourceId !== "jp-stat-cpi") return denied("source_out_of_scope");
+    if (targetEnvironment === "controlled_bls" && input?.sourceId !== "us-bls-calendar") return denied("source_out_of_scope");
     if (!input || Object.keys(input).sort().join("|") !== "requestedAt|sourceId" || !sourceValid(input.sourceId))
       return denied("reevaluation_not_approved");
     const { sourceId, requestedAt } = input;
@@ -162,6 +163,7 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
     if (!getRouteAuthority) { counts.completionRejects++; return denied("reevaluation_disabled"); }
     if (targetEnvironment === "controlled_labor" && input?.token?.sourceId !== "jp-stat-labor") return denied("source_out_of_scope");
     if (targetEnvironment === "controlled_cpi" && input?.token?.sourceId !== "jp-stat-cpi") return denied("source_out_of_scope");
+    if (targetEnvironment === "controlled_bls" && input?.token?.sourceId !== "us-bls-calendar") return denied("source_out_of_scope");
     if (!input || Object.keys(input).sort().join("|") !== "completedAt|result|token" || !sourceValid(input.token?.sourceId)) {
       counts.completionRejects++; return denied("stale_route_result");
     }

@@ -37,6 +37,9 @@ let laborProductionService = null;
 const cpiProduction = require("./js/marketCalendarRuntime/cpiProductionCheck.js");
 const cpiState = require("./js/marketCalendarRuntime/cpiRuntimeStateElectron.js");
 let cpiProductionService = null;
+const blsProduction = require("./js/marketCalendarRuntime/blsProductionCheck.js");
+const blsState = require("./js/marketCalendarRuntime/blsRuntimeStateElectron.js");
+let blsProductionService = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -235,7 +238,11 @@ ipcMain.handle("check-market-calendar-sources", async (event, request) => {
       store: cpiState.createCpiRuntimeStateElectron({ webContents: event.sender }),
       legacyService: laborProductionService, fetchImpl: (url, options) => net.fetch(url, options)
     });
-    return await cpiProductionService.check(request);
+    if (!blsProductionService) blsProductionService = blsProduction.createBlsProductionCheck({
+      store: blsState.createBlsRuntimeStateElectron({ webContents: event.sender }),
+      legacyService: cpiProductionService, fetchImpl: (url, options) => net.fetch(url, options)
+    });
+    return await blsProductionService.check(request);
   }
   catch (_error) { return { state: "failed", mode: "writer_disabled",
     reasonClass: "manual_check_failed", sources: [], failedSourceIds: [] }; }
@@ -630,6 +637,7 @@ function createWindow() {
     mainWindow = null;
     laborProductionService = null;
     cpiProductionService = null;
+    blsProductionService = null;
   });
   const mainDocumentUrl = pathToFileURL(
     path.join(__dirname, "index.html")

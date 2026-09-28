@@ -72,7 +72,8 @@ const DEFAULT_AUTHORITY = createAuthoritySnapshot();
 // D2d3-Labor: explicit production authority, independent of persisted Runtime State.
 const PRODUCTION_AUTHORITY = createAuthoritySnapshot({
   "jp-stat-cpi": { activationState: "alternative_active", activationVersion: 2 },
-  "jp-stat-labor": { activationState: "alternative_active", activationVersion: 2 }
+  "jp-stat-labor": { activationState: "alternative_active", activationVersion: 2 },
+  "us-bls-calendar": { activationState: "alternative_active", activationVersion: 2 }
 });
 function validateAuthority(snapshot) {
   try {

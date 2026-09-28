@@ -45,7 +45,7 @@ test("CPI activation matches generation 2 approval while Labor binding is unchan
     const current = A.selectRoute({ sourceId: id, operation: "source-document-set" }, A.PRODUCTION_AUTHORITY);
     if (id === ID) { assert.equal(current.activationState, "alternative_active"); assert.equal(current.activationVersion, 2); }
     else if (id === "jp-stat-labor") { assert.equal(current.activationVersion, 2); assert.equal(current.routeIdentity, "f54eded9b30e759a8b85c850d9819ea24c944a6ad771ab477f9b60e543c2913e"); }
-    else assert.deepEqual(current.routeIdentity, A.selectRoute({ sourceId: id, operation: "source-document-set" }).routeIdentity);
+    else if (id !== "us-bls-calendar") assert.deepEqual(current.routeIdentity, A.selectRoute({ sourceId: id, operation: "source-document-set" }).routeIdentity);
   }
 });
 test("actual isolated-world storage bridge reserves old 404 before acquire and completes new route", async () => {

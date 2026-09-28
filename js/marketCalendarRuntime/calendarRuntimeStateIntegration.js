@@ -42,6 +42,7 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
       // Labor's controlled reservation/completion is owned by the main-side authority path.
       if (source.sourceId === "jp-stat-labor" && source.runtimeStateManaged === "main_labor") continue;
       if (source.sourceId === "jp-stat-cpi" && source.runtimeStateManaged === "main_cpi") continue;
+      if (source.sourceId === "us-bls-calendar" && source.runtimeStateManaged === "main_bls") continue;
       if (source.acquisitionStatus === "not_attempted") continue;
       sessionStates[source.sourceId] = { attemptCount: (sessionStates[source.sourceId]?.attemptCount || 0) + 1 };
       const previous = existing.value?.find(x => x.sourceId === source.sourceId), success =
