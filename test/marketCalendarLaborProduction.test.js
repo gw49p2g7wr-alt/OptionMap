@@ -39,11 +39,11 @@ async function setup({ factory = new IDBFactory(), gate, failure = false, seedAb
   return { factory, seed, store, create, legacyRequests, service: create(), requests: () => requests,
     authority: value => { authority = value; } };
 }
-test("only Labor production authority active generation 2; historical default remains shadow", () => {
+test("Labor production authority stays active generation 2 alongside independently approved CPI", () => {
   for (const id of A.SOURCE_IDS) {
     const current = A.selectRoute({ sourceId: id, operation: "source-document-set" }, A.PRODUCTION_AUTHORITY);
     if (id === ID) { assert.equal(current.activationState, "alternative_active"); assert.equal(current.activationVersion, 2); }
-    else assert.deepEqual(current.routeIdentity, A.selectRoute({ sourceId: id, operation: "source-document-set" }).routeIdentity);
+    else if (id !== "jp-stat-cpi") assert.deepEqual(current.routeIdentity, A.selectRoute({ sourceId: id, operation: "source-document-set" }).routeIdentity);
   }
 });
 test("actual isolated-world storage bridge reserves old 404 before acquire and completes new route", async () => {
