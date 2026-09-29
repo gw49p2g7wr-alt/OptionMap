@@ -1,6 +1,6 @@
 "use strict";
 
-// E3a has no execution authorization issuer. PREWRITE_ONLY never invokes the core executor.
+// PREWRITE_ONLY remains non-executable. E3b has a separate main-side one-shot issuer.
 const { randomUUID } = require("node:crypto");
 const Schema = require("./productionSchemaV1.js");
 const Authority = require("./formalWriterAuthority.js");
@@ -23,6 +23,8 @@ const MUTATION_CEILING = Object.freeze({ appendEntries: 0, updateEntries: 4,
   closeRevisions: 0, appendRevisions: 0, appendEvidence: 4, appendObservations: 4,
   appendRuns: 1, updateCursors: 1 });
 const sessions = new WeakMap(), tickets = new WeakMap();
+const authorizations = new WeakMap();
+const AUTHORIZATION_TTL_MS = 5 * 60 * 1000;
 const rejected = reason => ({ status: "rejected", reason, firstLiveWriteEligible: false,
   mode: MODE, writeAllowed: false, coreWriteExecutions: 0 });
 const exactKeys = (value, keys) => value && typeof value === "object" &&
@@ -58,6 +60,11 @@ async function validateFirstWritePlan(plan, before) {
   if (!updates || !Core.linkageValid(plan, before) || updates.entries.some(value =>
     value.activeRevisionKey !== before.entries.find(prior => prior.eventKey === value.eventKey)?.activeRevisionKey))
     return { valid: false, reason: "semantic_linkage_changed" };
+  if (updates.entries.some(value => {
+    const prior = before.entries.find(record => record.eventKey === value.eventKey);
+    return !Core.same(value, { ...prior, lastObservedAt: value.lastObservedAt }) ||
+      value.lastObservedAt !== plan.mutations.appendRuns[0]?.acceptedAt;
+  })) return { valid: false, reason: "unexpected_entry_field_mutation" };
   if (Core.identityConflict(plan, before) || plan.mutations.appendEvidence.some(value =>
     before.evidence.some(prior => prior.evidenceLinkKey === value.evidenceLinkKey)) ||
     plan.mutations.appendObservations.some(value => before.observations.some(prior =>
@@ -148,14 +155,16 @@ async function completePrewrite(session, input) {
   const binding = { databaseName: DATABASE_NAME, sourceId: SOURCE_ID, invocationId: state.nonce,
     planIdentity: plan.planIdentity, preconditionIdentity: plan.preconditionIdentity },
     ticket = Object.freeze({});
-  tickets.set(ticket, { binding: Core.copy(binding), plan, corePreparation,
+  const identities = { schemaFingerprint: plan.schemaFingerprint, precondition: plan.preconditionIdentity,
+    activeFormal: plan.activeFormalIdentity, candidateSet: plan.candidateSetIdentity,
+    acquisition: plan.acquisitionIdentity, comparison: plan.comparisonIdentity, plan: plan.planIdentity };
+  tickets.set(ticket, { binding: Core.copy(binding), plan, corePreparation, identities,
+    createdAt: Date.now(), authorizationIssued: false,
     before: Core.copy(state.before), expectedAfter: Core.copy(expectedAfter) });
   return { status: "prewrite_eligible", reason: null, mode: MODE, writeAllowed: false,
     firstLiveWriteEligible: true, writerAuthorityState: Authority.selectWriterState(SOURCE_ID).state,
     coreWriteExecutions: 0, ticket, binding, sourceId: SOURCE_ID, expectedMutationCounts: plan.counts,
-    identities: { schemaFingerprint: plan.schemaFingerprint, precondition: plan.preconditionIdentity,
-      activeFormal: plan.activeFormalIdentity, candidateSet: plan.candidateSetIdentity,
-      acquisition: plan.acquisitionIdentity, comparison: plan.comparisonIdentity, plan: plan.planIdentity },
+    identities: Core.copy(identities),
     expectation: { beforeIdentity: await Canonical.sha256(Core.sorted(state.before)),
       afterIdentity: await Canonical.sha256(expectedAfter), beforeCounts: counts(state.before),
       afterCounts: counts(expectedAfter), beforeSafety, afterSafety,
@@ -191,6 +200,39 @@ function requestProductionWrite(input = {}) {
   // E3b must add a separately approved one-shot issuer; no active execution path exists in E3a.
   return rejected("e3b_explicit_authorization_required");
 }
+function authorizeFirstProductionWrite(input = {}) {
+  if (typeof window !== "undefined" && window.document) throw Error("main_side_only");
+  if (!exactKeys(input, ["ticket", "binding"]) || !validateFreshBinding(input.ticket, input.binding).valid)
+    throw Error("fresh_authorization_binding_mismatch");
+  const state = tickets.get(input.ticket);
+  if (state.authorizationIssued) throw Error("authorization_already_issued");
+  if (Date.now() - state.createdAt > AUTHORIZATION_TTL_MS) throw Error("authorization_expired");
+  if (Authority.selectWriterState(SOURCE_ID).state !== "disabled") throw Error("disabled_authority_required");
+  if (Object.values(state.identities).some(value => !/^[a-f0-9]{64}$/.test(value)))
+    throw Error("fresh_identity_missing");
+  state.authorizationIssued = true;
+  const binding = Object.freeze({ ...Core.copy(state.binding), version: 1,
+    identities: Core.copy(state.identities), exactMutationCeiling: Core.copy(MUTATION_CEILING),
+    plannedReadwriteTransactions: 1, authorityMode: "E3b_explicit_one_shot" });
+  const authorization = Object.freeze({});
+  authorizations.set(authorization, { ticket: input.ticket, binding: Core.copy(binding),
+    expiresAt: state.createdAt + AUTHORIZATION_TTL_MS, consumed: false });
+  return { authorization, binding };
+}
+// This internal handoff is used only by the explicit E3b harness executor, never IPC/startup.
+function consumeFirstProductionAuthorization(authorization, binding) {
+  if (typeof window !== "undefined" && window.document) throw Error("main_side_only");
+  const auth = authorizations.get(authorization);
+  if (!auth || auth.consumed) throw Error("authorization_invalid_or_reused");
+  auth.consumed = true; // A failed attempt also exhausts the authorization; no retry.
+  if (!Core.same(auth.binding, binding)) throw Error("fresh_authorization_binding_mismatch");
+  if (Date.now() > auth.expiresAt) throw Error("authorization_expired");
+  if (Authority.selectWriterState(SOURCE_ID).state !== "disabled") throw Error("disabled_authority_required");
+  const state = tickets.get(auth.ticket);
+  return { ticket: auth.ticket, expiresAt: auth.expiresAt, binding: Core.copy(auth.binding),
+    plan: Core.copy(state.plan), before: Core.copy(state.before), expectedAfter: Core.copy(state.expectedAfter) };
+}
 module.exports = Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION_CEILING,
   beginPrewrite, captureFormalRead, completePrewrite, validateFirstWritePlan,
-  validateFreshBinding, requestProductionWrite, verifyReadback });
+  validateFreshBinding, requestProductionWrite, verifyReadback,
+  authorizeFirstProductionWrite, consumeFirstProductionAuthorization });
