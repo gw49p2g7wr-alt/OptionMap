@@ -13,7 +13,8 @@ const Gate = require("../marketCalendarRuntime/formalShadowReadOnlyGate.js");
 const Routes = require("../marketCalendarRuntime/calendarRouteAuthority.js");
 const NetworkPolicy = require("../marketCalendarRuntime/calendarNetworkPolicy.js");
 
-const SOURCE_ID = Authority.FIRST_WRITE_SOURCE_ID;
+// Private construction only: callers can select neither source nor authority mode.
+function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX) {
 const DATABASE_NAME = Schema.DATABASE_NAME;
 const MODE = "PREWRITE_ONLY";
 const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: 0, eventEntryUpdate: 4,
@@ -128,15 +129,20 @@ async function completePrewrite(session, input) {
   const shadowReport = await Gate.buildReadOnlyShadowReport({ formalSnapshot: state.before,
     sourceResults, schemaFingerprint: Schema.EXPECTED_FINGERPRINT, completedAt,
     startingPreconditionIdentity: state.preconditionIdentity, endingPreconditionIdentity: endingIdentity });
-  if (shadowReport.status !== "evaluated" || !shadowReport.firstLiveWriteEligible)
+  const globalEligible = shadowReport.status === "evaluated" &&
+    shadowReport.sourceSuccessCount === 12 && shadowReport.comparison.totals.changed === 0 &&
+    Object.values(shadowReport.identityAudit).every(value => value === 0) &&
+    shadowReport.sourceRows.every(value => value.sourceId === Authority.BOJ_SOURCE_ID ||
+      value.planStatus === "planned");
+  if (!globalEligible || SOURCE_ID === Authority.FIRST_WRITE_SOURCE_ID && !shadowReport.firstLiveWriteEligible)
     return { ...rejected(shadowReport.reason || "fresh_gate_not_ready"), shadowReport };
-  const first = shadowReport.firstWrite;
+  const first = shadowReport.sourceRows.find(value => value.sourceId === SOURCE_ID);
   if (first.candidate !== 4 || first.formalActive !== 4 || first.unchanged !== 4 ||
-      first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== 0)
+      first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== 0 || first.notEvaluated !== 0)
     return rejected("first_source_expectation_mismatch");
   const sourceResult = sourceResults.find(value => value.sourceId === SOURCE_ID),
     comparison = await Compare.compare({ sourceResults, formalSnapshot: state.before }),
-    run = { sourceId: SOURCE_ID, runId: `e3a-prewrite-${state.nonce}`, acceptedAt: completedAt,
+    run = { sourceId: SOURCE_ID, runId: `${RUN_PREFIX}-${state.nonce}`, acceptedAt: completedAt,
       fetchedAt: [...new Set(sourceResult.canonicalRecords.map(value => value.acquisitionEvidence.fetchedAt))].sort(),
       status: "accepted", semanticSetHash: await Canonical.sha256(sourceResult.canonicalRecords.map(value =>
         value.revisionKey).sort()) },
@@ -213,7 +219,7 @@ function authorizeFirstProductionWrite(input = {}) {
   state.authorizationIssued = true;
   const binding = Object.freeze({ ...Core.copy(state.binding), version: 1,
     identities: Core.copy(state.identities), exactMutationCeiling: Core.copy(MUTATION_CEILING),
-    plannedReadwriteTransactions: 1, authorityMode: "E3b_explicit_one_shot" });
+    plannedReadwriteTransactions: 1, authorityMode: AUTHORIZATION_MODE });
   const authorization = Object.freeze({});
   authorizations.set(authorization, { ticket: input.ticket, binding: Core.copy(binding),
     expiresAt: state.createdAt + AUTHORIZATION_TTL_MS, consumed: false });
@@ -232,7 +238,11 @@ function consumeFirstProductionAuthorization(authorization, binding) {
   return { ticket: auth.ticket, expiresAt: auth.expiresAt, binding: Core.copy(auth.binding),
     plan: Core.copy(state.plan), before: Core.copy(state.before), expectedAfter: Core.copy(state.expectedAfter) };
 }
-module.exports = Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION_CEILING,
+return Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION_CEILING,
   beginPrewrite, captureFormalRead, completePrewrite, validateFirstWritePlan,
   validateFreshBinding, requestProductionWrite, verifyReadback,
   authorizeFirstProductionWrite, consumeFirstProductionAuthorization });
+}
+const first = fixedBoundary(Authority.FIRST_WRITE_SOURCE_ID, "E3b_explicit_one_shot", "e3a-prewrite");
+const sna = fixedBoundary("jp-esri-sna-calendar", "E4a_sna_explicit_one_shot", "e4a-sna");
+module.exports = Object.freeze({ ...first, sna });

@@ -2,14 +2,14 @@
 
 // Explicit E3b harness only. No startup/IPC/renderer public capability is added.
 const fs = require("node:fs");
-const Boundary = require("./firstProductionWriteBoundary.js");
+const Boundaries = require("./firstProductionWriteBoundary.js");
 const Schema = require("./productionSchemaV1.js");
 const Bootstrap = require("./bootstrapSchemaV1.js");
 const Canonical = require("../marketCalendar/marketEventCanonicalizer.js");
 
 // Executed in the existing sandboxed read-only probe window. The transaction
 // algorithm is the actual shared core, not a second production writer.
-async function executeInProbe(context, Core, Schema, inspect, fingerprint) {
+async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode) {
   const { binding, before, plan, expectedAfter, expiresAt } = context;
   const stores = Core.STORE_ORDER, names = Core.STORE_NAMES;
   const audit = { opens: 0, readonly: 0, readwrite: 0, create: 0, upgrade: 0,
@@ -28,8 +28,8 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint) {
     seen.add(binding.invocationId);
     if (Date.now() > expiresAt) throw Error("authorization_expired");
     if (binding.databaseName !== "optionMapMarketCalendarHistory" ||
-        binding.sourceId !== "jp-esri-machinery-orders-calendar" ||
-        binding.authorityMode !== "E3b_explicit_one_shot" || binding.plannedReadwriteTransactions !== 1 ||
+        binding.sourceId !== approvedSource ||
+        binding.authorityMode !== approvedMode || binding.plannedReadwriteTransactions !== 1 ||
         binding.identities.schemaFingerprint !== Schema.EXPECTED_FINGERPRINT ||
         binding.identities.plan !== plan.planIdentity || plan.writeAllowed !== false)
       throw Error("fixed_authorization_required");
@@ -159,6 +159,8 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint) {
   return observation;
 }
 
+// Only these two code-fixed closures exist. No arbitrary boundary/source API.
+function fixedExecutor(Boundary, approvedMode) {
 function prepareProbeProgram(authorization, binding) {
   const context = Boundary.consumeFirstProductionAuthorization(authorization, binding);
   const coreSource = fs.readFileSync(require.resolve("./formalControlledWriterCore.js"), "utf8");
@@ -174,7 +176,8 @@ function prepareProbeProgram(authorization, binding) {
       return dependencies[name];
     });
     return (${executeInProbe.toString()})(${JSON.stringify(context)}, module.exports, Schema,
-      (${Bootstrap.inspect.toString()}), (${Schema.fingerprint.toString()}));
+      (${Bootstrap.inspect.toString()}), (${Schema.fingerprint.toString()}),
+      ${JSON.stringify(Boundary.SOURCE_ID)}, ${JSON.stringify(approvedMode)});
   })()`;
   return { program, ticket: context.ticket };
 }
@@ -196,4 +199,8 @@ async function executeFirstProductionWrite(probe, authorization, binding) {
     return { ...safe, status: "failed", verification };
   return { ...safe, verification, writerAuthorityState: "disabled" };
 }
-module.exports = Object.freeze({ prepareProbeProgram, executeFirstProductionWrite });
+return Object.freeze({ prepareProbeProgram, executeFirstProductionWrite });
+}
+const first = fixedExecutor(Boundaries, "E3b_explicit_one_shot");
+const sna = fixedExecutor(Boundaries.sna, "E4a_sna_explicit_one_shot");
+module.exports = Object.freeze({ ...first, sna });
