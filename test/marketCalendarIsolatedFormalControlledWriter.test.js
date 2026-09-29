@@ -363,16 +363,17 @@ test("cross-source mutation linkage and unknown failure checkpoint fail closed",
 });
 test("production entry points do not import isolated writer; transaction has no await or digest", () => {
   const source = fs.readFileSync(path.join(__dirname,
-    "../js/marketCalendarHistory/isolatedFormalControlledWriter.js"), "utf8"),
-    transaction = source.slice(source.indexOf("function transact("),
-      source.indexOf("function createIsolatedFormalControlledWriter("));
-  assert.doesNotMatch(transaction, /\bawait\b|\.digest\s*\(|\.sha256\s*\(|setTimeout\s*\(/);
+    "../js/marketCalendarHistory/formalControlledWriterCore.js"), "utf8"),
+    transaction = source.slice(source.indexOf("function queueWrites("),
+      source.indexOf("function executePrepared("));
+  assert.ok(transaction.includes("function transact(") && transaction.includes("queueWrites(tx"));
+  assert.doesNotMatch(transaction, /\bawait\b|\.digest\s*\(|\.sha256\s*\(|setTimeout\s*\(|\bfetch\s*\(/);
   assert.doesNotMatch(source, /require\([^)]*(?:productionHistoryWriter|existingDbControlledWriter)/);
   for (const file of ["main.js", "preload.js", "index.html",
     "js/marketCalendarRuntime/calendarStartupRuntime.js",
     "js/marketCalendarRuntime/calendarManualCheckService.js"])
     assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", file), "utf8"),
-      /isolatedFormalControlledWriter/);
+      /isolatedFormalControlledWriter|formalControlledWriterCore/);
 });
 test.after(() => {
   const total = { ...audit, writer: { opens: 0, readonlyTransactions: 0,
