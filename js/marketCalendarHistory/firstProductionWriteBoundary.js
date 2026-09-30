@@ -15,14 +15,14 @@ const NetworkPolicy = require("../marketCalendarRuntime/calendarNetworkPolicy.js
 
 // Private construction only: callers can select neither source nor authority mode.
 function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX, EVENT_COUNT,
-  EVIDENCE_ONLY_COUNT = 0, NEW_EVIDENCE_URL = null) {
+  EVIDENCE_ONLY_COUNT = 0, NEW_EVIDENCE_URL = null, NEW_COUNT = 0) {
 const DATABASE_NAME = Schema.DATABASE_NAME;
 const MODE = "PREWRITE_ONLY";
-const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: 0, eventEntryUpdate: EVENT_COUNT,
-  semanticRevisionCreate: 0, semanticRevisionClose: 0, evidenceCreate: EVENT_COUNT,
+const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: NEW_COUNT, eventEntryUpdate: EVENT_COUNT - NEW_COUNT,
+  semanticRevisionCreate: NEW_COUNT, semanticRevisionClose: 0, evidenceCreate: EVENT_COUNT,
   observationCreate: EVENT_COUNT, sourceRunCreate: 1, sourceCursorUpdate: 1 });
-const MUTATION_CEILING = Object.freeze({ appendEntries: 0, updateEntries: EVENT_COUNT,
-  closeRevisions: 0, appendRevisions: 0, appendEvidence: EVENT_COUNT, appendObservations: EVENT_COUNT,
+const MUTATION_CEILING = Object.freeze({ appendEntries: NEW_COUNT, updateEntries: EVENT_COUNT - NEW_COUNT,
+  closeRevisions: 0, appendRevisions: NEW_COUNT, appendEvidence: EVENT_COUNT, appendObservations: EVENT_COUNT,
   appendRuns: 1, updateCursors: 1 });
 const sessions = new WeakMap(), tickets = new WeakMap();
 const authorizations = new WeakMap();
@@ -35,16 +35,19 @@ const counts = snapshot => Object.fromEntries(Core.STORE_ORDER.map(([field]) =>
   [field, snapshot[field].length]));
 function evidenceTransitionAudit(before, plan, after = null) {
   if (!EVIDENCE_ONLY_COUNT) return null;
-  const rows = plan.mutations.appendEvidence.map(next => {
+  const rows = plan.mutations.appendEvidence.filter(next => !NEW_COUNT ||
+    before.entries.some(value => value.eventKey === next.eventKey)).map(next => {
     const entry = before.entries.find(value => value.eventKey === next.eventKey),
       revision = before.revisions.find(value => value.revisionKey === entry?.activeRevisionKey),
       old = before.evidence.filter(value => value.eventKey === next.eventKey &&
         value.revisionKey === entry?.activeRevisionKey);
     const distinct = !before.evidence.some(value => value.evidenceLinkKey === next.evidenceLinkKey);
     const sameRevision = next.revisionKey === entry?.activeRevisionKey && !!revision;
-    const provenanceChanged = next.acquisitionEvidence?.sourceUrl === NEW_EVIDENCE_URL &&
+    const expectedUrl = NEW_COUNT ? require("../marketCalendarIsolated/blsFixedRoute.js").ROLES
+      .find(role => role.eventType === revision?.logical?.eventType)?.url : NEW_EVIDENCE_URL;
+    const provenanceChanged = next.acquisitionEvidence?.sourceUrl === expectedUrl &&
       old.length > 0 && old.every(value => value.acquisitionEvidence?.sourceUrl &&
-        value.acquisitionEvidence.sourceUrl !== NEW_EVIDENCE_URL);
+        value.acquisitionEvidence.sourceUrl !== expectedUrl);
     const oldPreserved = !after || old.every(value => Core.same(value,
       after.evidence.find(observed => observed.evidenceLinkKey === value.evidenceLinkKey)));
     const revisionPreserved = !after || Core.same(revision,
@@ -67,6 +70,35 @@ function evidenceTransitionAudit(before, plan, after = null) {
       value.oldPreserved && value.revisionPreserved && value.newLinked),
     eventCount: rows.length, rows };
 }
+function newLinkageAudit(before, plan, after = null) {
+  if (!NEW_COUNT) return null;
+  const m = plan.mutations, roles = require("../marketCalendarIsolated/blsFixedRoute.js").ROLES;
+  const rows = m.appendEntries.map(entry => {
+    const revisions = m.appendRevisions.filter(value => value.eventKey === entry.eventKey),
+      evidence = m.appendEvidence.filter(value => value.eventKey === entry.eventKey),
+      observations = m.appendObservations.filter(value => value.eventKey === entry.eventKey),
+      revision = revisions[0], role = roles.find(value => value.eventType === revision?.logical?.eventType);
+    const valid = !before.entries.some(value => value.eventKey === entry.eventKey) &&
+      !before.revisions.some(value => value.revisionKey === entry.activeRevisionKey) &&
+      revisions.length === 1 && revision.validTo === null && revision.revisionOrigin === "initial_observation" &&
+      entry.activeRevisionKey === revision.revisionKey && evidence.length === 1 && observations.length === 1 &&
+      evidence[0].revisionKey === revision.revisionKey && observations[0].state === "observed" &&
+      observations[0].sourceId === SOURCE_ID && observations[0].runId === evidence[0].runId &&
+      observations[0].acceptedAt === evidence[0].acceptedAt &&
+      role && evidence[0].acquisitionEvidence?.sourceUrl === role.url &&
+      (!after || [entry, revision, evidence[0], observations[0]].every((value, i) => {
+        const field = ["entries", "revisions", "evidence", "observations"][i],
+          key = ["eventKey", "revisionKey", "evidenceLinkKey", "observationKey"][i];
+        return Core.same(value, after[field].find(item => item[key] === value[key]));
+      }));
+    return { eventKey: entry.eventKey, revisionKey: entry.activeRevisionKey,
+      evidenceKey: evidence[0]?.evidenceLinkKey, observationKey: observations[0]?.observationKey,
+      role: role?.role, valid: !!valid };
+  }).sort((a, b) => a.eventKey.localeCompare(b.eventKey));
+  return { valid: rows.length === NEW_COUNT && new Set(rows.map(x => x.eventKey)).size === NEW_COUNT &&
+    new Set(rows.map(x => x.revisionKey)).size === NEW_COUNT && rows.every(x => x.valid),
+    eventCount: rows.length, rows };
+}
 async function safetySnapshot(snapshot) {
   const semantic = await Integrity.audit(snapshot), storage = Integrity.auditStorageSnapshot(snapshot),
     entries = new Map(snapshot.entries.map(value => [value.eventKey, value])),
@@ -85,7 +117,7 @@ async function validateFirstWritePlan(plan, before) {
   if (plan?.sourceId !== SOURCE_ID) return { valid: false, reason: "first_source_required" };
   if (plan.mutations && Object.keys(plan.mutations).some(key => /delete|remove/i.test(key)))
     return { valid: false, reason: "delete_forbidden" };
-  if (plan.mutations?.appendRevisions?.length || plan.mutations?.closeRevisions?.length)
+  if ((!NEW_COUNT && plan.mutations?.appendRevisions?.length) || plan.mutations?.closeRevisions?.length)
     return { valid: false, reason: "revision_mutation_forbidden" };
   if (!(await Shadow.validateShadowPlan(plan)).valid || !Core.planScopeValid(plan))
     return { valid: false, reason: "plan_invalid" };
@@ -101,6 +133,8 @@ async function validateFirstWritePlan(plan, before) {
     return !Core.same(value, { ...prior, lastObservedAt: value.lastObservedAt }) ||
       value.lastObservedAt !== plan.mutations.appendRuns[0]?.acceptedAt;
   })) return { valid: false, reason: "unexpected_entry_field_mutation" };
+  if (NEW_COUNT && !newLinkageAudit(before, plan).valid)
+    return { valid: false, reason: "new_event_linkage_invalid" };
   if (Core.identityConflict(plan, before) || plan.mutations.appendEvidence.some(value =>
     before.evidence.some(prior => prior.evidenceLinkKey === value.evidenceLinkKey)) ||
     plan.mutations.appendObservations.some(value => before.observations.some(prior =>
@@ -128,6 +162,7 @@ async function captureFormalRead(session, snapshot, schemaFingerprint) {
   return { status: "captured", preconditionIdentity: state.preconditionIdentity, audit };
 }
 async function completePrewrite(session, input) {
+  const preparationStartedAt = Date.now();
   const state = sessions.get(session);
   if (!state || state.phase !== "read") return rejected("fresh_session_required");
   state.phase = "consumed";
@@ -138,7 +173,26 @@ async function completePrewrite(session, input) {
       !Number.isFinite(Date.parse(completedAt)) || Date.parse(completedAt) < state.startedAt ||
       Date.parse(completedAt) > Date.now()) return rejected("fresh_acquisition_required");
   // CPI inherits its existing two-lane production contract, never total-count-only eligibility.
-  let laneAudit = null;
+  let laneAudit = null, documentAudit = null;
+  if (NEW_COUNT) {
+    const source = sourceResults.find(value => value.sourceId === SOURCE_ID),
+      roles = require("../marketCalendarIsolated/blsFixedRoute.js").ROLES;
+    if (!Array.isArray(source?.documentHealth) || !Array.isArray(source?.coverage?.roleCoverage))
+      return rejected("bls_document_contract_invalid");
+    documentAudit = roles.map(role => {
+      const health = source.documentHealth.filter(value => value.role === role.role),
+        coverage = source.coverage.roleCoverage.filter(value => value.role === role.role);
+      return { role: role.role, valid: health.length === 1 && health[0].httpStatus === 200 &&
+        health[0].fetchOutcome === "success" && health[0].parseOutcome === "success" &&
+        health[0].redirectCount === 0 && coverage.length === 1 &&
+        coverage[0].state === "sufficient" && coverage[0].absenceAuthority === "none" };
+    });
+    if (source.acquisitionOutcome !== "complete" || source.absenceAuthority !== "none" ||
+        source.coverage.coverageState !== "sufficient" || source.coverage.absenceAuthority !== "none" ||
+        source.documentHealth.length !== 4 || source.coverage.roleCoverage.length !== 4 ||
+        !documentAudit.every(value => value.valid))
+      return { ...rejected("bls_document_contract_invalid"), documentAudit };
+  }
   if (SOURCE_ID === "jp-stat-cpi") {
     const source = sourceResults.find(value => value.sourceId === SOURCE_ID), coverage = source?.coverage;
     if (!Array.isArray(source?.canonicalRecords) || !Array.isArray(coverage?.laneAssessments))
@@ -193,8 +247,8 @@ async function completePrewrite(session, input) {
   if (!globalEligible || SOURCE_ID === Authority.FIRST_WRITE_SOURCE_ID && !shadowReport.firstLiveWriteEligible)
     return { ...rejected(shadowReport.reason || "fresh_gate_not_ready"), shadowReport };
   const first = shadowReport.sourceRows.find(value => value.sourceId === SOURCE_ID);
-  if (first.candidate !== EVENT_COUNT || first.formalActive !== EVENT_COUNT || first.unchanged !== EVENT_COUNT ||
-      first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== EVIDENCE_ONLY_COUNT || first.notEvaluated !== 0)
+  if (first.candidate !== EVENT_COUNT || first.formalActive !== EVENT_COUNT - NEW_COUNT || first.unchanged !== EVENT_COUNT - NEW_COUNT ||
+      first.changed !== 0 || first.new !== NEW_COUNT || first.evidenceOnly !== EVIDENCE_ONLY_COUNT || first.notEvaluated !== 0)
     return rejected("first_source_expectation_mismatch");
   const sourceResult = sourceResults.find(value => value.sourceId === SOURCE_ID),
     comparison = await Compare.compare({ sourceResults, formalSnapshot: state.before }),
@@ -211,7 +265,7 @@ async function completePrewrite(session, input) {
   const corePreparation = Core.prepareExecution(plan, state.before, MUTATION_CEILING),
     expectedAfter = Core.applyToMemory(state.before, plan, Core.expectedWrites(plan, state.before)),
     beforeSafety = await safetySnapshot(state.before), afterSafety = await safetySnapshot(expectedAfter);
-  if (!afterSafety.valid || !Core.same(beforeSafety, afterSafety)) return rejected("expected_global_integrity_changed");
+  if (!afterSafety.valid || !Core.same({ ...beforeSafety, activeCount: beforeSafety.activeCount + NEW_COUNT }, afterSafety)) return rejected("expected_global_integrity_changed");
   for (const [field] of Core.STORE_ORDER) if (!Core.same(
     state.before[field].filter(value => value.sourceId !== SOURCE_ID),
     expectedAfter[field].filter(value => value.sourceId !== SOURCE_ID)))
@@ -230,6 +284,12 @@ async function completePrewrite(session, input) {
     coreWriteExecutions: 0, ticket, binding, sourceId: SOURCE_ID, expectedMutationCounts: plan.counts,
     identities: Core.copy(identities), ...(provenanceAudit ? { provenanceAudit } : {}),
     ...(laneAudit ? { laneAudit } : {}),
+    ...(documentAudit ? { documentAudit, linkageAudit: newLinkageAudit(state.before, plan) } : {}),
+    ...(NEW_COUNT ? { resourceAudit: { preparationMs: Date.now() - preparationStartedAt,
+      preconditionBytes: Buffer.byteLength(Core.material(Core.sorted(state.before))),
+      transactionMaterialBytes: Buffer.byteLength(Core.material(plan.mutations)),
+      operationCount: EVENT_COUNT * 3 + NEW_COUNT + 2,
+      authorizationTtlMs: AUTHORIZATION_TTL_MS } } : {}),
     expectation: { beforeIdentity: await Canonical.sha256(Core.sorted(state.before)),
       afterIdentity: await Canonical.sha256(expectedAfter), beforeCounts: counts(state.before),
       afterCounts: counts(expectedAfter), beforeSafety, afterSafety,
@@ -252,9 +312,11 @@ async function verifyReadback(ticket, snapshot) {
   const state = tickets.get(ticket);
   if (!state) return { valid: false, reason: "fresh_session_required" };
   const audit = await safetySnapshot(snapshot);
-  const provenanceAudit = evidenceTransitionAudit(state.before, state.plan, snapshot);
+  const provenanceAudit = evidenceTransitionAudit(state.before, state.plan, snapshot),
+    linkageAudit = newLinkageAudit(state.before, state.plan, snapshot);
   return { valid: audit.valid && Core.same(Core.sorted(snapshot), state.expectedAfter) &&
-    (!provenanceAudit || provenanceAudit.valid), audit, ...(provenanceAudit ? { provenanceAudit } : {}),
+    (!provenanceAudit || provenanceAudit.valid) && (!linkageAudit || linkageAudit.valid),
+    audit, ...(provenanceAudit ? { provenanceAudit } : {}), ...(linkageAudit ? { linkageAudit } : {}),
     expectedIdentity: await Canonical.sha256(state.expectedAfter),
     observedIdentity: await Canonical.sha256(Core.sorted(snapshot)) };
 }
@@ -316,4 +378,5 @@ const laborEvidence = fixedBoundary("jp-stat-labor", "E4c_labor_explicit_one_sho
   require("../marketCalendarIsolated/estatRoute.js").ROUTES["jp-stat-labor"].url);
 const cpiEvidence = fixedBoundary("jp-stat-cpi", "E4c_cpi_explicit_one_shot", "e4c-cpi", 30, 30,
   require("../marketCalendarIsolated/estatRoute.js").ROUTES["jp-stat-cpi"].url);
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence });
+const blsNew = fixedBoundary("us-bls-calendar", "E4d_bls_explicit_one_shot", "e4d-bls", 52, 5, null, 47);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence, blsNew });

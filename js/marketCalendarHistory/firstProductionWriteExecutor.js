@@ -9,12 +9,13 @@ const Canonical = require("../marketCalendar/marketEventCanonicalizer.js");
 
 // Executed in the existing sandboxed read-only probe window. The transaction
 // algorithm is the actual shared core, not a second production writer.
-async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode, approvedCount) {
+async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode, approvedCounts) {
   const { binding, before, plan, expectedAfter, expiresAt } = context;
   const stores = Core.STORE_ORDER, names = Core.STORE_NAMES;
   const audit = { opens: 0, readonly: 0, readwrite: 0, create: 0, upgrade: 0,
     committed: 0, aborted: 0, attemptedWrites: Core.emptyCounts(),
     committedWrites: Core.emptyCounts(), delete: 0, openHandles: 0, readbackReopens: 0 };
+  if (approvedSource === "us-bls-calendar") audit.entryOperations = { create: 0, update: 0 };
   const metrics = { readwriteTransactions: 0, committedTransactions: 0,
     abortedTransactions: 0, committedWrites: Core.emptyCounts() };
   const observation = { status: "failed", reason: null, committed: false, audit, metrics,
@@ -35,15 +36,18 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
       throw Error("fixed_authorization_required");
     const updates = Core.expectedWrites(plan, before);
     const expectedOperations = [
+      ...plan.mutations.appendEntries.map(value => ["entries", "add", value]),
       ...updates.entries.map(value => ["entries", "put", value]),
+      ...plan.mutations.appendRevisions.map(value => ["revisions", "add", value]),
       ...plan.mutations.appendEvidence.map(value => ["evidence", "add", value]),
       ...plan.mutations.appendObservations.map(value => ["observations", "add", value]),
       ...plan.mutations.appendRuns.map(value => ["runs", "add", value]),
       ...plan.mutations.updateCursors.map(value => ["cursors", "put", value])
     ];
-    const exactCounts = { entries: approvedCount, revisions: 0, evidence: approvedCount,
-      observations: approvedCount, runs: 1, cursors: 1 };
-    if (expectedOperations.length !== 3 * approvedCount + 2 || !Core.same(
+    const exactCounts = { entries: approvedCounts.eventEntryCreate + approvedCounts.eventEntryUpdate,
+      revisions: approvedCounts.semanticRevisionCreate, evidence: approvedCounts.evidenceCreate,
+      observations: approvedCounts.observationCreate, runs: 1, cursors: 1 };
+    if (expectedOperations.length !== Object.values(exactCounts).reduce((sum, value) => sum + value, 0) || !Core.same(
       Object.fromEntries(stores.map(([field]) => [field, expectedOperations.filter(op => op[0] === field).length])),
       exactCounts))
       throw Error("exact_mutation_set_required");
@@ -107,6 +111,8 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
                   value.sourceId !== binding.sourceId || !Core.same(expected[2], value))
                 throw Error("exact_mutation_set_violation");
               const request = objectStore[operation](value);
+              if (audit.entryOperations && pair[0] === "entries")
+                audit.entryOperations[operation === "add" ? "create" : "update"]++;
               operationIndex++; audit.attemptedWrites[pair[0]]++;
               return request;
             };
@@ -160,7 +166,7 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
   return observation;
 }
 
-// Only these ten code-fixed closures exist. No arbitrary boundary/source API.
+// Only these eleven code-fixed closures exist. No arbitrary boundary/source API.
 function fixedExecutor(Boundary, approvedMode) {
 function prepareProbeProgram(authorization, binding) {
   const context = Boundary.consumeFirstProductionAuthorization(authorization, binding);
@@ -179,7 +185,7 @@ function prepareProbeProgram(authorization, binding) {
     return (${executeInProbe.toString()})(${JSON.stringify(context)}, module.exports, Schema,
       (${Bootstrap.inspect.toString()}), (${Schema.fingerprint.toString()}),
       ${JSON.stringify(Boundary.SOURCE_ID)}, ${JSON.stringify(approvedMode)},
-      ${JSON.stringify(Boundary.EXPECTED_COUNTS.eventEntryUpdate)});
+      ${JSON.stringify(Boundary.EXPECTED_COUNTS)});
   })()`;
   return { program, ticket: context.ticket };
 }
@@ -213,4 +219,5 @@ const nyse = fixedExecutor(Boundaries.nyse, "E4b5_nyse_explicit_one_shot");
 const jpxHolidays = fixedExecutor(Boundaries.jpxHolidays, "E4b6_jpx_holidays_explicit_one_shot");
 const laborEvidence = fixedExecutor(Boundaries.laborEvidence, "E4c_labor_explicit_one_shot");
 const cpiEvidence = fixedExecutor(Boundaries.cpiEvidence, "E4c_cpi_explicit_one_shot");
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence });
+const blsNew = fixedExecutor(Boundaries.blsNew, "E4d_bls_explicit_one_shot");
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence, blsNew });
