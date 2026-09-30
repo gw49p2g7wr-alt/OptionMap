@@ -4,6 +4,7 @@
 const Registry = require("../marketCalendar/sourceRegistry.js");
 const Canonicalizer = require("../marketCalendar/marketEventCanonicalizer.js");
 const Integrity = require("../marketCalendarHistory/historyIntegrity.js");
+const ShadowCycle = require("./formalShadowCycle.js");
 
 const SOURCE_IDS = Object.freeze(Object.keys(Registry.SOURCES).sort());
 const HASH = /^[0-9a-f]{64}$/;
@@ -29,7 +30,7 @@ function differentFields(before, after) {
   const a = semanticFields(before), b = semanticFields(after);
   return Object.keys(a).filter(field => Canonicalizer.stable(a[field]) !== Canonicalizer.stable(b[field]));
 }
-async function compare({ sourceResults, formalSnapshot } = {}) {
+async function compare({ sourceResults, formalSnapshot, cycleContext } = {}) {
   if (!Array.isArray(sourceResults) || sourceResults.length !== SOURCE_IDS.length ||
       new Set(sourceResults.map(r => r?.sourceId)).size !== SOURCE_IDS.length ||
       sourceResults.some(r => !SOURCE_IDS.includes(r?.sourceId) ||
@@ -37,29 +38,40 @@ async function compare({ sourceResults, formalSnapshot } = {}) {
   const names = ["entries", "revisions", "evidence", "observations", "runs", "cursors"];
   if (!formalSnapshot || names.some(name => !Array.isArray(formalSnapshot[name])))
     return fail("formal_snapshot_invalid");
-  const storage = Integrity.auditStorageSnapshot(formalSnapshot);
+  let cycle = null;
+  if (cycleContext) {
+    try { cycle = ShadowCycle.get(cycleContext, formalSnapshot); }
+    catch (_) { return fail("shadow_cycle_invalid_or_closed"); }
+  }
+  const storage = cycle ? { valid: true } : Integrity.auditStorageSnapshot(formalSnapshot);
   if (!storage.valid) return fail("formal_storage_ambiguous");
-  const integrity = await Integrity.audit(formalSnapshot);
+  const integrity = cycle ? { valid: true } : await Integrity.audit(formalSnapshot);
   if (!integrity.valid) return fail("formal_integrity_invalid");
-  const active = [], revisionByKey = new Map(formalSnapshot.revisions.map(r => [r.revisionKey, r]));
-  for (const entry of formalSnapshot.entries) {
+  const active = [], revisionByKey = cycle?.revisionByKey || new Map(formalSnapshot.revisions.map(r => [r.revisionKey, r]));
+  if (cycle) active.push(...[...cycle.activeBySource.values()].flat());
+  else for (const entry of formalSnapshot.entries) {
     const own = formalSnapshot.revisions.filter(r => r.eventKey === entry.eventKey && r.validTo === null);
     if (own.length !== 1 || own[0].revisionKey !== entry.activeRevisionKey ||
         own[0].sourceId !== entry.sourceId) return fail("formal_active_ambiguity");
     active.push({ ...own[0], eventKey: entry.eventKey, sourceId: entry.sourceId });
   }
-  if (formalSnapshot.revisions.some(r => r.validTo === null &&
+  if (!cycle && formalSnapshot.revisions.some(r => r.validTo === null &&
       !formalSnapshot.entries.some(e => e.eventKey === r.eventKey)))
     return fail("formal_orphan_active_revision");
   const candidates = sourceResults.flatMap(r => r.canonicalRecords.map(record =>
     ({ ...record, sourceId: r.sourceId })));
   const seenEvents = new Map(), seenRevisions = new Set();
   for (const record of candidates) {
-    if (!record.eventKey || !HASH.test(record.canonicalContentHash || "") ||
+    const original = sourceResults.find(s => s.sourceId === record.sourceId).canonicalRecords
+      .find(r => r.eventKey === record.eventKey && r.revisionKey === record.revisionKey);
+    const validated = cycle && cycle.candidateValidation.get(original) === record.sourceId;
+    if (!validated && (!record.eventKey || !HASH.test(record.canonicalContentHash || "") ||
         record.revisionKey !== `${record.eventKey}|sha256:${record.canonicalContentHash}` ||
         record.acquisitionEvidence?.sourceId !== record.sourceId ||
-        await Canonicalizer.sha256(Integrity.semanticContent(record)) !== record.canonicalContentHash)
+        (cycle ? ShadowCycle.sourceHash(cycle, Integrity.semanticContent(record)) :
+          await Canonicalizer.sha256(Integrity.semanticContent(record))) !== record.canonicalContentHash))
       return fail("candidate_identity_invalid");
+    if (cycle && !validated) { ShadowCycle.freeze(original); cycle.candidateValidation.set(original, record.sourceId); }
     if (seenEvents.has(record.eventKey)) return fail(seenEvents.get(record.eventKey) === record.canonicalContentHash
       ? "candidate_duplicate_event" : "candidate_semantic_conflict");
     if (seenRevisions.has(record.revisionKey)) return fail("candidate_duplicate_revision");
@@ -67,8 +79,8 @@ async function compare({ sourceResults, formalSnapshot } = {}) {
   }
   const formalByKey = new Map(ordered(active).map(r => [key(r), r]));
   const candidateByKey = new Map(ordered(candidates).map(r => [key(r), r]));
-  const evidenceByRevision = new Map();
-  for (const evidence of formalSnapshot.evidence) {
+  const evidenceByRevision = cycle?.evidenceUrls || new Map();
+  if (!cycle) for (const evidence of formalSnapshot.evidence) {
     if (!revisionByKey.has(evidence.revisionKey)) return fail("formal_evidence_orphan");
     const urls = evidenceByRevision.get(evidence.revisionKey) || new Set();
     if (evidence.acquisitionEvidence?.sourceUrl) urls.add(evidence.acquisitionEvidence.sourceUrl);

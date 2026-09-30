@@ -9,6 +9,7 @@ const Transition = require("./transitionPlanner.js");
 const Mapper = require("./storageRecordMapper.js");
 const Compare = require("../marketCalendarRuntime/formalExactComparison.js");
 const Authority = require("./formalWriterAuthority.js");
+const ShadowCycle = require("../marketCalendarRuntime/formalShadowCycle.js");
 
 const PLAN_VERSION = 1;
 const HASH = /^[0-9a-f]{64}$/;
@@ -76,7 +77,8 @@ function rejected(sourceId, reason, retainedCandidateKeys = []) {
     counts: countsFor(mutations), retainedCandidateKeys: [...retainedCandidateKeys].sort(),
     planIdentity: null });
 }
-async function skipped(sourceId, reason, records, comparisonSummary = null, sourceOutcome = null) {
+async function skipped(sourceId, reason, records, comparisonSummary = null, sourceOutcome = null,
+  hash = Canonicalizer.sha256) {
   const mutations = emptyMutations(), retainedCandidateKeys =
     records.map(record => record.eventKey).sort();
   const base = { planVersion: PLAN_VERSION, planStatus: "skipped", sourceId,
@@ -84,9 +86,9 @@ async function skipped(sourceId, reason, records, comparisonSummary = null, sour
     authorityIdentity: Authority.SHADOW_AUTHORITY.identity,
     skippedNotEvaluated: comparisonSummary?.notEvaluated || 0,
     retainedCandidateKeys, mutations, counts: countsFor(mutations) };
-  return frozen({ ...base, planIdentity: await Canonicalizer.sha256(base) });
+  return frozen({ ...base, planIdentity: await hash(base) });
 }
-async function validateShadowPlan(plan) {
+async function validateShadowPlan(plan, cycleContext = null, formalSnapshot = null) {
   if (!plan || plan.planVersion !== PLAN_VERSION || plan.planStatus !== "planned" ||
       plan.writerState !== "shadow" || plan.writeAllowed !== false ||
       !Registry.getSource(plan.sourceId) ||
@@ -114,12 +116,19 @@ async function validateShadowPlan(plan) {
         other.revisionKey === value.revisionKey)))
     return frozen({ valid: false, reason: "shadow_plan_invalid" });
   const { planIdentity, ...material } = plan;
-  if (await Canonicalizer.sha256(material) !== planIdentity)
+  const cycle = cycleContext ? ShadowCycle.get(cycleContext, formalSnapshot) : null;
+  if ((cycle ? ShadowCycle.sourceHash(cycle, material) : await Canonicalizer.sha256(material)) !== planIdentity)
     return frozen({ valid: false, reason: "plan_identity_mismatch" });
   return frozen({ valid: true, reason: null });
 }
 async function buildSourceShadowPlan(input = {}) {
-  const { sourceId, sourceResult, comparison, formalSnapshot, schemaFingerprint, run } = input;
+  const { sourceId, sourceResult, comparison, formalSnapshot, schemaFingerprint, run, cycleContext } = input;
+  let cycle = null;
+  if (cycleContext) {
+    try { cycle = ShadowCycle.get(cycleContext, formalSnapshot); }
+    catch (_) { return rejected(sourceId, "shadow_cycle_invalid_or_closed"); }
+  }
+  const hash = value => cycle ? ShadowCycle.sourceHash(cycle, value) : Canonicalizer.sha256(value);
   if (!Registry.getSource(sourceId)) return rejected(sourceId, "source_unknown");
   const selected = Authority.selectWriterState(sourceId, Authority.SHADOW_AUTHORITY);
   if (!selected.valid || selected.state !== "shadow") return rejected(sourceId, "writer_authority_invalid");
@@ -134,7 +143,7 @@ async function buildSourceShadowPlan(input = {}) {
       sourceResult.candidateStatus !== "available" ||
       sourceResult.failedRoles?.length)
     return skipped(sourceId, "source_incomplete", records, null,
-      sourceResult.acquisitionOutcome || "unknown");
+      sourceResult.acquisitionOutcome || "unknown", hash);
   if (!records.length || !Array.isArray(sourceResult.documentHealth) ||
       !sourceResult.documentHealth.length || sourceResult.documentHealth.some(role =>
         role.fetchOutcome !== "success" || role.parseOutcome !== "success"))
@@ -146,14 +155,14 @@ async function buildSourceShadowPlan(input = {}) {
   if (!formalSnapshot || Object.entries(SNAPSHOT_FIELDS).some(([field]) =>
       !Array.isArray(formalSnapshot[field])) || !comparison)
     return rejected(sourceId, "comparison_or_snapshot_invalid");
-  if (!formalLinkageValid(formalSnapshot))
+  if (!cycle && !formalLinkageValid(formalSnapshot))
     return rejected(sourceId, "formal_snapshot_linkage_invalid");
   if (comparison.status !== "compared")
     return rejected(sourceId, comparison.reason || "comparison_rejected");
   const allResults = Compare.SOURCE_IDS.map(id => id === sourceId ? sourceResult :
     { sourceId: id, canonicalRecords: [], acquisitionOutcome: "not_attempted",
       candidateStatus: "unavailable", absenceAuthority: "none" });
-  const checked = await Compare.compare({ sourceResults: allResults, formalSnapshot });
+  const checked = await Compare.compare({ sourceResults: allResults, formalSnapshot, cycleContext });
   if (checked.status !== "compared") return rejected(sourceId, checked.reason);
   const summary = checked.summaries.find(value => value.sourceId === sourceId),
     supplied = comparison.summaries?.find(value => value.sourceId === sourceId),
@@ -162,12 +171,12 @@ async function buildSourceShadowPlan(input = {}) {
   if (!same(summary, supplied) || !same(differences, suppliedDifferences))
     return rejected(sourceId, "comparison_identity_mismatch");
   if (!selected.writeEligible)
-    return skipped(sourceId, selected.reason, records, summary, "complete");
+    return skipped(sourceId, selected.reason, records, summary, "complete", hash);
   const previousRun = run && formalSnapshot.runs.find(value => value.sourceId === sourceId &&
     value.runId === run.runId);
   if (previousRun) return same(previousRun,
     { ...run, runKey: `${sourceId}|${run.runId}`, contractVersion: Contract.CONTRACT_VERSION }) ?
-    skipped(sourceId, "already_committed", records, summary, "complete") :
+    skipped(sourceId, "already_committed", records, summary, "complete", hash) :
     rejected(sourceId, "duplicate_run_conflict");
   if (!run || Object.keys(run).sort().join("|") !==
         ["sourceId", "runId", "acceptedAt", "fetchedAt", "status", "semanticSetHash"].sort().join("|") ||
@@ -175,7 +184,7 @@ async function buildSourceShadowPlan(input = {}) {
       !Contract.validateAcceptedRun(run, { previousAcceptedAt:
         formalSnapshot.cursors.find(value => value.sourceId === sourceId)?.acceptedAt || null }).valid)
     return rejected(sourceId, "accepted_run_invalid");
-  const semanticSetHash = await Canonicalizer.sha256(records.map(value => value.revisionKey).sort());
+  const semanticSetHash = await hash(records.map(value => value.revisionKey).sort());
   if (run.semanticSetHash !== semanticSetHash)
     return rejected(sourceId, "candidate_set_identity_mismatch");
   const transition = Transition.planTransition({ snapshot: formalSnapshot, run,
@@ -184,7 +193,7 @@ async function buildSourceShadowPlan(input = {}) {
     return rejected(sourceId, `transition_${transition.outcome}`);
   const mapped = Mapper.mapPlan(transition.plan), mutations = Object.fromEntries(
     Object.keys(FIELDS).map(field => [field, clone(mapped[field])]));
-  const existingEvidence = new Map(formalSnapshot.evidence.map(value =>
+  const existingEvidence = cycle?.evidenceByKey || new Map(formalSnapshot.evidence.map(value =>
     [value.evidenceLinkKey, value]));
   const filteredEvidence = [];
   for (const value of mutations.appendEvidence) {
@@ -200,23 +209,24 @@ async function buildSourceShadowPlan(input = {}) {
     if (new Set(values).size !== values.length)
       return rejected(sourceId, `duplicate_${field}`);
   }
-  if (mutations.appendObservations.some(value => formalSnapshot.observations.some(existing =>
-    existing.observationKey === value.observationKey)))
+  const existingObservationKeys = cycle ? (cycle.observationKeys ||= new Set(formalSnapshot.observations.map(o => o.observationKey))) : null;
+  if (mutations.appendObservations.some(value => existingObservationKeys ? existingObservationKeys.has(value.observationKey) :
+    formalSnapshot.observations.some(existing => existing.observationKey === value.observationKey)))
     return rejected(sourceId, "observation_identity_conflict");
-  const normalizedSnapshot = Object.fromEntries(Object.entries(SNAPSHOT_FIELDS).map(
+  const normalizedSnapshot = cycle?.sorted || Object.fromEntries(Object.entries(SNAPSHOT_FIELDS).map(
     ([field, key]) => [field, sorted(formalSnapshot[field], key)]));
-  const preconditionIdentity = await Canonicalizer.sha256({ schemaFingerprint,
+  const preconditionIdentity = cycle?.snapshotIdentity || await hash({ schemaFingerprint,
     formalSnapshot: normalizedSnapshot });
-  const activeFormalIdentity = await Canonicalizer.sha256(sorted(formalSnapshot.entries,
+  const activeFormalIdentity = cycle?.activeFormalIdentity || await hash(sorted(formalSnapshot.entries,
     "eventKey").map(value => ({ sourceId: value.sourceId, eventKey: value.eventKey,
       activeRevisionKey: value.activeRevisionKey })));
-  const candidateSetIdentity = await Canonicalizer.sha256(sorted(records, "eventKey").map(value =>
+  const candidateSetIdentity = await hash(sorted(records, "eventKey").map(value =>
     ({ eventKey: value.eventKey, revisionKey: value.revisionKey,
       acquisitionEvidenceKey: value.acquisitionEvidenceKey })));
-  const acquisitionIdentity = await Canonicalizer.sha256({ run,
+  const acquisitionIdentity = await hash({ run,
     documentHealth: sourceResult.documentHealth, coverage: sourceResult.coverage || null,
     absenceAuthority: sourceResult.absenceAuthority || "none" });
-  const comparisonIdentity = await Canonicalizer.sha256({ summary, differences });
+  const comparisonIdentity = await hash({ summary, differences });
   const base = { planVersion: PLAN_VERSION, planStatus: "planned", sourceId,
     sourceOutcome: "complete",
     writerState: "shadow", writeAllowed: false,
@@ -227,8 +237,8 @@ async function buildSourceShadowPlan(input = {}) {
     retainedCandidateKeys: records.map(value => value.eventKey).sort(),
     mutations, counts: countsFor(mutations),
     transactionPreparation: "all_hashes_before_transaction" };
-  const planIdentity = await Canonicalizer.sha256(base), plan = frozen({ ...base, planIdentity });
-  const validation = await validateShadowPlan(plan);
+  const planIdentity = await hash(base), plan = frozen({ ...base, planIdentity });
+  const validation = await validateShadowPlan(plan, cycleContext, formalSnapshot);
   if (!validation.valid) return rejected(sourceId, validation.reason);
   return plan;
 }
