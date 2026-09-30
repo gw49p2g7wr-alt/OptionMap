@@ -9,7 +9,7 @@ const Canonical = require("../marketCalendar/marketEventCanonicalizer.js");
 
 // Executed in the existing sandboxed read-only probe window. The transaction
 // algorithm is the actual shared core, not a second production writer.
-async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode) {
+async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode, approvedCount) {
   const { binding, before, plan, expectedAfter, expiresAt } = context;
   const stores = Core.STORE_ORDER, names = Core.STORE_NAMES;
   const audit = { opens: 0, readonly: 0, readwrite: 0, create: 0, upgrade: 0,
@@ -41,9 +41,11 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
       ...plan.mutations.appendRuns.map(value => ["runs", "add", value]),
       ...plan.mutations.updateCursors.map(value => ["cursors", "put", value])
     ];
-    if (expectedOperations.length !== 14 || !Core.same(
+    const exactCounts = { entries: approvedCount, revisions: 0, evidence: approvedCount,
+      observations: approvedCount, runs: 1, cursors: 1 };
+    if (expectedOperations.length !== 3 * approvedCount + 2 || !Core.same(
       Object.fromEntries(stores.map(([field]) => [field, expectedOperations.filter(op => op[0] === field).length])),
-      { entries: 4, revisions: 0, evidence: 4, observations: 4, runs: 1, cursors: 1 }))
+      exactCounts))
       throw Error("exact_mutation_set_required");
     const catalog = await indexedDB.databases();
     const item = catalog.find(value => value.name === binding.databaseName);
@@ -141,8 +143,7 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
     observation.committed = observation.writerResult.committed === true;
     if (!observation.committed) throw Error(observation.writerResult.reason || "write_not_committed");
     if (audit.readwrite !== 1 || audit.committed !== 1 || audit.aborted !== 0 ||
-        !Core.same(audit.committedWrites, { entries: 4, revisions: 0, evidence: 4,
-          observations: 4, runs: 1, cursors: 1 })) throw Error("actual_mutation_count_mismatch");
+        !Core.same(audit.committedWrites, exactCounts)) throw Error("actual_mutation_count_mismatch");
     db.close(); audit.openHandles--; db = null;
     observation.phase = "fresh_readback";
     db = await open(); audit.readbackReopens++;
@@ -159,7 +160,7 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
   return observation;
 }
 
-// Only these two code-fixed closures exist. No arbitrary boundary/source API.
+// Only these three code-fixed closures exist. No arbitrary boundary/source API.
 function fixedExecutor(Boundary, approvedMode) {
 function prepareProbeProgram(authorization, binding) {
   const context = Boundary.consumeFirstProductionAuthorization(authorization, binding);
@@ -177,7 +178,8 @@ function prepareProbeProgram(authorization, binding) {
     });
     return (${executeInProbe.toString()})(${JSON.stringify(context)}, module.exports, Schema,
       (${Bootstrap.inspect.toString()}), (${Schema.fingerprint.toString()}),
-      ${JSON.stringify(Boundary.SOURCE_ID)}, ${JSON.stringify(approvedMode)});
+      ${JSON.stringify(Boundary.SOURCE_ID)}, ${JSON.stringify(approvedMode)},
+      ${JSON.stringify(Boundary.EXPECTED_COUNTS.eventEntryUpdate)});
   })()`;
   return { program, ticket: context.ticket };
 }
@@ -203,4 +205,5 @@ return Object.freeze({ prepareProbeProgram, executeFirstProductionWrite });
 }
 const first = fixedExecutor(Boundaries, "E3b_explicit_one_shot");
 const sna = fixedExecutor(Boundaries.sna, "E4a_sna_explicit_one_shot");
-module.exports = Object.freeze({ ...first, sna });
+const bea = fixedExecutor(Boundaries.bea, "E4b1_bea_explicit_one_shot");
+module.exports = Object.freeze({ ...first, sna, bea });

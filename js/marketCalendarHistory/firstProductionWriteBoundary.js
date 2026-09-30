@@ -14,14 +14,14 @@ const Routes = require("../marketCalendarRuntime/calendarRouteAuthority.js");
 const NetworkPolicy = require("../marketCalendarRuntime/calendarNetworkPolicy.js");
 
 // Private construction only: callers can select neither source nor authority mode.
-function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX) {
+function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX, EVENT_COUNT) {
 const DATABASE_NAME = Schema.DATABASE_NAME;
 const MODE = "PREWRITE_ONLY";
-const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: 0, eventEntryUpdate: 4,
-  semanticRevisionCreate: 0, semanticRevisionClose: 0, evidenceCreate: 4,
-  observationCreate: 4, sourceRunCreate: 1, sourceCursorUpdate: 1 });
-const MUTATION_CEILING = Object.freeze({ appendEntries: 0, updateEntries: 4,
-  closeRevisions: 0, appendRevisions: 0, appendEvidence: 4, appendObservations: 4,
+const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: 0, eventEntryUpdate: EVENT_COUNT,
+  semanticRevisionCreate: 0, semanticRevisionClose: 0, evidenceCreate: EVENT_COUNT,
+  observationCreate: EVENT_COUNT, sourceRunCreate: 1, sourceCursorUpdate: 1 });
+const MUTATION_CEILING = Object.freeze({ appendEntries: 0, updateEntries: EVENT_COUNT,
+  closeRevisions: 0, appendRevisions: 0, appendEvidence: EVENT_COUNT, appendObservations: EVENT_COUNT,
   appendRuns: 1, updateCursors: 1 });
 const sessions = new WeakMap(), tickets = new WeakMap();
 const authorizations = new WeakMap();
@@ -137,7 +137,7 @@ async function completePrewrite(session, input) {
   if (!globalEligible || SOURCE_ID === Authority.FIRST_WRITE_SOURCE_ID && !shadowReport.firstLiveWriteEligible)
     return { ...rejected(shadowReport.reason || "fresh_gate_not_ready"), shadowReport };
   const first = shadowReport.sourceRows.find(value => value.sourceId === SOURCE_ID);
-  if (first.candidate !== 4 || first.formalActive !== 4 || first.unchanged !== 4 ||
+  if (first.candidate !== EVENT_COUNT || first.formalActive !== EVENT_COUNT || first.unchanged !== EVENT_COUNT ||
       first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== 0 || first.notEvaluated !== 0)
     return rejected("first_source_expectation_mismatch");
   const sourceResult = sourceResults.find(value => value.sourceId === SOURCE_ID),
@@ -243,6 +243,7 @@ return Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION
   validateFreshBinding, requestProductionWrite, verifyReadback,
   authorizeFirstProductionWrite, consumeFirstProductionAuthorization });
 }
-const first = fixedBoundary(Authority.FIRST_WRITE_SOURCE_ID, "E3b_explicit_one_shot", "e3a-prewrite");
-const sna = fixedBoundary("jp-esri-sna-calendar", "E4a_sna_explicit_one_shot", "e4a-sna");
-module.exports = Object.freeze({ ...first, sna });
+const first = fixedBoundary(Authority.FIRST_WRITE_SOURCE_ID, "E3b_explicit_one_shot", "e3a-prewrite", 4);
+const sna = fixedBoundary("jp-esri-sna-calendar", "E4a_sna_explicit_one_shot", "e4a-sna", 4);
+const bea = fixedBoundary("us-bea-calendar", "E4b1_bea_explicit_one_shot", "e4b1-bea", 8);
+module.exports = Object.freeze({ ...first, sna, bea });
