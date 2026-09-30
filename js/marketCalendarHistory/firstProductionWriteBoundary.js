@@ -250,4 +250,5 @@ const census = fixedBoundary("us-census-calendar", "E4b2_census_explicit_one_sho
 const fomc = fixedBoundary("us-fed-fomc-calendar", "E4b3_fomc_explicit_one_shot", "e4b3-fomc", 24);
 const jpxDerivatives = fixedBoundary("jp-jpx-derivatives-calendar", "E4b4_jpx_derivatives_explicit_one_shot", "e4b4-jpx-derivatives", 24);
 const nyse = fixedBoundary("us-nyse-market-holidays", "E4b5_nyse_explicit_one_shot", "e4b5-nyse", 34);
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse });
+const jpxHolidays = fixedBoundary("jp-jpx-market-holidays", "E4b6_jpx_holidays_explicit_one_shot", "e4b6-jpx-holidays", 41);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays });
