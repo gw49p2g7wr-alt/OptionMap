@@ -160,7 +160,7 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
   return observation;
 }
 
-// Only these eight code-fixed closures exist. No arbitrary boundary/source API.
+// Only these nine code-fixed closures exist. No arbitrary boundary/source API.
 function fixedExecutor(Boundary, approvedMode) {
 function prepareProbeProgram(authorization, binding) {
   const context = Boundary.consumeFirstProductionAuthorization(authorization, binding);
@@ -211,4 +211,5 @@ const fomc = fixedExecutor(Boundaries.fomc, "E4b3_fomc_explicit_one_shot");
 const jpxDerivatives = fixedExecutor(Boundaries.jpxDerivatives, "E4b4_jpx_derivatives_explicit_one_shot");
 const nyse = fixedExecutor(Boundaries.nyse, "E4b5_nyse_explicit_one_shot");
 const jpxHolidays = fixedExecutor(Boundaries.jpxHolidays, "E4b6_jpx_holidays_explicit_one_shot");
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays });
+const laborEvidence = fixedExecutor(Boundaries.laborEvidence, "E4c_labor_explicit_one_shot");
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence });

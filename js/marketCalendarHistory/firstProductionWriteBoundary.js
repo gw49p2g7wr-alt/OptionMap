@@ -14,7 +14,8 @@ const Routes = require("../marketCalendarRuntime/calendarRouteAuthority.js");
 const NetworkPolicy = require("../marketCalendarRuntime/calendarNetworkPolicy.js");
 
 // Private construction only: callers can select neither source nor authority mode.
-function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX, EVENT_COUNT) {
+function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX, EVENT_COUNT,
+  EVIDENCE_ONLY_COUNT = 0, NEW_EVIDENCE_URL = null) {
 const DATABASE_NAME = Schema.DATABASE_NAME;
 const MODE = "PREWRITE_ONLY";
 const EXPECTED_COUNTS = Object.freeze({ eventEntryCreate: 0, eventEntryUpdate: EVENT_COUNT,
@@ -32,6 +33,38 @@ const exactKeys = (value, keys) => value && typeof value === "object" &&
   Core.same(Object.keys(value).sort(), [...keys].sort());
 const counts = snapshot => Object.fromEntries(Core.STORE_ORDER.map(([field]) =>
   [field, snapshot[field].length]));
+function evidenceTransitionAudit(before, plan, after = null) {
+  if (!EVIDENCE_ONLY_COUNT) return null;
+  const rows = plan.mutations.appendEvidence.map(next => {
+    const entry = before.entries.find(value => value.eventKey === next.eventKey),
+      revision = before.revisions.find(value => value.revisionKey === entry?.activeRevisionKey),
+      old = before.evidence.filter(value => value.eventKey === next.eventKey &&
+        value.revisionKey === entry?.activeRevisionKey);
+    const distinct = !before.evidence.some(value => value.evidenceLinkKey === next.evidenceLinkKey);
+    const sameRevision = next.revisionKey === entry?.activeRevisionKey && !!revision;
+    const provenanceChanged = next.acquisitionEvidence?.sourceUrl === NEW_EVIDENCE_URL &&
+      old.length > 0 && old.every(value => value.acquisitionEvidence?.sourceUrl &&
+        value.acquisitionEvidence.sourceUrl !== NEW_EVIDENCE_URL);
+    const oldPreserved = !after || old.every(value => Core.same(value,
+      after.evidence.find(observed => observed.evidenceLinkKey === value.evidenceLinkKey)));
+    const revisionPreserved = !after || Core.same(revision,
+      after.revisions.find(value => value.revisionKey === next.revisionKey)) &&
+      after.entries.find(value => value.eventKey === next.eventKey)?.activeRevisionKey === next.revisionKey;
+    const newLinked = !after || Core.same(next,
+      after.evidence.find(value => value.evidenceLinkKey === next.evidenceLinkKey));
+    return { eventKey: next.eventKey, revisionKey: next.revisionKey,
+      semanticHash: revision?.canonicalContentHash || null,
+      oldEvidenceKeys: old.map(value => value.evidenceLinkKey).sort(),
+      oldUrls: [...new Set(old.map(value => value.acquisitionEvidence?.sourceUrl))].sort(),
+      newEvidenceKey: next.evidenceLinkKey, newUrl: next.acquisitionEvidence?.sourceUrl || null,
+      distinct, sameRevision, provenanceChanged, oldPreserved, revisionPreserved, newLinked };
+  }).sort((a, b) => a.eventKey.localeCompare(b.eventKey));
+  return { valid: rows.length === EVIDENCE_ONLY_COUNT &&
+    new Set(rows.map(value => value.eventKey)).size === EVIDENCE_ONLY_COUNT &&
+    rows.every(value => value.distinct && value.sameRevision && value.provenanceChanged &&
+      value.oldPreserved && value.revisionPreserved && value.newLinked),
+    eventCount: rows.length, rows };
+}
 async function safetySnapshot(snapshot) {
   const semantic = await Integrity.audit(snapshot), storage = Integrity.auditStorageSnapshot(snapshot),
     entries = new Map(snapshot.entries.map(value => [value.eventKey, value])),
@@ -138,7 +171,7 @@ async function completePrewrite(session, input) {
     return { ...rejected(shadowReport.reason || "fresh_gate_not_ready"), shadowReport };
   const first = shadowReport.sourceRows.find(value => value.sourceId === SOURCE_ID);
   if (first.candidate !== EVENT_COUNT || first.formalActive !== EVENT_COUNT || first.unchanged !== EVENT_COUNT ||
-      first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== 0 || first.notEvaluated !== 0)
+      first.changed !== 0 || first.new !== 0 || first.evidenceOnly !== EVIDENCE_ONLY_COUNT || first.notEvaluated !== 0)
     return rejected("first_source_expectation_mismatch");
   const sourceResult = sourceResults.find(value => value.sourceId === SOURCE_ID),
     comparison = await Compare.compare({ sourceResults, formalSnapshot: state.before }),
@@ -150,6 +183,8 @@ async function completePrewrite(session, input) {
       formalSnapshot: state.before, schemaFingerprint: Schema.EXPECTED_FINGERPRINT, run }),
     validation = await validateFirstWritePlan(plan, state.before);
   if (!validation.valid) return rejected(validation.reason);
+  const provenanceAudit = evidenceTransitionAudit(state.before, plan);
+  if (provenanceAudit && !provenanceAudit.valid) return rejected("evidence_transition_invalid");
   const corePreparation = Core.prepareExecution(plan, state.before, MUTATION_CEILING),
     expectedAfter = Core.applyToMemory(state.before, plan, Core.expectedWrites(plan, state.before)),
     beforeSafety = await safetySnapshot(state.before), afterSafety = await safetySnapshot(expectedAfter);
@@ -170,7 +205,7 @@ async function completePrewrite(session, input) {
   return { status: "prewrite_eligible", reason: null, mode: MODE, writeAllowed: false,
     firstLiveWriteEligible: true, writerAuthorityState: Authority.selectWriterState(SOURCE_ID).state,
     coreWriteExecutions: 0, ticket, binding, sourceId: SOURCE_ID, expectedMutationCounts: plan.counts,
-    identities: Core.copy(identities),
+    identities: Core.copy(identities), ...(provenanceAudit ? { provenanceAudit } : {}),
     expectation: { beforeIdentity: await Canonical.sha256(Core.sorted(state.before)),
       afterIdentity: await Canonical.sha256(expectedAfter), beforeCounts: counts(state.before),
       afterCounts: counts(expectedAfter), beforeSafety, afterSafety,
@@ -193,7 +228,9 @@ async function verifyReadback(ticket, snapshot) {
   const state = tickets.get(ticket);
   if (!state) return { valid: false, reason: "fresh_session_required" };
   const audit = await safetySnapshot(snapshot);
-  return { valid: audit.valid && Core.same(Core.sorted(snapshot), state.expectedAfter), audit,
+  const provenanceAudit = evidenceTransitionAudit(state.before, state.plan, snapshot);
+  return { valid: audit.valid && Core.same(Core.sorted(snapshot), state.expectedAfter) &&
+    (!provenanceAudit || provenanceAudit.valid), audit, ...(provenanceAudit ? { provenanceAudit } : {}),
     expectedIdentity: await Canonical.sha256(state.expectedAfter),
     observedIdentity: await Canonical.sha256(Core.sorted(snapshot)) };
 }
@@ -251,4 +288,6 @@ const fomc = fixedBoundary("us-fed-fomc-calendar", "E4b3_fomc_explicit_one_shot"
 const jpxDerivatives = fixedBoundary("jp-jpx-derivatives-calendar", "E4b4_jpx_derivatives_explicit_one_shot", "e4b4-jpx-derivatives", 24);
 const nyse = fixedBoundary("us-nyse-market-holidays", "E4b5_nyse_explicit_one_shot", "e4b5-nyse", 34);
 const jpxHolidays = fixedBoundary("jp-jpx-market-holidays", "E4b6_jpx_holidays_explicit_one_shot", "e4b6-jpx-holidays", 41);
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays });
+const laborEvidence = fixedBoundary("jp-stat-labor", "E4c_labor_explicit_one_shot", "e4c-labor", 15, 15,
+  require("../marketCalendarIsolated/estatRoute.js").ROUTES["jp-stat-labor"].url);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence });
