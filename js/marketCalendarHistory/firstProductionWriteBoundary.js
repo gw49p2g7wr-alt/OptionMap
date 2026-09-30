@@ -248,4 +248,5 @@ const sna = fixedBoundary("jp-esri-sna-calendar", "E4a_sna_explicit_one_shot", "
 const bea = fixedBoundary("us-bea-calendar", "E4b1_bea_explicit_one_shot", "e4b1-bea", 8);
 const census = fixedBoundary("us-census-calendar", "E4b2_census_explicit_one_shot", "e4b2-census", 13);
 const fomc = fixedBoundary("us-fed-fomc-calendar", "E4b3_fomc_explicit_one_shot", "e4b3-fomc", 24);
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc });
+const jpxDerivatives = fixedBoundary("jp-jpx-derivatives-calendar", "E4b4_jpx_derivatives_explicit_one_shot", "e4b4-jpx-derivatives", 24);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives });
