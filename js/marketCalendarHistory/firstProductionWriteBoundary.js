@@ -247,4 +247,5 @@ const first = fixedBoundary(Authority.FIRST_WRITE_SOURCE_ID, "E3b_explicit_one_s
 const sna = fixedBoundary("jp-esri-sna-calendar", "E4a_sna_explicit_one_shot", "e4a-sna", 4);
 const bea = fixedBoundary("us-bea-calendar", "E4b1_bea_explicit_one_shot", "e4b1-bea", 8);
 const census = fixedBoundary("us-census-calendar", "E4b2_census_explicit_one_shot", "e4b2-census", 13);
-module.exports = Object.freeze({ ...first, sna, bea, census });
+const fomc = fixedBoundary("us-fed-fomc-calendar", "E4b3_fomc_explicit_one_shot", "e4b3-fomc", 24);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc });
