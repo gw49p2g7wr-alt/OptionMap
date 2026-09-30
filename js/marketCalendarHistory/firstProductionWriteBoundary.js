@@ -53,6 +53,8 @@ function evidenceTransitionAudit(before, plan, after = null) {
     const newLinked = !after || Core.same(next,
       after.evidence.find(value => value.evidenceLinkKey === next.evidenceLinkKey));
     return { eventKey: next.eventKey, revisionKey: next.revisionKey,
+      ...(SOURCE_ID === "jp-stat-cpi" ? { lane: revision?.logical?.scope,
+        eventType: revision?.logical?.eventType, edition: revision?.logical?.edition } : {}),
       semanticHash: revision?.canonicalContentHash || null,
       oldEvidenceKeys: old.map(value => value.evidenceLinkKey).sort(),
       oldUrls: [...new Set(old.map(value => value.acquisitionEvidence?.sourceUrl))].sort(),
@@ -135,6 +137,27 @@ async function completePrewrite(session, input) {
   if (!Array.isArray(sourceResults) || sourceResults.length !== 12 ||
       !Number.isFinite(Date.parse(completedAt)) || Date.parse(completedAt) < state.startedAt ||
       Date.parse(completedAt) > Date.now()) return rejected("fresh_acquisition_required");
+  // CPI inherits its existing two-lane production contract, never total-count-only eligibility.
+  let laneAudit = null;
+  if (SOURCE_ID === "jp-stat-cpi") {
+    const source = sourceResults.find(value => value.sourceId === SOURCE_ID), coverage = source?.coverage;
+    if (!Array.isArray(source?.canonicalRecords) || !Array.isArray(coverage?.laneAssessments))
+      return rejected("cpi_lane_contract_invalid");
+    const lanes = [["national", "JP_NATIONAL_CPI", "initial"], ["tokyo", "JP_TOKYO_CPI", "preliminary"]];
+    laneAudit = lanes.map(([lane, eventType, edition]) => {
+      const records = (source?.canonicalRecords || []).filter(record => record.logical?.scope === lane),
+        assessments = (coverage?.laneAssessments || []).filter(value => value.lane === lane);
+      return { lane, candidateCount: records.length, coverageState: assessments[0]?.coverageState ?? null,
+        valid: records.length === 15 && records.every(record => record.logical.eventType === eventType &&
+          record.logical.edition === edition) && assessments.length === 1 &&
+          assessments[0].coverageState === "sufficient" && assessments[0].absenceAuthority === "none" &&
+          assessments[0].eligibleEventCount === records.length };
+    });
+    if (source?.acquisitionOutcome !== "complete" || source.absenceAuthority !== "none" ||
+        coverage?.coverageState !== "sufficient" || coverage.absenceAuthority !== "none" ||
+        coverage.laneAssessments?.length !== 2 || !laneAudit.every(value => value.valid))
+      return { ...rejected("cpi_lane_contract_invalid"), laneAudit };
+  }
   const routeAudit = [];
   for (const source of sourceResults) {
     const selected = Routes.selectRoute({ sourceId: source.sourceId, operation: NetworkPolicy.OPERATION },
@@ -206,6 +229,7 @@ async function completePrewrite(session, input) {
     firstLiveWriteEligible: true, writerAuthorityState: Authority.selectWriterState(SOURCE_ID).state,
     coreWriteExecutions: 0, ticket, binding, sourceId: SOURCE_ID, expectedMutationCounts: plan.counts,
     identities: Core.copy(identities), ...(provenanceAudit ? { provenanceAudit } : {}),
+    ...(laneAudit ? { laneAudit } : {}),
     expectation: { beforeIdentity: await Canonical.sha256(Core.sorted(state.before)),
       afterIdentity: await Canonical.sha256(expectedAfter), beforeCounts: counts(state.before),
       afterCounts: counts(expectedAfter), beforeSafety, afterSafety,
@@ -290,4 +314,6 @@ const nyse = fixedBoundary("us-nyse-market-holidays", "E4b5_nyse_explicit_one_sh
 const jpxHolidays = fixedBoundary("jp-jpx-market-holidays", "E4b6_jpx_holidays_explicit_one_shot", "e4b6-jpx-holidays", 41);
 const laborEvidence = fixedBoundary("jp-stat-labor", "E4c_labor_explicit_one_shot", "e4c-labor", 15, 15,
   require("../marketCalendarIsolated/estatRoute.js").ROUTES["jp-stat-labor"].url);
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence });
+const cpiEvidence = fixedBoundary("jp-stat-cpi", "E4c_cpi_explicit_one_shot", "e4c-cpi", 30, 30,
+  require("../marketCalendarIsolated/estatRoute.js").ROUTES["jp-stat-cpi"].url);
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence });
