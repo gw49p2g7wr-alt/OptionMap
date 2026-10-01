@@ -46,6 +46,17 @@ function createCalendarManualCheckService(configuration = {}) {
       (options => Execution.createUpdateExecutionCoordinator(options)), now = configuration.now ||
       (() => new Date().toISOString());
   if (typeof acquire !== "function") throw new TypeError("acquire_required");
+  // Main-side factory dependency only; never read from a check/renderer request.
+  function capture(planned, a, candidate, success) {
+    if (typeof configuration.onAcquisition !== "function") return;
+    try { configuration.onAcquisition({ sourceId: planned.sourceId,
+      acquisitionOutcome: success ? "complete" : "failed", candidateEnvelope: candidate || null,
+      documentHealth: (a?.documents || []).map(d => ({ role: d.role,
+        httpStatus: d.httpStatus, redirectCount: d.redirects?.length || 0,
+        fetchOutcome: a.success ? "success" : "failure", parseOutcome: candidate?.parserStatus || "not_attempted" })),
+      diagnostics: [a?.reason, candidate?.reason, ...(candidate?.parserDiagnostics || [])].filter(Boolean),
+      failedRoles: [], coverage: null, absenceAuthority: "none" }); } catch (_) { /* Observer cannot change acquisition. */ }
+  }
   let active = null, logicalRequestCount = 0, joinedRequestCount = 0;
 
   async function execute(sourceIds, options) {
@@ -70,17 +81,20 @@ function createCalendarManualCheckService(configuration = {}) {
           reasonClass: planned.planningReason }); continue;
       }
       if (planned.acquisitionStatus !== "succeeded") {
+        capture(planned, acquisitions.get(planned.sourceId), null, false);
         sources.push({ ...base, reasonClass: reasonClass(planned) }); continue;
       }
       const candidate = await builder.buildCalendarCandidate({ sourceId: planned.sourceId,
         acquisitionResult: acquisitions.get(planned.sourceId) });
       if (candidate.formalEligible !== true) {
+        capture(planned, acquisitions.get(planned.sourceId), candidate, false);
         sources.push({ ...base, candidateStatus: candidate.candidateStatus,
           reasonClass: reasonClass(planned, candidate) }); continue;
       }
       const simulation = await simulator.simulateCalendarTransition({ sourceId: planned.sourceId,
         candidate, previousState: null, coveragePolicy: null }), success =
         simulation.simulationStatus !== "rejected" && simulation.commitOutcome === MODE;
+      capture(planned, acquisitions.get(planned.sourceId), candidate, success);
       sources.push({ ...base, status: success ? "success" : "failed",
         candidateStatus: candidate.candidateStatus, transitionStatus: simulation.simulationStatus,
         recordCount: candidate.recordCount, reasonClass: success ? null :

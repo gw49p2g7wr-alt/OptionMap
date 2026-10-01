@@ -123,7 +123,7 @@ test("O9 schema mismatch/cache failure never carries a previous cycle's cached s
   assert.equal(failed.status, "unsafe"); assert.equal(Cycle.activeCount(), 0);
   const next = await evaluate(f); assert.equal(next.performance.fullSnapshotHashCount, 1);
 });
-test("O10 transitive shadow dependencies cannot reach writer/core/one-shot or production integration", () => {
+test("O10 transitive shadow dependencies cannot reach writer/core/one-shot; runtime uses only fixed adapter", () => {
   const root = path.resolve(__dirname, ".."), seen = new Set();
   function visit(file) {
     if (seen.has(file)) return; seen.add(file);
@@ -132,7 +132,11 @@ test("O10 transitive shadow dependencies cannot reach writer/core/one-shot or pr
     for (const match of code.matchAll(/require\(["'](\.[^"']+)["']\)/g)) visit(path.resolve(path.dirname(file), match[1]));
   }
   visit(path.join(root, "js/marketCalendarRuntime/automaticFormalShadow.js"));
-  for (const file of ["main.js", "preload.js", "index.html"])
+  // E4e-1R authorizes the shared main-only adapter, never direct writer/cycle APIs in IPC.
+  const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
+  assert.match(main, /automaticFormalShadowRuntime\.js/);
+  assert.doesNotMatch(main, /formalShadowCycle|formalShadowElectronRead|firstProductionWriteExecutor|formalControlledWriterCore/);
+  for (const file of ["preload.js", "index.html"])
     assert.doesNotMatch(fs.readFileSync(path.join(root, file), "utf8"),
       /automaticFormalShadow|formalShadowCycle|formalShadowElectronRead/);
 });

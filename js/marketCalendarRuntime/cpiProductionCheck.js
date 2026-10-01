@@ -7,7 +7,8 @@ const Flights = require("./sourceSingleFlight.js");
 const Manual = require("./calendarManualCheckService.js");
 const ID = "jp-stat-cpi", EXCLUDED = [];
 function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () => new Date().toISOString(),
-  getAuthority = () => Authority.PRODUCTION_AUTHORITY, adapterFactory = Adapter.createRouteAdapter } = {}) {
+  getAuthority = () => Authority.PRODUCTION_AUTHORITY, adapterFactory = Adapter.createRouteAdapter,
+  onAcquisition } = {}) {
   if (!store?.read || !store?.reserveReevaluation || !store?.completeReevaluation || !legacyService?.check ||
       typeof fetchImpl !== "function") throw TypeError("cpi_configuration_invalid");
   let active = null;
@@ -72,6 +73,9 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
           lastOutcome: success ? "success" : "failure", lastHttpStatus: http, lastDiagnosticClass: diagnostic } };
         const completed = normal ? await store.completeActiveAcquisition({ ...completion, sourceId: ID,
           expectedState: old.value }) : await store.completeReevaluation({ ...completion, token: reserved.token });
+        try { onAcquisition?.({ ...result, sourceId: ID, acquisitionOutcome:
+          success && completed.status === "ok" ? "complete" : result.acquisitionOutcome === "partial" ? "partial" : "failed" }); }
+        catch (_) { /* Shadow capture cannot affect completion or the public result. */ }
         record({ phase: "acquisition", transport, acquisitionOutcome: result.acquisitionOutcome,
           documentHealth: result.documentHealth, coverage: result.coverage, absenceAuthority: result.absenceAuthority,
           candidate: candidate ? { parserStatus: candidate.parserStatus, recordCount: candidate.recordCount,

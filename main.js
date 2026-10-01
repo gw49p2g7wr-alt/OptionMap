@@ -28,18 +28,8 @@ const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
 const calendarAcquisition = require(
   "./js/marketCalendarRuntime/calendarAcquisitionService.js"
 );
-const calendarManualCheck = require(
-  "./js/marketCalendarRuntime/calendarManualCheckService.js"
-);
-const laborProduction = require("./js/marketCalendarRuntime/laborProductionCheck.js");
-const laborState = require("./js/marketCalendarRuntime/laborRuntimeStateElectron.js");
-let laborProductionService = null;
-const cpiProduction = require("./js/marketCalendarRuntime/cpiProductionCheck.js");
-const cpiState = require("./js/marketCalendarRuntime/cpiRuntimeStateElectron.js");
-let cpiProductionService = null;
-const blsProduction = require("./js/marketCalendarRuntime/blsProductionCheck.js");
-const blsState = require("./js/marketCalendarRuntime/blsRuntimeStateElectron.js");
-let blsProductionService = null;
+const automaticShadowRuntime = require("./js/marketCalendarRuntime/automaticFormalShadowRuntime.js");
+let calendarShadowRuntime = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -50,9 +40,6 @@ const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
 const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID });
 const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisitionService({
   fetchImpl: (url, options) => net.fetch(url, options)
-});
-const calendarManualCheckService = calendarManualCheck.createCalendarManualCheckService({
-  acquire: request => calendarAcquisitionService.acquire(request)
 });
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
@@ -230,19 +217,11 @@ ipcMain.handle("check-market-calendar-sources", async (event, request) => {
   if (!owner || owner !== mainWindow) return { state: "unavailable", mode: "writer_disabled",
     reasonClass: "invalid_sender", sources: [], failedSourceIds: [] };
   try {
-    if (!laborProductionService) laborProductionService = laborProduction.createLaborProductionCheck({
-      store: laborState.createLaborRuntimeStateElectron({ webContents: event.sender }),
-      legacyService: calendarManualCheckService, fetchImpl: (url, options) => net.fetch(url, options)
+    if (!calendarShadowRuntime) calendarShadowRuntime = automaticShadowRuntime.createRuntime({
+      webContents: event.sender, fetchImpl: (url, options) => net.fetch(url, options),
+      acquire: request => calendarAcquisitionService.acquire(request)
     });
-    if (!cpiProductionService) cpiProductionService = cpiProduction.createCpiProductionCheck({
-      store: cpiState.createCpiRuntimeStateElectron({ webContents: event.sender }),
-      legacyService: laborProductionService, fetchImpl: (url, options) => net.fetch(url, options)
-    });
-    if (!blsProductionService) blsProductionService = blsProduction.createBlsProductionCheck({
-      store: blsState.createBlsRuntimeStateElectron({ webContents: event.sender }),
-      legacyService: cpiProductionService, fetchImpl: (url, options) => net.fetch(url, options)
-    });
-    return await blsProductionService.check(request);
+    return await calendarShadowRuntime.check(request);
   }
   catch (_error) { return { state: "failed", mode: "writer_disabled",
     reasonClass: "manual_check_failed", sources: [], failedSourceIds: [] }; }
@@ -635,9 +614,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
-    laborProductionService = null;
-    cpiProductionService = null;
-    blsProductionService = null;
+    calendarShadowRuntime = null;
   });
   const mainDocumentUrl = pathToFileURL(
     path.join(__dirname, "index.html")
