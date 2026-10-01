@@ -4,6 +4,7 @@
 const fs = require("node:fs"), path = require("node:path");
 const A = require("../marketCalendarHistory/formalWriterAuthorityV2.js");
 const Schema = require("../marketCalendarHistory/writerSafetyFileSchema.js");
+const Envelope = require("../marketCalendarHistory/writerSafetyVersionedEnvelope.js");
 const RELATIVE_PATH = "market-calendar-writer-safety/safety.json";
 function createReader(userData) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
@@ -30,17 +31,17 @@ function createReader(userData) {
     let status = "corrupt", reason = null, safety = null, foundState = false;
     try {
       const record = read("safety.json", Schema.MAX_BYTES); foundState = true;
-      const checked = Schema.validate(record, A.PRODUCTION_POLICY);
+      const checked = Envelope.validateEnvelope(record);
       if (!checked.valid) throw Error(checked.reason);
       const c = read("sequence.json", 1024);
-      if (!A.exact(c, ["schemaVersion", "sequence", "stateChecksum", "checksum"]) || c.schemaVersion !== 1 ||
+      if (!A.exact(c, ["schemaVersion", "sequence", "stateChecksum", "checksum"]) || c.schemaVersion !== record.schemaVersion ||
           !A.integer(c.sequence) || c.sequence !== record.safety.sequence || c.sequence < highWater ||
           c.stateChecksum !== record.checksum || Schema.seal(c).checksum !== c.checksum) throw Error("safety_sequence_invalid");
       for (const name of ["ownership.lock", "update.intent"]) {
         try { fs.lstatSync(path.join(directory, name)); throw Error("safety_io_interrupted_or_owned"); }
         catch (e) { if (e.code !== "ENOENT") throw e; }
       }
-      highWater = c.sequence; safety = record.safety; status = "valid";
+      highWater = c.sequence; safety = record.schemaVersion === 2 ? Envelope.safetyInput(record.safety) : record.safety; status = "valid";
     } catch (e) {
       status = e.code === "ENOENT" && !foundState ? "missing" : "corrupt";
       reason = status === "missing" ? "safety_state_missing" : /^[a-z_]+$/.test(e.message) ? e.message : "safety_read_failed";

@@ -4,6 +4,7 @@
 const { randomUUID } = require("node:crypto");
 const A = require("../marketCalendarHistory/formalWriterAuthorityV2.js");
 const S = require("../marketCalendarHistory/formalWriterSafetyEvaluator.js");
+const Envelope = require("../marketCalendarHistory/writerSafetyVersionedEnvelope.js");
 const contexts = new WeakMap();
 function createStartupContext() {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
@@ -18,15 +19,17 @@ async function begin(load, token) {
   const context = A.createMainContextCandidate({ operation, cycleIdentity, attemptIdentity: A.hash({ attempt: randomUUID() }) });
   let snapshot;
   try { snapshot = await load(); } catch (_) { snapshot = { status: "corrupt", reason: "safety_read_failed", safety: null }; }
-  if (!snapshot || snapshot.status !== "valid" || !S.validateSafety(snapshot.safety).valid) {
+  // Recognize the fixed version pair without making this shadow path executable.
+  const policy = snapshot?.safety?.persistedAuthorityVersion === 3 ? Envelope.policyFor(3) : A.PRODUCTION_POLICY;
+  if (!snapshot || snapshot.status !== "valid" || !S.validateSafety(snapshot.safety, policy).valid) {
     snapshot = { ...snapshot, status: snapshot?.status === "missing" ? "missing" : "corrupt",
       reason: snapshot?.reason || "malformed_safety_state", safety: null };
   }
   const loadMs = performance.now() - started, evaluatedAt = performance.now();
   const permissions = A.SOURCE_IDS.map(sourceId => ({ sourceId,
     codePermission: A.PRODUCTION_POLICY.permissions.entries.find(e => e.sourceId === sourceId).permission,
-    evaluation: S.evaluate({ sourceId, safety: snapshot.safety, operation, context, cycleIdentity }) }));
-  return A.freeze({ snapshot: structuredClone(snapshot), cycleIdentity, operation, context, permissions,
+    evaluation: S.evaluate({ policy, sourceId, safety: snapshot.safety, operation, context, cycleIdentity }) }));
+  return A.freeze({ snapshot: structuredClone(snapshot), policy, cycleIdentity, operation, context, permissions,
     trustedStartup: trusted, loadMs, initialEvaluationMs: performance.now() - evaluatedAt });
 }
 function failureReason(row) {
@@ -36,7 +39,7 @@ function failureReason(row) {
   return map[row.reason] || null;
 }
 function finish(cycle, shadow, diagnostics = []) {
-  const start = performance.now(), p = A.PRODUCTION_POLICY, loaded = cycle.snapshot;
+  const start = performance.now(), p = cycle.policy || A.PRODUCTION_POLICY, loaded = cycle.snapshot;
   const valid = loaded.status === "valid", state = loaded.safety;
   const rows = A.SOURCE_IDS.map(sourceId => {
     const row = shadow?.sourceRows?.find(r => r.sourceId === sourceId), d = diagnostics.find(r => r.sourceId === sourceId);
@@ -52,7 +55,7 @@ function finish(cycle, shadow, diagnostics = []) {
     if (failure && valid && permission !== "writer_ineligible") {
       const category = classification.category;
       const ordinal = Math.max(0, ...Object.values(own.counters).map(c => c.cycleOrdinal)) + 1;
-      const result = S.reduceSafetySignal({ state, signal: { sourceId, category, outcome: "failure", reason: failure,
+      const result = S.reduceSafetySignal({ policy: p, state, signal: { sourceId, category, outcome: "failure", reason: failure,
         cycleOrdinal: ordinal, cycleIdentity: cycle.cycleIdentity } });
       wouldIncrement = result.valid && category !== null && result.state.sources.find(s => s.sourceId === sourceId).counters[category].count > own.counters[category].count;
       wouldSuspend = result.valid && ["source_suspend", "global_suspend"].includes(result.action);
@@ -74,7 +77,7 @@ function finish(cycle, shadow, diagnostics = []) {
   return A.freeze({ authorityVersion: p.global.authorityVersion, authorityState: p.global.state,
     safetySequence: state?.sequence ?? null, storeStatus: loaded.status, storeReason: loaded.reason || null,
     globalSafety: !valid || state.globalSuspend.suspended || state.pendingFence || shadow?.status === "unsafe" ? "unsafe" : "safe",
-    effectiveState: !valid || state.globalSuspend.suspended || state.pendingFence ? "suspended" : "disabled",
+    effectiveState: !valid || state.globalSuspend.suspended || state.pendingFence ? "suspended" : p.global.state === "active" ? "shadow" : "disabled",
     globalSuspend: state?.globalSuspend || null, pendingFence: state?.pendingFence || null,
     globalClassification: shadow?.status === "unsafe" ? S.classifyFailure("db_integrity_failure") :
       !valid ? S.classifyFailure(loaded.status === "missing" ? "safety_state_missing" : "malformed_safety_state") : null,

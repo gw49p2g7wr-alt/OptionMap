@@ -11,6 +11,7 @@ const Canonical = require("../marketCalendar/marketEventCanonicalizer.js");
 // algorithm is the actual shared core, not a second production writer.
 async function executeInProbe(context, Core, Schema, inspect, fingerprint, approvedSource, approvedMode, approvedCounts) {
   const { binding, before, plan, expectedAfter, expiresAt } = context;
+  const elapsedClock = () => typeof performance === "undefined" ? Date.now() : performance.now();
   const stores = Core.STORE_ORDER, names = Core.STORE_NAMES;
   const audit = { opens: 0, readonly: 0, readwrite: 0, create: 0, upgrade: 0,
     committed: 0, aborted: 0, attemptedWrites: Core.emptyCounts(),
@@ -145,16 +146,20 @@ async function executeInProbe(context, Core, Schema, inspect, fingerprint, appro
       }, set(target, key, value) { return Reflect.set(target, key, value, target); } });
     } };
     observation.phase = "controlled_transaction";
+    const transactionStart = elapsedClock();
     observation.writerResult = await Core.executePrepared(guarded, prepared, null, metrics);
+    observation.transactionMs = elapsedClock() - transactionStart;
     observation.committed = observation.writerResult.committed === true;
     if (!observation.committed) throw Error(observation.writerResult.reason || "write_not_committed");
     if (audit.readwrite !== 1 || audit.committed !== 1 || audit.aborted !== 0 ||
         !Core.same(audit.committedWrites, exactCounts)) throw Error("actual_mutation_count_mismatch");
     db.close(); audit.openHandles--; db = null;
     observation.phase = "fresh_readback";
+    const readbackStart = elapsedClock();
     db = await open(); audit.readbackReopens++;
     observation.readback = await read(db);
     if (!Core.same(observation.readback, Core.sorted(expectedAfter))) throw Error("exact_readback_mismatch");
+    observation.readbackMs = elapsedClock() - readbackStart;
     observation.status = "verified";
     observation.phase = "complete";
   } catch (error) {
@@ -220,4 +225,7 @@ const jpxHolidays = fixedExecutor(Boundaries.jpxHolidays, "E4b6_jpx_holidays_exp
 const laborEvidence = fixedExecutor(Boundaries.laborEvidence, "E4c_labor_explicit_one_shot");
 const cpiEvidence = fixedExecutor(Boundaries.cpiEvidence, "E4c_cpi_explicit_one_shot");
 const blsNew = fixedExecutor(Boundaries.blsNew, "E4d_bls_explicit_one_shot");
-module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence, blsNew });
+// Internal serialization helper only. The E4f adapter owns opaque startup authority,
+// durable fence ordering and receipt verification; no IPC capability is added.
+module.exports = Object.freeze({ ...first, sna, bea, census, fomc, jpxDerivatives, nyse, jpxHolidays, laborEvidence, cpiEvidence, blsNew,
+  machineryCanaryExecutionSource: executeInProbe.toString() });

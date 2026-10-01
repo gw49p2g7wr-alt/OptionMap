@@ -39,7 +39,7 @@ function acquisitionDiagnostic(result) {
     coverage: coverageDiagnostic(result.coverage), absenceAuthority: "none" };
 }
 
-function createRuntime({ webContents, fetchImpl, readFormal, stores, acquire,
+function createRuntime({ webContents, fetchImpl, readFormal, stores, acquire, onCanonicalAcquisition,
   now, builder, simulator, adapterFactory, loadSafety } = {}) {
   if (typeof fetchImpl !== "function") throw TypeError("runtime_transport_required");
   let lastRead = null, sources = new Map(), captureMs = 0, lastReadEnd = null, metrics = null;
@@ -54,7 +54,8 @@ function createRuntime({ webContents, fetchImpl, readFormal, stores, acquire,
   } });
   const onAcquisition = result => {
     const start = performance.now();
-    try { sources.set(result.sourceId, acquisitionDiagnostic(result)); pipeline.capture(result); }
+    try { sources.set(result.sourceId, acquisitionDiagnostic(result)); pipeline.capture(result);
+      if (typeof onCanonicalAcquisition === "function") onCanonicalAcquisition(Shadow.projectAcquisition(result)); }
     finally { captureMs += performance.now() - start; }
   };
   const legacy = Manual.createCalendarManualCheckService({
