@@ -5,6 +5,7 @@
 const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
 const assert = require("node:assert/strict");
 const Runtime = require("../js/marketCalendarRuntime/automaticFormalShadowRuntime.js");
+const SafetyReader = require("../js/marketCalendarRuntime/writerSafetyReadOnly.js");
 const Integration = require("../js/marketCalendarRuntime/calendarRuntimeStateIntegration.js");
 const Reader = require("../js/marketCalendarRuntime/formalShadowElectronRead.js");
 const Cycle = require("../js/marketCalendarRuntime/formalShadowCycle.js");
@@ -167,6 +168,7 @@ function compactSummary(acquisition, diagnostics) {
     successfulSourceCount: acquisition?.successfulSourceCount ?? null },
     shadowStatus: shadow?.status || "not_reached", shadowReason: shadow?.reason || null,
     sourceRows, sourceRowCount: sourceRows.length, metrics, metricsComplete,
+    safety: diagnostics?.safety || null,
     formalRead: diagnostics?.formalRead || null, performance: shadow?.performance || null,
     aggregatePlannedCounts: shadow?.aggregatePlannedCounts || Object.fromEntries(Gate.FIELDS.map(key => [key, 0])),
     eligibleCount: sourceRows.filter(r => r.eligible).length,
@@ -287,7 +289,8 @@ async function worker(root, production) {
     const before = await store.readAll(); assert.equal(before.status, "ok", before.reason);
     assert.equal(before.invalidSources.length, 0);
     const read = Reader.createReader(window.webContents);
-    const options = { webContents: window.webContents, fetchImpl: async (url, settings) => {
+    const safetyReader = SafetyReader.createReader(profile);
+    const options = { webContents: window.webContents, loadSafety: safetyReader.load, fetchImpl: async (url, settings) => {
       network++; activeNetwork++; try { return await net.fetch(url, settings); } finally { activeNetwork--; }
     }, readFormal: async () => {
       stage = "formal_readonly_shadow";
@@ -318,6 +321,11 @@ async function worker(root, production) {
     acquisition = await integration.check({ trigger: "manual", ...(fixture ? {
       sourceIds: ["jp-esri-machinery-orders-calendar", "jp-stat-labor"] } : {}) });
     diagnostics = runtime.diagnostics(); const shadow = diagnostics.shadow;
+    assert.equal(diagnostics.safety.storeStatus, "missing", "unexpected_safety_store_state");
+    assert.equal(diagnostics.safety.sourceRows.length, 12);
+    assert.ok(diagnostics.safety.sourceRows.every(row => row.writeAllowed === false));
+    assert.equal(safetyReader.audit().loads, 1);
+    assert.equal(safetyReader.audit().writes, 0); assert.equal(safetyReader.audit().handles, 0);
     audit = await collect();
     const after = await store.readAll(); assert.equal(after.status, "ok");
     records = after.value.map(r => ({ sourceId: r.sourceId, lastOutcome: r.lastOutcome,

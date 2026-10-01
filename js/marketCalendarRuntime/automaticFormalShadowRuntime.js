@@ -14,6 +14,7 @@ const CpiStore = require("./cpiRuntimeStateElectron.js");
 const BlsStore = require("./blsRuntimeStateElectron.js");
 const Routes = require("./calendarRouteAuthority.js");
 const Network = require("./calendarNetworkPolicy.js");
+const SafetyRuntime = require("./automaticFormalSafetyRuntime.js");
 const safeReason = value => typeof value === "string" && /^[a-z0-9_:-]{1,120}$/.test(value) ? value : null;
 function coverageDiagnostic(coverage) {
   if (!coverage) return null;
@@ -39,7 +40,7 @@ function acquisitionDiagnostic(result) {
 }
 
 function createRuntime({ webContents, fetchImpl, readFormal, stores, acquire,
-  now, builder, simulator, adapterFactory } = {}) {
+  now, builder, simulator, adapterFactory, loadSafety } = {}) {
   if (typeof fetchImpl !== "function") throw TypeError("runtime_transport_required");
   let lastRead = null, sources = new Map(), captureMs = 0, lastReadEnd = null, metrics = null;
   const read = readFormal || Reader.createReader(webContents);
@@ -70,23 +71,34 @@ function createRuntime({ webContents, fetchImpl, readFormal, stores, acquire,
     store: stores?.cpi || CpiStore.createCpiRuntimeStateElectron({ webContents }) });
   const bls = Bls.createBlsProductionCheck({ ...common, legacyService: cpi,
     store: stores?.bls || BlsStore.createBlsRuntimeStateElectron({ webContents }) });
-  let active = null, cycleCompleted = false;
-  function check(request = {}) {
+  let active = null, cycleCompleted = false, safety = null;
+  const safetyLoader = loadSafety || (() => ({ status: "missing", reason: "safety_state_missing", safety: null }));
+  function checkInternal(request = {}, startupContext = null) {
     if (active) return active;
-    lastRead = null; lastReadEnd = null; sources = new Map(); captureMs = 0; metrics = null; cycleCompleted = false;
-    active = pipeline.check(request, () => bls.check(request)).then(result => {
+    lastRead = null; lastReadEnd = null; sources = new Map(); captureMs = 0; metrics = null; cycleCompleted = false; safety = null;
+    let safetyCycle;
+    active = SafetyRuntime.begin(safetyLoader, startupContext).then(cycle => {
+      safetyCycle = cycle;
+      return pipeline.check(request, () => bls.check(request));
+    }).then(result => {
       cycleCompleted = true; return result;
     }).finally(() => {
       const planningMs = lastReadEnd === null ? 0 : performance.now() - lastReadEnd;
+      if (safetyCycle) safety = SafetyRuntime.finish(safetyCycle, cycleCompleted ? pipeline.diagnostics() :
+        { status: "unsafe", reason: "acquisition_cycle_failed" }, [...sources.values()]);
       metrics = { readonlyMs: lastRead?.latencyMs || 0, planningMs, captureMs,
-        totalShadowMs: (lastRead?.latencyMs || 0) + planningMs + captureMs,
+        safetyLoadMs: safety?.safetyLoadMs || 0, authorityEvaluationMs: safety?.evaluationMs || 0,
+        totalShadowMs: (lastRead?.latencyMs || 0) + planningMs + captureMs + (safety?.safetyLoadMs || 0) + (safety?.evaluationMs || 0),
         readonlyAttempted: lastRead !== null, planningAttempted: lastRead?.status === "ok",
         basis: "monotonic_elapsed_reached_phases", complete: true };
       active = null;
     });
     return active;
   }
-  return Object.freeze({ check, diagnostics: () => ({ shadow: cycleCompleted ? pipeline.diagnostics() :
+  return Object.freeze({ check: request => checkInternal(request),
+    // Not exposed over IPC. Only an opaque main-side context can mark this cycle startup.
+    checkStartup: (request, context) => checkInternal(request, context),
+    diagnostics: () => ({ safety: structuredClone(safety), shadow: cycleCompleted ? pipeline.diagnostics() :
     { status: "unsafe", reason: active ? "cycle_pending" : "acquisition_cycle_failed", sourceRows: [],
       writerExecution: 0, writeAllowed: false },
     formalRead: structuredClone(lastRead), sourceDiagnostics: structuredClone([...sources.values()]),

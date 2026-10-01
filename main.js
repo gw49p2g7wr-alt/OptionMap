@@ -29,6 +29,7 @@ const calendarAcquisition = require(
   "./js/marketCalendarRuntime/calendarAcquisitionService.js"
 );
 const automaticShadowRuntime = require("./js/marketCalendarRuntime/automaticFormalShadowRuntime.js");
+const writerSafetyReadOnly = require("./js/marketCalendarRuntime/writerSafetyReadOnly.js");
 let calendarShadowRuntime = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
@@ -219,6 +220,7 @@ ipcMain.handle("check-market-calendar-sources", async (event, request) => {
   try {
     if (!calendarShadowRuntime) calendarShadowRuntime = automaticShadowRuntime.createRuntime({
       webContents: event.sender, fetchImpl: (url, options) => net.fetch(url, options),
+      loadSafety: writerSafetyReadOnly.createReader(app.getPath("userData")).load,
       acquire: request => calendarAcquisitionService.acquire(request)
     });
     return await calendarShadowRuntime.check(request);
