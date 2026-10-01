@@ -247,7 +247,7 @@ async function diagnoseBls(fetchImpl, assessmentDateJst, redirects = new Map()) 
     requestCount: requests, retryCount: 0, absenceAuthority: "none", resources: adapter.diagnostics(),
     pendingTransport: pending, pendingBody, readers, formalAccess: 0, formalWrites: 0, runtimeStateAccess: 0, writerExecution: 0 };
 }
-async function worker(root, production) {
+async function worker(root, production, expectedSafety = "missing") {
   if (path.dirname(root) !== fs.realpathSync(os.tmpdir()) || !path.basename(root).startsWith("optionmap-e4e-runtime-") ||
       !fs.existsSync(path.join(root, "isolated-only"))) throw Error("temp_context_required");
   const { app, BrowserWindow, net, session } = require("electron");
@@ -290,6 +290,8 @@ async function worker(root, production) {
     assert.equal(before.invalidSources.length, 0);
     const read = Reader.createReader(window.webContents);
     const safetyReader = SafetyReader.createReader(profile);
+    const safetyFile = path.join(profile, SafetyReader.RELATIVE_PATH);
+    const safetyHash = expectedSafety === "valid" ? require("node:crypto").createHash("sha256").update(fs.readFileSync(safetyFile)).digest("hex") : null;
     const options = { webContents: window.webContents, loadSafety: safetyReader.load, fetchImpl: async (url, settings) => {
       network++; activeNetwork++; try { return await net.fetch(url, settings); } finally { activeNetwork--; }
     }, readFormal: async () => {
@@ -321,7 +323,7 @@ async function worker(root, production) {
     acquisition = await integration.check({ trigger: "manual", ...(fixture ? {
       sourceIds: ["jp-esri-machinery-orders-calendar", "jp-stat-labor"] } : {}) });
     diagnostics = runtime.diagnostics(); const shadow = diagnostics.shadow;
-    assert.equal(diagnostics.safety.storeStatus, "missing", "unexpected_safety_store_state");
+    assert.equal(diagnostics.safety.storeStatus, expectedSafety, "unexpected_safety_store_state");
     assert.equal(diagnostics.safety.sourceRows.length, 12);
     assert.ok(diagnostics.safety.sourceRows.every(row => row.writeAllowed === false));
     assert.equal(safetyReader.audit().loads, 1);
@@ -343,8 +345,22 @@ async function worker(root, production) {
       assert.equal(shadow.sourceRows.length, 12); assert.equal(shadow.eligibleCount, 11);
       assert.equal(shadow.sourceRows.find(r => r.sourceId === "jp-boj-calendar").reason, "writer_ineligible_identity_transition");
     }
+    if (expectedSafety === "valid") {
+      assert.equal(diagnostics.safety.effectiveState, "disabled");
+      assert.equal(diagnostics.safety.safetySequence, 0);
+      const canary = shadow.sourceRows.find(r => r.sourceId === "jp-esri-machinery-orders-calendar");
+      const selected = Routes.selectRoute({ sourceId: canary.sourceId, operation: Network.OPERATION }, Routes.PRODUCTION_AUTHORITY);
+      assert.equal(selected.valid, true); assert.equal(selected.routeIdentity, canary.routeIdentity);
+      assert.equal(canary.acquisition, "complete"); assert.equal(canary.eligible, true);
+      assert.equal(canary.changed, 0); assert.equal(canary.new, 0); assert.equal(canary.evidenceOnly, 0);
+      assert.equal(require("node:crypto").createHash("sha256").update(fs.readFileSync(safetyFile)).digest("hex"), safetyHash);
+      result = { canary: { sourceId: canary.sourceId, acquisition: canary.acquisition, routeIdentityMatch: true,
+        candidate: canary.candidate, formalActive: canary.formalActive, unchanged: canary.unchanged,
+        changed: canary.changed, new: canary.new, evidenceOnly: canary.evidenceOnly,
+        permission: "approved", safetyStatus: "valid", readyCandidate: true, writeAllowed: false }, safetyContentHash: safetyHash };
+    }
     assert.equal(compactSummary(acquisition, diagnostics).metricsComplete, true, "shadow_metrics_missing");
-    result = { status: "pass" };
+    result = { ...result, status: "pass" };
     code = 0;
   } catch (error) { result = { status: "fail", failureStage: stage,
     reason: safeReason(error.message.split("\n")[0]) || "runtime_acceptance_failed" }; }
@@ -456,7 +472,7 @@ async function controller(production, diagnostic = false) {
       tempRemoved: !fs.existsSync(root), diagnosticProcesses: 0 }); }
   }
 }
-if (process.versions.electron || require.main === module) {
+if (require.main === module || process.versions.electron && process.argv.some(arg => arg.startsWith("--runtime-root="))) {
   const root = process.argv.find(arg => arg.startsWith("--runtime-root="));
   const diagnostic = process.argv.includes("--bls-diagnostic");
   if (diagnostic && process.argv.includes("--production")) throw Error("diagnostic_production_profile_forbidden");
@@ -466,4 +482,4 @@ if (process.versions.electron || require.main === module) {
     controller(process.argv.includes("--production"), diagnostic))
     .catch(error => { process.stderr.write(error.message + "\n"); process.exitCode = 1; });
 }
-module.exports = Object.freeze({ installAudit, combineAudits, compactSummary, diagnoseBls, nativeLaunchIdentity, prepareNativeEntry });
+module.exports = Object.freeze({ installAudit, combineAudits, compactSummary, diagnoseBls, nativeLaunchIdentity, prepareNativeEntry, worker });
