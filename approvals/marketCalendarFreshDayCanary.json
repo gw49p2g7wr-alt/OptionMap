@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "gateId": "market-calendar-parent-bound-fresh-day-canary-v1",
+  "approvedImplementationCommit": "7f493321d933eb3afa47a7d10052dddab51e0407",
+  "approvedOperation": "fresh-day-startup-canary",
+  "approvedSourceId": "jp-esri-machinery-orders-calendar",
+  "authorityVersion": 3,
+  "expectedSafetySequence": 2,
+  "criticalArtifactDigests": {
+    "scripts/marketCalendarE4fFreshDayCanary.js": "719d83f8f8bc30c86aecf7a37a6317d6962307ae16a0ac1a3be5ed5fd62ced9e",
+    "js/marketCalendarRuntime/freshDayCanaryApproval.js": "dc0da0bb4eba4234d8a997ebfa193f516833981b4e792608814dce840a21b037",
+    "js/marketCalendarRuntime/freshDayCanaryPreflight.js": "7811cc8f10b225c6068f82243255369c911816d74961d1cd7c74b4670ae2856c",
+    "js/marketCalendarRuntime/freshDayCanaryReceipt.js": "428b1a1792424bb3232071da1d2cb9a436be2f75269a5f26b37e4d203d31994d",
+    "js/marketCalendarRuntime/machineryStartupCanary.js": "9a462d875eedc3e8f676b4f136e9a4481fca8f86b700db1a844c8901b1f7d8ef",
+    "js/marketCalendarHistory/writerSafetyCanaryStore.js": "d42f7bb6fbb7f41b5a847d5dc86cfc29d944725d2388ac7f66de52db9cedc7d9",
+    "js/marketCalendarHistory/writerSafetyVersionedEnvelope.js": "27e971753ada8aa19d08c202d7a7228e8530a6a74eac5da7101644e3c580ac34",
+    "js/marketCalendarHistory/writerSafetyVersionedStore.js": "ee8d8020223843ad76dd6317c6e9cd0852666844f7dcc6a5cb7cad482cf6128b",
+    "js/marketCalendarRuntime/automaticFormalSafetyRuntime.js": "469fd292fad8fa9af979a5267f3dd13c37df7c4533d665c53fad2b6856317364",
+    "js/marketCalendarRuntime/automaticFormalShadowRuntime.js": "91f0823d1663387156386fdf5653f8a6bb65a0309369925be45d6c305155317b",
+    "js/marketCalendarRuntime/writerSafetyReadOnly.js": "25fc624d0c54d083f70881581a7035279c570c3df20158f2ac480f013bb48062",
+    "js/marketCalendarHistory/formalWriterAuthorityV2.js": "2a0ca9bf9b34495ff4559559f10310c82ab3bdae2128d639e690f837ce3e4da1",
+    "js/marketCalendarHistory/formalWriterAuthorizationV2.js": "6d2f1382e1e64c7963e44be3e6c421f804dd52627851c8abbfa9018b4b6ed16c",
+    "js/marketCalendarHistory/formalWriterSafetyEvaluator.js": "f1ea9960fd2570c3aba481ca91d1cb8fc8261b46786edf9fa2278ba2604a680d",
+    "js/marketCalendarHistory/firstProductionWriteExecutor.js": "c27cc2d516f7b62e1274ca9da24f6719373c1f71a7a5920af060fab06f27945a",
+    "js/marketCalendarHistory/formalControlledWriterCore.js": "7c2d0ca2a1779de0b9f65a48129adf6ce08647009d1b81de542306335f4eb0c5"
+  }
+}
