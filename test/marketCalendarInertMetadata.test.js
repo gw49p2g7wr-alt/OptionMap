@@ -90,14 +90,16 @@ test("metadata does not exempt tracked modifications or expand approval scope", 
   write("js/.DS_Store"); write(V.CRITICAL_ARTIFACTS[0], "// forbidden tracked drift\n");
   assert.equal(V.verifyRepository(root).reason, "uncommitted_implementation");
 }));
-test("manifest schema/path/source/operation/16-artifact set are unchanged", () => {
+test("metadata/approval scope unchanged; dedicated entry is the only added critical artifact", () => {
   const old = cp.execFileSync("git", ["show", "HEAD:js/marketCalendarRuntime/freshDayCanaryApproval.js"], { cwd: repo, encoding: "utf8" });
   const module = { exports: {} };
   require("node:vm").runInNewContext(old, { module, require, Buffer, process });
-  for (const key of ["MANIFEST_PATH", "GATE_ID", "OPERATION", "SOURCE", "CRITICAL_ARTIFACTS"])
+  for (const key of ["MANIFEST_PATH", "GATE_ID", "OPERATION", "SOURCE"])
     assert.equal(JSON.stringify(V[key]), JSON.stringify(module.exports[key]));
-  assert.equal(V.CRITICAL_ARTIFACTS.length, 16);
-  for (const p of ["scripts/marketCalendarE4fFreshDayCanary.js", "js/marketCalendarRuntime/freshDayCanaryPreflight.js",
+  assert.equal(V.CRITICAL_ARTIFACTS.length, 17);
+  assert.equal(JSON.stringify(V.CRITICAL_ARTIFACTS.filter(p => p !== "scripts/marketCalendarE4fFreshDayCanaryEntry.js")),
+    JSON.stringify(module.exports.CRITICAL_ARTIFACTS));
+  for (const p of ["js/marketCalendarRuntime/freshDayCanaryPreflight.js",
     "js/marketCalendarRuntime/freshDayCanaryReceipt.js", "main.js", "preload.js", "js/marketCalendarHistory/formalControlledWriterCore.js"])
     assert.deepEqual(fs.readFileSync(path.join(repo, p)), cp.execFileSync("git", ["show", "HEAD:" + p], { cwd: repo }));
 });

@@ -119,14 +119,20 @@ async function productionEntry() {
     app.off("window-all-closed", keepAlive);
   }
 }
-if (require.main === module) {
-  // No worker flags exist. Calling the script in Node/renderer does not start Electron
-  // or mint a startup capability. Output handoff finishes before app exit.
+let productionAttempt = null;
+async function runProductionAcceptance(...args) {
+  mainOnly();
+  if (args.length) throw Error("acceptance_arguments_forbidden");
+  if (process.type !== "browser" || !process.versions.electron) throw Error("native_controller_required");
   if (process.argv.slice(2).length !== 1 || process.argv[2] !== "--production") throw Error("explicit_acceptance_entry_required");
-  productionEntry().then(result => new Promise(resolve => process.stdout.write(JSON.stringify(result) + "\n", resolve)))
-    .then(() => require("electron").app.quit()).catch(e => {
-      process.stderr.write(e.message + "\n"); process.exitCode = 1;
-      if (process.type === "browser") require("electron").app.quit();
-    });
+  const appRoot = require("electron").app.getAppPath();
+  const metadata = JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8"));
+  const entry = path.join(__dirname, "marketCalendarE4fFreshDayCanaryEntry.js");
+  if (typeof metadata.main !== "string" || fs.realpathSync(path.resolve(appRoot, metadata.main)) !== entry)
+    throw Error("dedicated_package_entry_required");
+  // Latch before the first asynchronous boundary; failure never permits a retry.
+  if (!productionAttempt) productionAttempt = productionEntry();
+  return productionAttempt;
 }
-module.exports = Object.freeze({ createIsolatedController });
+// Importing (including the Electron import() loader) never starts acceptance.
+module.exports = Object.freeze({ createIsolatedController, runProductionAcceptance });

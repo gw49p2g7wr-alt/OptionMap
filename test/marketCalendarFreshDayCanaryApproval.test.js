@@ -46,7 +46,7 @@ function isolatedGit(fn, patch = null) {
 test("P1/P3 exact parent + manifest-only child is accepted in real isolated Git", () => isolatedGit(({ root, parent, head }) => {
   const result = P.revision(root); assert.equal(result.valid, true, result.reason);
   assert.equal(result.approvedImplementationCommit, parent); assert.equal(result.approvalCommit, head);
-  assert.equal(result.artifactCount, 16); assert.equal(result.expectedSafetySequence, 2);
+  assert.equal(result.artifactCount, 17); assert.equal(result.expectedSafetySequence, 2);
 }));
 test("P2 wrong parent rejects (no prefix/ancestry match)", () => {
   for (const parent of [B, A.slice(0, 8), sha("other").slice(0, 40)]) {
@@ -149,21 +149,22 @@ test("canonical content bytes are hashed without whitespace/line-ending normaliz
 test("missing approval / implementation-only A cannot authorize production", () => {
   assert.equal(V.verifyEvidence({}).valid, false);
   assert.equal(P.revision(repo).valid, false);
-  assert.equal(fs.existsSync(path.join(repo, V.MANIFEST_PATH)), false);
+  // The previous approval remains history, but lacks the dedicated entry digest.
+  assert.equal(V.parseManifest(fs.readFileSync(path.join(repo, V.MANIFEST_PATH), "utf8")).reason, "manifest_digests_invalid");
 });
 test("P13/P14 no migration/authority transition calls or production imports", () => {
   const source = fs.readFileSync(require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js"), "utf8");
   assert.doesNotMatch(source, /\.migrate\s*\(|\.transition\s*\(|\.append\s*\(|\.startup\s*\(/);
   assert.doesNotMatch(source, /require\(["'][^"']*(?:writerSafety|ControlledWriter|electron|https|http)[^"']*["']\)/);
-  const controller = fs.readFileSync(require.resolve("../scripts/marketCalendarE4fFreshDayCanary.js"));
-  assert.deepEqual(controller, cp.execFileSync("git", ["show", "HEAD:scripts/marketCalendarE4fFreshDayCanary.js"], { cwd: repo }));
+  const controller = fs.readFileSync(require.resolve("../scripts/marketCalendarE4fFreshDayCanary.js"), "utf8");
+  assert.doesNotMatch(controller, /\.migrate\s*\(|\.transition\s*\(/);
 });
 test("P15 production execution is mocked only; invalid gates invoke zero callbacks", () => {
   let mockedStartup = 0;
   const mock = e => { const r = V.verifyEvidence(e); if (r.valid) mockedStartup++; return r; };
   const e = evidence(); e.parents = [B]; assert.equal(mock(e).valid, false); assert.equal(mockedStartup, 0);
   assert.equal(mock(evidence()).valid, true); assert.equal(mockedStartup, 1);
-  assert.deepEqual(Object.keys(require("../scripts/marketCalendarE4fFreshDayCanary.js")), ["createIsolatedController"]);
+  assert.deepEqual(Object.keys(require("../scripts/marketCalendarE4fFreshDayCanary.js")), ["createIsolatedController", "runProductionAcceptance"]);
 });
 test("renderer cannot invoke repository verifier; arbitrary manifest path not an API", () => {
   const source = fs.readFileSync(require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js"), "utf8"), module = { exports: {} };

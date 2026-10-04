@@ -9,6 +9,7 @@ const GATE_ID = "market-calendar-parent-bound-fresh-day-canary-v1";
 const OPERATION = "fresh-day-startup-canary", SOURCE = "jp-esri-machinery-orders-calendar";
 const CRITICAL_ARTIFACTS = Object.freeze([
   "scripts/marketCalendarE4fFreshDayCanary.js",
+  "scripts/marketCalendarE4fFreshDayCanaryEntry.js",
   "js/marketCalendarRuntime/freshDayCanaryApproval.js",
   "js/marketCalendarRuntime/freshDayCanaryPreflight.js",
   "js/marketCalendarRuntime/freshDayCanaryReceipt.js",

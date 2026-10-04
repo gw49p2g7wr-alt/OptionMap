@@ -170,11 +170,11 @@ test("missing storage audit / completion evidence cannot become PASS", () => fix
   assert.equal(R.validate({ before, after: r.finalSafety, runtime: r.runtime, storageAudits: wrongStore }).status, "FAIL");
 }));
 test("C17 direct worker/production factory unavailable; Node CLI cannot mint authority", () => {
-  assert.deepEqual(Object.keys(Controller), ["createIsolatedController"]);
-  const result = cp.spawnSync(process.execPath, [require.resolve("../scripts/marketCalendarE4fFreshDayCanary.js"), "--production"], { encoding: "utf8" });
+  assert.deepEqual(Object.keys(Controller), ["createIsolatedController", "runProductionAcceptance"]);
+  const result = cp.spawnSync(process.execPath, ["-e", `require(${JSON.stringify(require.resolve("../scripts/marketCalendarE4fFreshDayCanary.js"))}).runProductionAcceptance().catch(e => { console.error(e.message); process.exitCode = 1; });`], { encoding: "utf8" });
   assert.notEqual(result.status, 0); assert.match(result.stderr, /native_controller_required/);
   const worker = cp.spawnSync(process.execPath, [require.resolve("../scripts/marketCalendarE4fFreshDayCanary.js"), "--worker", "--production"], { encoding: "utf8" });
-  assert.notEqual(worker.status, 0); assert.match(worker.stderr, /explicit_acceptance_entry_required/);
+  assert.equal(worker.status, 0); assert.equal(worker.stdout, ""); assert.equal(worker.stderr, "");
 });
 test("C18 renderer-style startup spoof rejected without consuming real owner", () => fixture(async ({ controller }) => {
   const spoof = await controller.accept({ trigger: "startup" }); assert.equal(spoof.reason, "acceptance_arguments_forbidden");
