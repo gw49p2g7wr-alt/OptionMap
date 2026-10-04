@@ -1,14 +1,15 @@
 "use strict";
 
 // Read-only acceptance gate; no provisioning, migration, transition or state setter.
-const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
 const A = require("../marketCalendarHistory/formalWriterAuthorityV2.js");
 const E = require("../marketCalendarHistory/writerSafetyVersionedEnvelope.js");
 const Store = require("../marketCalendarHistory/writerSafetyCanaryStore.js");
-const BASE_HEAD = "2f8fec02a37fd2550e5158a3d80320cd814ae755", EXPECTED_SEQUENCE = 2;
+const Approval = require("./freshDayCanaryApproval.js");
+const EXPECTED_SEQUENCE = 2;
 const IMPLEMENTATION_FILES = Object.freeze([
   "js/marketCalendarRuntime/freshDayCanaryPreflight.js",
   "js/marketCalendarRuntime/freshDayCanaryReceipt.js",
+  "js/marketCalendarRuntime/freshDayCanaryApproval.js",
   "scripts/marketCalendarE4fFreshDayCanary.js",
   "test/marketCalendarFreshDayCanaryAcceptance.test.js"
 ]);
@@ -36,24 +37,9 @@ function validateState(loaded) {
       bojPermission: "writer_ineligible", pending: null, historyValid: true });
   } catch (e) { return A.freeze({ valid: false, reason: /^[a-z_]+$/.test(e.message) ? e.message : "preflight_invalid" }); }
 }
-// Fixed HEAD remains exact. A future commit needs a separately approved HEAD binding;
-// ancestry, an argument or an untracked controller cannot silently authorize execution.
-function validateRevision({ head, branch, trackedDiff, stagedDiff, committedImplementation }) {
-  if (head !== BASE_HEAD || branch !== "main") return { valid: false, reason: "execution_head_mismatch" };
-  if (trackedDiff || stagedDiff || committedImplementation !== true) return { valid: false, reason: "uncommitted_implementation" };
-  return { valid: true, reason: null };
-}
-function revision(root) {
-  const git = args => cp.execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-  let committedImplementation = true;
-  for (const p of IMPLEMENTATION_FILES) {
-    try { if (!fs.readFileSync(path.join(root, p)).equals(cp.execFileSync("git", ["show", `HEAD:${p}`],
-      { cwd: root, stdio: ["ignore", "pipe", "ignore"] }))) committedImplementation = false; }
-    catch (_) { committedImplementation = false; }
-  }
-  return validateRevision({ head: git(["rev-parse", "HEAD"]), branch: git(["branch", "--show-current"]),
-    trackedDiff: git(["diff", "--name-only"]), stagedDiff: git(["diff", "--cached", "--name-only"]), committedImplementation });
-}
+// Implementation A is approved only by a manifest-only, exact-parent child B.
+// No current/future HEAD constant, ancestry shortcut or caller-selected manifest.
+function revision(root) { return Approval.verifyRepository(root); }
 function loadProduction() {
   // Fixed native-main factory resolves the production profile; only load/close is exposed here.
   const store = Store.createProductionStore();
@@ -63,5 +49,5 @@ function loadIsolated(root) {
   const store = Store.createIsolatedStore(root);
   try { return store.load(); } finally { store.close(); }
 }
-module.exports = Object.freeze({ BASE_HEAD, EXPECTED_SEQUENCE, IMPLEMENTATION_FILES, validateState, validateRevision,
+module.exports = Object.freeze({ EXPECTED_SEQUENCE, IMPLEMENTATION_FILES, validateState,
   revision, loadProduction, loadIsolated });

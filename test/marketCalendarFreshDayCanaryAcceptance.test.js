@@ -41,12 +41,10 @@ test("C7 manual denied; C8 other 11 denied; C9 BOJ ineligible", () => {
   }
   assert.equal(p.permissions.entries.find(x => x.sourceId === A.BOJ).permission, "writer_ineligible");
 });
-test("fixed HEAD binding rejects dirty/uncommitted code and new HEAD until separate approval", () => {
-  const good = { head: P.BASE_HEAD, branch: "main", trackedDiff: "", stagedDiff: "", committedImplementation: true };
-  assert.equal(P.validateRevision(good).valid, true);
-  for (const patch of [{ head: "0".repeat(40) }, { branch: "other" }, { trackedDiff: "main.js" },
-    { stagedDiff: "main.js" }, { committedImplementation: false }]) assert.equal(P.validateRevision({ ...good, ...patch }).valid, false);
-  // New implementation in this phase is deliberately not an execution authorization.
+test("parent-bound approval rejects uncommitted/unapproved controller without a current HEAD constant", () => {
+  assert.equal(Object.hasOwn(P, "BASE_HEAD"), false);
+  assert.equal(Object.hasOwn(P, "validateRevision"), false);
+  // New implementation alone is deliberately not an execution authorization.
   assert.equal(P.revision(path.resolve(__dirname, "..")).valid, false);
 });
 function wcFixture() {
