@@ -105,6 +105,24 @@ function excluded(p) {
       "scripts/marketCalendarFedGateDControlledProduction.browser.js", "scripts/marketCalendarFedGateDPreflight.js"].includes(p);
 }
 
+// Finder metadata is never an approval/code input. Exempt only the exact name
+// of an existing regular file under the canonical repository root. No content
+// parsing/trust, deletion, .gitignore-based approval or symlink traversal.
+function classifyRuntimeFiles(root, files) {
+  const inertMetadata = [], runtimeOverrides = [];
+  function inert(p) {
+    try {
+      if (typeof root !== "string" || root !== fs.realpathSync(root) || typeof p !== "string" ||
+          path.posix.isAbsolute(p) || p.includes("\0") || p.split("/").some(s => !s || s === "." || s === "..") ||
+          path.posix.basename(p) !== ".DS_Store") return false;
+      const target = path.resolve(root, p);
+      return target.startsWith(root + path.sep) && fs.lstatSync(target).isFile() && fs.realpathSync(target) === target;
+    } catch (_) { return false; }
+  }
+  for (const p of files) (inert(p) ? inertMetadata : runtimeOverrides).push(p);
+  return freeze({ inertMetadata, runtimeOverrides });
+}
+
 // Pure fixture evidence is not an execution capability. Production obtains all
 // observations from Git/file bytes through verifyRepository, never IPC/CLI input.
 function verifyEvidence(e) {
@@ -151,9 +169,11 @@ function verifyRepository(root) {
     if (masked()) reject("tracked_index_mask_forbidden");
     const stagedDiff = text(["diff", "--cached", "--name-only"]), trackedDiff = text(["diff", "--name-only"]);
     if (stagedDiff || trackedDiff) reject("uncommitted_implementation");
-    const untrackedFiles = paths(["ls-files", "--others", "--exclude-standard", "-z"]);
+    const untracked = () => classifyRuntimeFiles(root, paths(["ls-files", "--others", "--exclude-standard", "-z"])).runtimeOverrides;
+    const untrackedFiles = untracked();
     const runtimePaths = ["js", "scripts", "approvals", "main.js", "preload.js", "package.json"];
-    const ignored = () => paths(["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ...runtimePaths]).filter(p => !excluded(p));
+    const ignored = () => classifyRuntimeFiles(root,
+      paths(["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ...runtimePaths])).runtimeOverrides.filter(p => !excluded(p));
     const ignoredRuntimeFiles = ignored();
     if (untrackedFiles.some(p => !excluded(p)) || ignoredRuntimeFiles.length) reject("untracked_runtime_override");
     const head = text(["rev-parse", "HEAD"]), branch = text(["branch", "--show-current"]);
@@ -195,10 +215,10 @@ function verifyRepository(root) {
     // Recheck after reads, never cache across attempts. The owner also rechecks
     // immediately before any startup/state access.
     if (text(["rev-parse", "HEAD"]) !== head || text(["diff", "--name-only"]) || text(["diff", "--cached", "--name-only"]) ||
-        JSON.stringify(paths(["ls-files", "--others", "--exclude-standard", "-z"])) !== JSON.stringify(untrackedFiles) || ignored().length || masked())
+        JSON.stringify(untracked()) !== JSON.stringify(untrackedFiles) || ignored().length || masked())
       reject("approval_changed_during_verification");
     return result;
   } catch (error) { return failure(error); }
 }
 module.exports = Object.freeze({ MANIFEST_PATH, GATE_ID, OPERATION, SOURCE, CRITICAL_ARTIFACTS,
-  parseManifest, verifyEvidence, verifyRepository });
+  parseManifest, verifyEvidence, verifyRepository, classifyRuntimeFiles });
