@@ -6,7 +6,8 @@ const Canonicalizer = require("../marketCalendar/marketEventCanonicalizer.js");
 const Integrity = require("../marketCalendarHistory/historyIntegrity.js");
 const ShadowCycle = require("./formalShadowCycle.js");
 
-const SOURCE_IDS = Object.freeze(Object.keys(Registry.SOURCES).sort());
+// D2d4/E2/E3/E4 historical comparison scope; a future scope needs a new contract.
+const SOURCE_IDS = Registry.HISTORICAL_SOURCE_IDS;
 const HASH = /^[0-9a-f]{64}$/;
 const key = value => `${value.sourceId}\u0000${value.eventKey}`;
 const ordered = values => [...values].sort((a, b) => key(a).localeCompare(key(b)));

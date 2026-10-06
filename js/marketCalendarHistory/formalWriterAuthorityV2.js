@@ -3,13 +3,14 @@
 // E4e-2a: code authority and opaque context candidates only. No runtime/storage wiring.
 const { createHash } = require("node:crypto");
 const V1 = require("./formalWriterAuthority.js");
+const SourceSets = require("../marketCalendar/sourceRegistry.js");
 const Schema = require("./productionSchemaV1.js");
 const CONTRACT_VERSION = 2;
 const STATES = Object.freeze(["disabled", "shadow", "active", "suspended"]);
 const PERMISSIONS = Object.freeze(["approved", "suspended", "writer_ineligible"]);
-const SOURCE_IDS = V1.SOURCE_IDS;
+const SOURCE_IDS = SourceSets.getHistoricalSourceSet(2, 1).sourceIds;
 const BOJ = V1.BOJ_SOURCE_ID;
-const policies = new WeakSet(), contexts = new WeakMap();
+const policies = new WeakSet(), policySourceSets = new WeakMap(), contexts = new WeakMap();
 const isHash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const exact = (value, keys) => !!value && typeof value === "object" && !Array.isArray(value) &&
@@ -35,7 +36,9 @@ function makePolicy(state, authorityVersion, permissionVersion, suspendedSources
     schemaFingerprint: Schema.EXPECTED_FINGERPRINT, permittedOperations: ["startup"],
     permittedSources: [...allowedSources].sort(), permissionIdentity: permissions.identity };
   const policy = freeze({ global: { ...globalMaterial, identity: hash(globalMaterial) }, permissions });
-  policies.add(policy); return policy;
+  // Every policy issued by this historical contract (including hypothetical
+  // resume-version fixtures) retains v1's twelve sources, never current metadata.
+  policies.add(policy); policySourceSets.set(policy, SOURCE_IDS); return policy;
 }
 const PRODUCTION_POLICY = makePolicy("disabled", 2, 1, [], [V1.FIRST_WRITE_SOURCE_ID]);
 // Explicit hypothetical fixture ceiling, not a production configuration/activation API.
@@ -57,8 +60,9 @@ function validatePolicy(policy) {
       "permittedSources", "permissionIdentity", "identity"]) || !exact(p, ["contractVersion", "permissionVersion", "entries", "identity"]) ||
       g.contractVersion !== 2 || p.contractVersion !== 2 || !STATES.includes(g.state) ||
       !integer(g.authorityVersion) || g.authorityVersion < 2 || !integer(p.permissionVersion) || p.permissionVersion < 1 ||
-      g.schemaFingerprint !== Schema.EXPECTED_FINGERPRINT || !Array.isArray(p.entries) || p.entries.length !== 12 ||
-      p.entries.map(e => e.sourceId).sort().join("|") !== SOURCE_IDS.join("|") ||
+      g.schemaFingerprint !== Schema.EXPECTED_FINGERPRINT || !Array.isArray(p.entries) ||
+      p.entries.length !== sourceIdsForPolicy(policy).length ||
+      p.entries.map(e => e.sourceId).sort().join("|") !== sourceIdsForPolicy(policy).join("|") ||
       p.entries.some(e => !exact(e, ["sourceId", "permission"]) || !PERMISSIONS.includes(e.permission) ||
         e.sourceId === BOJ && e.permission !== "writer_ineligible")) throw Error();
     const { identity: gi, ...gm } = g, { identity: pi, ...pm } = p;
@@ -66,6 +70,7 @@ function validatePolicy(policy) {
     return freeze({ valid: true, reason: null });
   } catch (_) { return freeze({ valid: false, reason: "writer_authority_v2_invalid" }); }
 }
+function sourceIdsForPolicy(policy) { return policySourceSets.get(policy) || null; }
 function createMainContextCandidate({ operation, cycleIdentity, attemptIdentity } = {}) {
   mainOnly();
   if (!["startup", "manual"].includes(operation) || !isHash(cycleIdentity) || !isHash(attemptIdentity))
@@ -91,5 +96,5 @@ function consumeContext(token) {
   value.consumed = true; return true;
 }
 module.exports = Object.freeze({ CONTRACT_VERSION, STATES, PERMISSIONS, SOURCE_IDS, BOJ,
-  PRODUCTION_POLICY, createIsolatedPolicy, validatePolicy, createMainContextCandidate,
+  PRODUCTION_POLICY, createIsolatedPolicy, validatePolicy, sourceIdsForPolicy, createMainContextCandidate,
   contextDetails, issueContext, consumeContext, isHash, integer, exact, hash, freeze });

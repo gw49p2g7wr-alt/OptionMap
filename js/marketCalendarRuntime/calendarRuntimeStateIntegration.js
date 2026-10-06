@@ -74,14 +74,14 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
     if (saved.status === "absent") return { ...base, state: "idle" };
     if (saved.status !== "ok") return { ...base, state: "unavailable",
       runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
-    const sources = saved.value.filter(x => x.lastOutcome !== "none").map(x => ({
+    const sources = saved.value.filter(x => Registry.isAcquisitionEnabled(x.sourceId) && x.lastOutcome !== "none").map(x => ({
       sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId],
       status: x.lastOutcome === "success" ? "success" : "failed",
       reasonClass: x.lastDiagnosticClass })).concat((saved.invalidSources || []).filter(x => x.sourceId)
         .map(x => ({ sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId], status: "failed",
           reasonClass: "runtime_state_invalid" }))), successfulSourceCount =
         sources.filter(x => x.status === "success").length, failedSourceIds =
-        sources.filter(x => x.status !== "success").map(x => x.sourceId), total = Object.keys(Registry.SOURCES).length;
+        sources.filter(x => x.status !== "success").map(x => x.sourceId), total = Registry.getAcquisitionEnabledSourceIds().length;
     return { ...base, sources, failedSourceIds, successfulSourceCount,
       requestedSourceCount: total, failedSourceCount: failedSourceIds.length,
       state: !sources.length ? "idle" : successfulSourceCount === total ? "success" :

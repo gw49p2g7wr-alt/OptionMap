@@ -63,6 +63,7 @@ function evaluateSourceUpdate(input) {
   const base = { sourceId: input.sourceId, trigger: input.trigger };
   const source = registry.getSource(input.sourceId);
   if (!source || source.formalEligible !== true) return blocked(base, "source_not_eligible");
+  if (!registry.isAcquisitionEnabled(input.sourceId)) return blocked(base, "acquisition_disabled");
   if (!TRIGGERS.includes(input.trigger)) return blocked(base, "trigger_invalid");
   if (!instant(input.requestedAt)) return blocked(base, "requested_at_invalid");
   const jstDate = date(input.requestedAt);

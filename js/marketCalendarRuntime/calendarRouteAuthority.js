@@ -7,7 +7,8 @@ const Policy = require("./calendarNetworkPolicy.js");
 const Estat = require("../marketCalendarIsolated/estatRoute.js");
 const Bls = require("../marketCalendarIsolated/blsFixedRoute.js");
 const AUTHORITY_VERSION = 1;
-const SOURCE_IDS = Object.freeze(Object.keys(Registry.SOURCES).sort());
+// Historical route authority v1: future metadata alone cannot change identities.
+const SOURCE_IDS = Registry.HISTORICAL_SOURCE_IDS;
 const STATES = Object.freeze(["legacy_active", "alternative_shadow", "alternative_active", "suspended"]);
 const alternative = id => Object.hasOwn(Estat.ROUTES, id) ? "estat_release_calendar"
   : id === Bls.SOURCE_ID ? "bls_fixed_schedule_pages" : null;

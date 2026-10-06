@@ -5,7 +5,7 @@ const Execution = require("./updateExecutionCoordinator.js");
 const Builder = require("./calendarCandidateBuilder.js");
 const Simulator = require("./calendarTransitionSimulator.js");
 
-const MODE = "writer_disabled", ACTIVE_SOURCE_IDS = Object.freeze(Object.keys(Registry.SOURCES));
+const MODE = "writer_disabled", ACTIVE_SOURCE_IDS = Registry.getAcquisitionEnabledSourceIds();
 const SOURCE_NAMES = Object.freeze({
   "jp-boj-calendar": "日本銀行", "jp-stat-cpi": "総務省・消費者物価指数",
   "jp-stat-labor": "総務省・労働力調査",
@@ -25,7 +25,7 @@ function freeze(value) {
 function requestedSources(sourceIds) {
   if (sourceIds === undefined) return [...ACTIVE_SOURCE_IDS];
   if (!Array.isArray(sourceIds) || sourceIds.length === 0 || sourceIds.length > ACTIVE_SOURCE_IDS.length ||
-      sourceIds.some(sourceId => typeof sourceId !== "string" || !Registry.SOURCES[sourceId]))
+      sourceIds.some(sourceId => typeof sourceId !== "string" || !Registry.isAcquisitionEnabled(sourceId)))
     return null;
   const selected = new Set(sourceIds);
   return ACTIVE_SOURCE_IDS.filter(sourceId => selected.has(sourceId));

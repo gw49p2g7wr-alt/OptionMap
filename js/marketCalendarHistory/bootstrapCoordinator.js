@@ -6,7 +6,7 @@ const Schema = require("./productionSchemaV1.js");
 const FirstSource = require("./bootstrapFirstSourceWriter.js");
 const AppendSource = require("./bootstrapAppendSourceWriter.js");
 
-const activeOrder = Object.freeze(Object.keys(Registry.SOURCES));
+const activeOrder = Registry.HISTORICAL_SOURCE_ORDER;
 const clone = value => value == null ? value : structuredClone(value);
 function sourceResult(sourceId, status, reason, values = {}) {
   return { sourceId, decision: status === "committed" ? "commit" : "reject",

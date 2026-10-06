@@ -25,7 +25,7 @@ function createMemorySafety(policy = A.PRODUCTION_POLICY) {
     persistedAuthorityIdentity: policy.global.identity, sourcePermissionVersion: policy.permissions.permissionVersion,
     sourcePermissionIdentity: policy.permissions.identity, sequence: 0,
     globalSuspend: { suspended: false, reason: null }, pendingFence: null,
-    sources: A.SOURCE_IDS.map(sourceId => ({ sourceId, suspended: false, reason: null,
+    sources: A.sourceIdsForPolicy(policy).map(sourceId => ({ sourceId, suspended: false, reason: null,
       counters: Object.fromEntries(CATEGORIES.map(category => [category, EMPTY()])) })) });
 }
 function validateSafety(state, policy = A.PRODUCTION_POLICY) {
@@ -41,8 +41,9 @@ function validateSafety(state, policy = A.PRODUCTION_POLICY) {
       return bad("safety_version_mismatch");
     const latch = value => A.exact(value, ["suspended", "reason"]) && typeof value.suspended === "boolean" &&
       (value.suspended ? REASONS.includes(value.reason) : value.reason === null);
-    if (!latch(state.globalSuspend) || !Array.isArray(state.sources) || state.sources.length !== 12 ||
-      state.sources.map(s => s.sourceId).sort().join("|") !== A.SOURCE_IDS.join("|")) return bad("malformed_safety_state");
+    const sourceIds = A.sourceIdsForPolicy(policy);
+    if (!latch(state.globalSuspend) || !Array.isArray(state.sources) || state.sources.length !== sourceIds.length ||
+      state.sources.map(s => s.sourceId).sort().join("|") !== sourceIds.join("|")) return bad("malformed_safety_state");
     for (const s of state.sources) {
       if (!A.exact(s, ["sourceId", "suspended", "reason", "counters"]) || !latch({ suspended: s.suspended, reason: s.reason }) ||
         !A.exact(s.counters, CATEGORIES)) return bad("malformed_safety_state");

@@ -241,8 +241,15 @@ test("isolated modules have no writer/storage/runtime startup reachability", () 
   };
   files.forEach(file => visit(path.resolve(__dirname, "../js/marketCalendarIsolated", file)));
   for (const file of ["../main.js", "../preload.js", "../js/marketCalendar/sourceRegistry.js",
-    "../js/marketCalendarRuntime/calendarManualCheckService.js", "../js/marketCalendarRuntime/automaticFormalShadowRuntime.js"])
-    assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, file), "utf8"), /mofJgb|jp-mof-jgb-auction-calendar/);
+    "../js/marketCalendarRuntime/calendarManualCheckService.js", "../js/marketCalendarRuntime/automaticFormalShadowRuntime.js"]) {
+    const code = fs.readFileSync(path.resolve(__dirname, file), "utf8");
+    // G1.2a may name MOF in a pure future set, not registration or acquisition.
+    assert.doesNotMatch(code, /mofJgb/);
+    if (!file.endsWith("sourceRegistry.js")) assert.doesNotMatch(code, /jp-mof-jgb-auction-calendar/);
+  }
+  const registry = require("../js/marketCalendar/sourceRegistry.js");
+  assert.equal(registry.getSource(S.SOURCE_ID), null);
+  assert.equal(registry.isAcquisitionEnabled(S.SOURCE_ID), false);
 });
 test("native harness is import-only and keeps package identity with no UA override", () => {
   const h = require("../scripts/marketCalendarG1MofJgbIsolated.js"); assert.equal(typeof h.runNative, "function");

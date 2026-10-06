@@ -12,6 +12,7 @@ const Compare = require("../marketCalendarRuntime/formalExactComparison.js");
 const Gate = require("../marketCalendarRuntime/formalShadowReadOnlyGate.js");
 const Routes = require("../marketCalendarRuntime/calendarRouteAuthority.js");
 const NetworkPolicy = require("../marketCalendarRuntime/calendarNetworkPolicy.js");
+const HISTORICAL_SOURCE_IDS = require("../marketCalendar/sourceRegistry.js").HISTORICAL_SOURCE_IDS;
 
 // Private construction only: callers can select neither source nor authority mode.
 function fixedBoundary(SOURCE_ID, AUTHORIZATION_MODE, RUN_PREFIX, EVENT_COUNT,
@@ -169,7 +170,7 @@ async function completePrewrite(session, input) {
   if (!exactKeys(input, ["sourceResults", "endingFormalSnapshot", "completedAt"]))
     return rejected("prewrite_input_invalid");
   const { sourceResults, endingFormalSnapshot, completedAt } = Core.copy(input);
-  if (!Array.isArray(sourceResults) || sourceResults.length !== 12 ||
+  if (!Array.isArray(sourceResults) || sourceResults.length !== HISTORICAL_SOURCE_IDS.length ||
       !Number.isFinite(Date.parse(completedAt)) || Date.parse(completedAt) < state.startedAt ||
       Date.parse(completedAt) > Date.now()) return rejected("fresh_acquisition_required");
   // CPI inherits its existing two-lane production contract, never total-count-only eligibility.
@@ -240,7 +241,7 @@ async function completePrewrite(session, input) {
     sourceResults, schemaFingerprint: Schema.EXPECTED_FINGERPRINT, completedAt,
     startingPreconditionIdentity: state.preconditionIdentity, endingPreconditionIdentity: endingIdentity });
   const globalEligible = shadowReport.status === "evaluated" &&
-    shadowReport.sourceSuccessCount === 12 && shadowReport.comparison.totals.changed === 0 &&
+    shadowReport.sourceSuccessCount === HISTORICAL_SOURCE_IDS.length && shadowReport.comparison.totals.changed === 0 &&
     Object.values(shadowReport.identityAudit).every(value => value === 0) &&
     shadowReport.sourceRows.every(value => value.sourceId === Authority.BOJ_SOURCE_ID ||
       value.planStatus === "planned");
@@ -361,7 +362,7 @@ function consumeFirstProductionAuthorization(authorization, binding) {
   return { ticket: auth.ticket, expiresAt: auth.expiresAt, binding: Core.copy(auth.binding),
     plan: Core.copy(state.plan), before: Core.copy(state.before), expectedAfter: Core.copy(state.expectedAfter) };
 }
-return Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION_CEILING,
+return Object.freeze({ SOURCE_ID, DATABASE_NAME, MODE, EXPECTED_COUNTS, MUTATION_CEILING, HISTORICAL_SOURCE_IDS,
   beginPrewrite, captureFormalRead, completePrewrite, validateFirstWritePlan,
   validateFreshBinding, requestProductionWrite, verifyReadback,
   authorizeFirstProductionWrite, consumeFirstProductionAuthorization });

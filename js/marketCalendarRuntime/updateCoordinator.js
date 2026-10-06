@@ -4,7 +4,7 @@ const registry = require("../marketCalendar/sourceRegistry.js");
 const policy = require("./updatePolicy.js");
 
 const CLASSIFICATIONS = Object.freeze(["acquisition_candidate", "no_acquisition", "invalid"]);
-const ACTIVE_SOURCE_IDS = Object.freeze(Object.keys(registry.SOURCES));
+const ACTIVE_SOURCE_IDS = registry.getAcquisitionEnabledSourceIds();
 const DEFAULT_FORMAL_STATE = Object.freeze({ databaseStatus: "absent", schemaStatus: "unknown",
   sourceCursorStatus: "absent", lastAcceptedAt: null, securityStatus: "clear" });
 const DEFAULT_SESSION_STATE = Object.freeze({ attemptCount: 0 });
@@ -35,7 +35,10 @@ function selectSources(sourceIds) {
   for (const sourceId of sourceIds) {
     if (typeof sourceId !== "string" || sourceId.length === 0) {
       invalidByKey.set("malformed", { sourceId: null, reason: "malformed_source_id" });
-    } else if (registry.SOURCES[sourceId]) activeSet.add(sourceId);
+    } else if (registry.SOURCES[sourceId]) {
+      if (registry.isAcquisitionEnabled(sourceId)) activeSet.add(sourceId);
+      else invalidByKey.set(`disabled:${sourceId}`, { sourceId, reason: "acquisition_disabled" });
+    }
     else if (registry.BLOCKED_SOURCES[sourceId])
       invalidByKey.set(`blocked:${sourceId}`, { sourceId, reason: "blocked_source" });
     else if (registry.REPLACED_SOURCES[sourceId])

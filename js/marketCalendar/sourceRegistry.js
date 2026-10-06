@@ -4,6 +4,35 @@
     if (root) root.OptionMapMarketEventSourceRegistry = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
+    // Versioned execution contracts are independent of metadata registration.
+    // Keep this order/set immutable: historical authority/receipt hashes use v1.
+    const HISTORICAL_SOURCE_ORDER = Object.freeze([
+        "jp-boj-calendar", "jp-stat-cpi", "jp-stat-labor",
+        "jp-esri-machinery-orders-calendar", "jp-esri-sna-calendar",
+        "us-fed-fomc-calendar", "us-bls-calendar", "us-bea-calendar",
+        "us-census-calendar", "jp-jpx-derivatives-calendar",
+        "jp-jpx-market-holidays", "us-nyse-market-holidays"
+    ]);
+    const HISTORICAL_SOURCE_IDS = Object.freeze([...HISTORICAL_SOURCE_ORDER].sort());
+    const SOURCE_SETS = Object.freeze({
+        1: Object.freeze({ version: 1, candidateOnly: false, sourceIds: HISTORICAL_SOURCE_IDS }),
+        // Pure candidate set only. Neither registration nor activation follows from it.
+        2: Object.freeze({ version: 2, candidateOnly: true, sourceIds: Object.freeze([
+            ...HISTORICAL_SOURCE_IDS, "jp-mof-jgb-auction-calendar"].sort()) })
+    });
+    const ACQUISITION_ENABLED_SOURCE_IDS = HISTORICAL_SOURCE_ORDER;
+    const getSourceSet = version => Object.hasOwn(SOURCE_SETS, version) &&
+        Number.isSafeInteger(version) ? SOURCE_SETS[version] : null;
+    const getHistoricalSourceSet = (authorityVersion, permissionVersion) =>
+        [2, 3].includes(authorityVersion) && permissionVersion === 1 ? SOURCE_SETS[1] : null;
+    // Pure main-side/test selector; no setter, persistent input or renderer override.
+    function selectRegisteredEnabledSourceIds(registeredIds, enabledIds) {
+        const valid = ids => Array.isArray(ids) && ids.every(id => typeof id === "string" && id.length) &&
+            new Set(ids).size === ids.length;
+        if (!valid(registeredIds) || !valid(enabledIds) || enabledIds.some(id => !registeredIds.includes(id)))
+            throw new TypeError("acquisition_source_set_invalid");
+        return Object.freeze(registeredIds.filter(id => enabledIds.includes(id)));
+    }
     const sources = [
         ["jp-boj-calendar", "BOJ", "JP", "https://www.boj.or.jp/about/calendar/", "www.boj.or.jp", "Asia/Tokyo"],
         ["jp-stat-cpi", "JP_STATISTICS_BUREAU", "JP", "https://www.stat.go.jp/data/cpi/", "www.stat.go.jp", "Asia/Tokyo"],
@@ -50,6 +79,11 @@
             resumeCondition: "stable_public_official_schedule_endpoint_without_login_session_or_cookie" }) });
     const getSource = sourceId => SOURCES[sourceId] || null;
     const getKnownSource = sourceId => SOURCES[sourceId] || BLOCKED_SOURCES[sourceId] || null;
+    function getAcquisitionEnabledSourceIds() {
+        return selectRegisteredEnabledSourceIds(Object.keys(SOURCES), ACQUISITION_ENABLED_SOURCE_IDS);
+    }
+    const isAcquisitionEnabled = sourceId => ACQUISITION_ENABLED_SOURCE_IDS.includes(sourceId) &&
+        getSource(sourceId)?.formalEligible === true;
     function validateSourceUrl(sourceId, value) {
         const source = getSource(sourceId); if (!source) return { valid: false, reason: "source_unregistered" };
         try { const url = new URL(value); return url.protocol === "https:" &&
@@ -62,5 +96,7 @@
         reason: "official_endpoint_removed_http_404", replacements: Object.freeze([
             "jp-esri-machinery-orders-calendar", "jp-esri-sna-calendar"]) }) });
     return Object.freeze({ SOURCES, BLOCKED_SOURCES, REPLACED_SOURCES, getSource, getKnownSource,
-        validateSourceUrl });
+        validateSourceUrl, HISTORICAL_SOURCE_ORDER, HISTORICAL_SOURCE_IDS, SOURCE_SETS,
+        getSourceSet, getHistoricalSourceSet, ACQUISITION_ENABLED_SOURCE_IDS,
+        selectRegisteredEnabledSourceIds, getAcquisitionEnabledSourceIds, isAcquisitionEnabled });
 });

@@ -29,7 +29,7 @@ function record(sourceId, overrides = {}) {
 function document(sourceId, overrides = {}) { const source = Registry.getSource(sourceId); return {
     sourceId, parserId: source.parserId, parserVersion: source.parserVersion,
     fetchedAt: FETCHED_AT, rawContentHash: HASH, records: [record(sourceId)], ...overrides }; }
-const allSources = Object.keys(Registry.SOURCES).map(document);
+const allSources = Registry.HISTORICAL_SOURCE_ORDER.map(document);
 const variants = Object.freeze({
     dstSummer: document("us-bls-calendar"),
     dstWinter: document("us-bls-calendar", { records: [record("us-bls-calendar", {

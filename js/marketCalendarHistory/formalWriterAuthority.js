@@ -7,7 +7,7 @@ const Schema = require("./productionSchemaV1.js");
 
 const AUTHORITY_VERSION = 1;
 const STATES = Object.freeze(["disabled", "shadow", "active", "suspended"]);
-const SOURCE_IDS = Object.freeze(Object.keys(Registry.SOURCES).sort());
+const SOURCE_IDS = Registry.HISTORICAL_SOURCE_IDS;
 const BOJ_SOURCE_ID = "jp-boj-calendar";
 const FIRST_WRITE_SOURCE_ID = "jp-esri-machinery-orders-calendar";
 const stable = value => Array.isArray(value) ? value.map(stable) : value &&

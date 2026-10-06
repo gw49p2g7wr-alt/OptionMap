@@ -96,7 +96,8 @@ function validateRequest(value) {
   if (value.operation !== OPERATION)
     return Object.freeze({ valid: false, reason: "operation_not_allowed" });
   const source = registry.getSource(value.sourceId);
-  if (!source || source.formalEligible !== true || !sourcePolicies[value.sourceId])
+  if (!source || source.formalEligible !== true || !registry.isAcquisitionEnabled(value.sourceId) ||
+      !sourcePolicies[value.sourceId])
     return Object.freeze({ valid: false, reason: "source_not_allowed" });
   return Object.freeze({ valid: true, reason: null, sourceId: value.sourceId,
     operation: OPERATION });
