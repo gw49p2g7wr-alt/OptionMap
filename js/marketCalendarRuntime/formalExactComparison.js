@@ -7,7 +7,7 @@ const Integrity = require("../marketCalendarHistory/historyIntegrity.js");
 const ShadowCycle = require("./formalShadowCycle.js");
 
 // D2d4/E2/E3/E4 historical comparison scope; a future scope needs a new contract.
-const SOURCE_IDS = Registry.HISTORICAL_SOURCE_IDS;
+function comparisonFor(SOURCE_IDS) {
 const HASH = /^[0-9a-f]{64}$/;
 const key = value => `${value.sourceId}\u0000${value.eventKey}`;
 const ordered = values => [...values].sort((a, b) => key(a).localeCompare(key(b)));
@@ -128,4 +128,8 @@ async function compare({ sourceResults, formalSnapshot, cycleContext } = {}) {
   return Object.freeze({ status: "compared", reason: null, summaries, differences, totals,
     ambiguityCount: 0, writerEnabled: false, absenceAuthority: "none" });
 }
-module.exports = Object.freeze({ SOURCE_IDS, compare });
+return Object.freeze({ SOURCE_IDS, compare });
+}
+// Separate, fixed isolated scope. Historical comparison/authority remain exact12.
+module.exports = Object.freeze({ ...comparisonFor(Registry.HISTORICAL_SOURCE_IDS),
+  createIsolated13Comparison: () => comparisonFor(Registry.getSourceSet(2).sourceIds) });

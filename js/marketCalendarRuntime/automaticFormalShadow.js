@@ -53,8 +53,8 @@ async function runFor(source, snapshot, context) {
   return { sourceId: source.sourceId, runId: `automatic-shadow-${id}`, acceptedAt,
     fetchedAt, semanticSetHash, status: "accepted" };
 }
-async function evaluate({ sourceResults, before, after = before, schemaFingerprint,
-  internalAuthority = INTERNAL_SHADOW, routeAuthority = Routes.PRODUCTION_AUTHORITY } = {}) {
+async function evaluateCycle({ sourceResults, before, after = before, schemaFingerprint,
+  internalAuthority = INTERNAL_SHADOW, routeAuthority = Routes.PRODUCTION_AUTHORITY } = {}, sharedCycle = null) {
   const started = performance.now();
   if (!same(internalAuthority, INTERNAL_SHADOW) ||
       !Writer.validateAuthority(Writer.PRODUCTION_AUTHORITY).valid ||
@@ -67,9 +67,10 @@ async function evaluate({ sourceResults, before, after = before, schemaFingerpri
   try {
   // One immutable acquisition binding per cycle; a new acquisition starts a new cycle.
   Cycle.freeze(sourceResults);
-    cycleContext = Cycle.create(before, schemaFingerprint);
+    cycleContext = sharedCycle || Cycle.create(before, schemaFingerprint);
+    Cycle.get(cycleContext, before);
     endingCycle = after === before ? cycleContext : Cycle.create(after, schemaFingerprint);
-  } catch (_) { if (cycleContext) Cycle.close(cycleContext); return failure("formal_integrity_invalid"); }
+  } catch (_) { if (cycleContext && !sharedCycle) Cycle.close(cycleContext); return failure("formal_integrity_invalid"); }
   try {
   const context = Cycle.get(cycleContext, before), ending = Cycle.get(endingCycle, after);
   const snapshotIdentity = context.snapshotIdentity, endingSnapshotIdentity = ending.snapshotIdentity;
@@ -143,10 +144,12 @@ async function evaluate({ sourceResults, before, after = before, schemaFingerpri
     failedPartialCount: rows.filter(r => ["failed", "partial"].includes(r.acquisition)).length,
     aggregatePlannedCounts: aggregate, performance: reportedPerformance };
   } finally {
-    Cycle.close(cycleContext); if (endingCycle !== cycleContext) Cycle.close(endingCycle);
-    if (reportedPerformance) reportedPerformance.cacheDisposed = true;
+    if (!sharedCycle) Cycle.close(cycleContext);
+    if (endingCycle !== cycleContext) Cycle.close(endingCycle);
+    if (reportedPerformance) reportedPerformance.cacheDisposed = !sharedCycle;
   }
 }
+const evaluate = input => evaluateCycle(input);
 function createPipeline({ readFormal, internalAuthority = INTERNAL_SHADOW } = {}) {
   if (typeof readFormal !== "function") throw TypeError("formal_read_required");
   let active = null, cycle = null, last = null;
@@ -179,4 +182,8 @@ function createPipeline({ readFormal, internalAuthority = INTERNAL_SHADOW } = {}
   }
   return Object.freeze({ capture, check, diagnostics: () => copy(last) });
 }
-module.exports = Object.freeze({ INTERNAL_SHADOW, projectAcquisition, evaluate, createPipeline, integrity });
+module.exports = Object.freeze({ INTERNAL_SHADOW, projectAcquisition, evaluate, createPipeline, integrity,
+  evaluateInIsolatedCycle: (input, token) => {
+    if (!token) throw TypeError("isolated_cycle_required");
+    return evaluateCycle(input, token);
+  } });

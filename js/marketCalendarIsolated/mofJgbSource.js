@@ -69,7 +69,8 @@ function decode(bytes, contentType) {
 }
 const SAFE = new Set(["request_timeout", "body_timeout", "content_length_invalid", "content_length_exceeded",
   "body_size_exceeded", "truncated_response", "response_stream_unavailable"]);
-function createAcquirer({ fetchImpl, requestTimeoutMs = TIMEOUT_MS, bodyTimeoutMs = TIMEOUT_MS } = {}) {
+function createAcquirer({ fetchImpl, requestTimeoutMs = TIMEOUT_MS, bodyTimeoutMs = TIMEOUT_MS,
+  rejectDuplicateDiscovery = false } = {}) {
   if (typeof fetchImpl !== "function" || ![requestTimeoutMs, bodyTimeoutMs].every(n => Number.isInteger(n) && n > 0 && n <= TIMEOUT_MS))
     throw TypeError("isolated_transport_required");
   const resources = { activeTasks: 0, activeTimers: 0, requests: 0 };
@@ -131,6 +132,8 @@ function createAcquirer({ fetchImpl, requestTimeoutMs = TIMEOUT_MS, bodyTimeoutM
     if (index.outcome !== "complete") return { outcome: "failed", reason: index.reason, documents, discovery: null };
     const discovery = discoverMonths(index.html, request.assessmentDateJst);
     if (!discovery.ok) return { outcome: "failed", reason: discovery.reason, documents, discovery };
+    if (rejectDuplicateDiscovery && discovery.duplicateCount)
+      return { outcome: "failed", reason: "duplicate_month_document", documents, discovery };
     const urls = discovery.months.map(m => m.url);
     for (const item of discovery.months) {
       const d = await document(item.url, urls); documents.push(d);

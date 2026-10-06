@@ -1,7 +1,8 @@
 "use strict";
 
-const registry = require("../marketCalendar/sourceRegistry.js");
+const productionRegistry = require("../marketCalendar/sourceRegistry.js");
 const stateApi = require("./sourceUpdateState.js");
+function policyFor(registry) {
 
 const POLICY_VERSION = 1;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -127,5 +128,9 @@ function evaluateSourceUpdate(input) {
     { attemptCount, jstDate });
 }
 
-module.exports = Object.freeze({ POLICY_VERSION, TRIGGERS, DECISIONS, REASONS, DEFAULT_POLICY,
+return Object.freeze({ POLICY_VERSION, TRIGGERS, DECISIONS, REASONS, DEFAULT_POLICY,
   evaluateSourceUpdate });
+}
+module.exports = Object.freeze({ ...policyFor(productionRegistry),
+  createIsolated13Policy: () => policyFor(Object.freeze({ ...productionRegistry,
+    isAcquisitionEnabled: id => productionRegistry.getSourceSet(2).sourceIds.includes(id) })) });
