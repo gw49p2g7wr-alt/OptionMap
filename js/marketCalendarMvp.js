@@ -23,7 +23,8 @@
         "us-bea-calendar": "米経済分析局", "us-census-calendar": "米国勢調査局",
         "jp-jpx-derivatives-calendar": "日本取引所・デリバティブ",
         "jp-jpx-market-holidays": "日本取引所・休場日",
-        "us-nyse-market-holidays": "ニューヨーク証券取引所"
+        "us-nyse-market-holidays": "ニューヨーク証券取引所",
+        "jp-mof-jgb-auction-calendar": "財務省・国債入札"
     });
     const IMPORTANCE_NAMES = Object.freeze({ critical: "最重要", high: "重要", medium: "通常" });
     const SHORT_NAMES = Object.freeze({ BOJ_MPM: "日銀会合", BOJ_POLICY_DECISION: "日銀政策決定",
@@ -37,7 +38,7 @@
         JPX_NIKKEI225_SQ: "日経225 SQ", JPX_NIKKEI225_MAJOR_SQ: "日経225 MSQ",
         JPX_NIKKEI225_LAST_TRADING_DAY: "日経225取引最終日",
         JPX_MARKET_HOLIDAY: "日本市場休場", US_NYSE_MARKET_HOLIDAY: "NYSE休場",
-        US_NYSE_EARLY_CLOSE: "NYSE短縮取引" });
+        US_NYSE_EARLY_CLOSE: "NYSE短縮取引", JP_JGB_AUCTION: "国債入札" });
     const EDITION_NAMES = Object.freeze({ advance: "速報", second: "改定", third: "確報" });
     function todayJst(now = new Date()) {
         const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo",
@@ -72,7 +73,9 @@
         const basic = presentation.build(revision), interval = schedule.calendarDateIntervalFor(
             revision.schedule, "Asia/Tokyo"), kind = revision.schedule.kind;
         if (!SOURCE_NAMES[revision.sourceId]) throw new TypeError("source_unknown");
-        const shortBase = SHORT_NAMES[revision.logical.eventType] || basic.title;
+        const shortBase = revision.logical.eventType === "JP_JGB_AUCTION" ?
+            `${revision.logical.auctionIdentity.maturity.slice(0, -1)}年${SHORT_NAMES.JP_JGB_AUCTION}` :
+            SHORT_NAMES[revision.logical.eventType] || basic.title;
         const edition = revision.logical.edition, shortTitle = edition && EDITION_NAMES[edition] &&
             ["US_GDP", "JP_GDP"].includes(revision.logical.eventType) ?
             `${shortBase}・${EDITION_NAMES[edition]}` : shortBase;

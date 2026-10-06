@@ -41,7 +41,7 @@ test("manual 12/12 successはwriter-disabled previewを返す", async () => {
 });
 
 test("10/12 partialと12/12 failureはsource identityとsanitized reasonを保持", async () => {
-  const ids = Object.keys(Registry.SOURCES), partial = await service(async ({ sourceId }) =>
+  const ids = Registry.getAcquisitionEnabledSourceIds(), partial = await service(async ({ sourceId }) =>
     ids.slice(-2).includes(sourceId) ? failedEnvelope(sourceId) : successEnvelope(sourceId)).check(),
     failed = await service(async ({ sourceId }) => failedEnvelope(sourceId, "network_failed")).check();
   assert.equal(partial.state, "partial"); assert.equal(partial.successfulSourceCount, 10);
@@ -67,7 +67,7 @@ test("failure subset retryはregistry順へ正規化しdaily policyをmanualで�
     return successEnvelope(sourceId); }), selected = ["us-bls-calendar", "jp-boj-calendar"];
   const result = await instance.check({ sourceIds: selected });
   assert.equal(result.state, "success");
-  assert.deepEqual(calls, Object.keys(Registry.SOURCES).filter(id => selected.includes(id)));
+  assert.deepEqual(calls, Registry.getAcquisitionEnabledSourceIds().filter(id => selected.includes(id)));
 });
 
 test("serviceはDB・writer・persistent state・raw outputへ接続しない", () => {

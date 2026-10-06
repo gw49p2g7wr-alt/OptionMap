@@ -164,7 +164,7 @@ test("12 source bounded integration fixtureはpeak 3以下・canonical order・c
     } }), result = await runner.run(request({}));
   assert.equal(result.sourceResults.length, 12);
   assert.equal(peak <= 3, true);
-  assert.deepEqual(result.sourceResults.map(value => value.sourceId), Object.keys(Registry.SOURCES));
+  assert.deepEqual(result.sourceResults.map(value => value.sourceId), Registry.HISTORICAL_SOURCE_ORDER);
   assert.equal(result.resources.flights.activeFlightCount, 0);
   assert.equal(result.resources.pools.activePoolCount, 0);
 });

@@ -174,7 +174,7 @@ test("same input・record order・runtime timestamp差は同一semantic plan", a
 });
 
 test("12 source synthetic shadowはすべてunchangedをsimulation", async () => {
-  for (const sourceId of Object.keys(Registry.SOURCES)) {
+  for (const sourceId of Registry.HISTORICAL_SOURCE_ORDER) {
     const one = await event(sourceId), value = await candidate(sourceId, [one]), result =
       await simulate(sourceId, value, previous(sourceId, [one]));
     assert.equal(result.simulationStatus, "unchanged", sourceId);

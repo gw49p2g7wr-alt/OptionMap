@@ -22,7 +22,7 @@ function response(url, failRole) {
 test("fixed 12-source manifest: three shadow, nine legacy, no missing/duplicate/unknown", () => {
   const m = A.DEFAULT_AUTHORITY;
   assert.equal(m.entries.length, 12); assert.equal(new Set(m.entries.map(e => e.sourceId)).size, 12);
-  assert.deepEqual(m.entries.map(e => e.sourceId), Object.keys(Registry.SOURCES).sort());
+  assert.deepEqual(m.entries.map(e => e.sourceId), Registry.HISTORICAL_SOURCE_IDS);
   assert.deepEqual(m.entries.filter(e => e.activationState === "alternative_shadow").map(e => e.sourceId).sort(), [...alternatives].sort());
   assert.equal(m.entries.filter(e => e.activationState === "legacy_active").length, 9);
   assert.equal(A.validateAuthority(m).valid, true);

@@ -21,7 +21,8 @@ test("Phase 0A taxonomyの全event typeに一次authorityがある", () => {
 });
 
 test("Phase 0B registryは公式HTTPS hostとIANA timezoneを固定", () => {
-    assert.equal(Object.keys(Registry.SOURCES).length, 12);
+    assert.equal(Object.keys(Registry.SOURCES).length, 13);
+    assert.equal(Registry.getAcquisitionEnabledSourceIds().length, 12);
     for (const source of Object.values(Registry.SOURCES)) {
         assert.equal(Registry.validateSourceUrl(source.sourceId, source.canonicalUrl).valid, true);
         assert.equal(Registry.validateSourceUrl(source.sourceId, "https://example.com/calendar").valid, false);
@@ -64,7 +65,7 @@ test("旧ESRI 404 sourceは理由と分割先を明示してFormal registryか�
 
 test("Phase 0C fixture parserは初期βの全sourceを受理", () => {
     assert.deepEqual(Fixtures.allSources.map(value => value.sourceId).sort(),
-        Object.keys(Registry.SOURCES).sort());
+        Registry.HISTORICAL_SOURCE_IDS);
     for (const fixture of Fixtures.allSources) {
         const parsed = Parser.parseFixtureDocument(fixture);
         assert.equal(parsed.status, "success", `${fixture.sourceId}: ${parsed.diagnostics}`);

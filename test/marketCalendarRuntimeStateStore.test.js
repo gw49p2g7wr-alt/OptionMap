@@ -11,7 +11,7 @@ const Controller = require("../js/marketCalendarRuntime/calendarUpdateUiControll
 const Presentation = require("../js/marketCalendarRuntime/calendarUpdatePresentation.js");
 const Service = require("../js/marketCalendarRuntime/calendarManualCheckService.js");
 const fs = require("node:fs"), path = require("node:path");
-const ID = "jp-boj-calendar", AT = "2026-09-25T00:00:00.000Z", ids = Object.keys(Registry.SOURCES);
+const ID = "jp-boj-calendar", AT = "2026-09-25T00:00:00.000Z", ids = Registry.getAcquisitionEnabledSourceIds();
 const stores = [], audit = { reopenCycles: 0, formalMutationDuringRuntimeOperations: 0 };
 function instance(indexedDB = new IDBFactory()) {
   const store = Store.createRuntimeStateStore({ indexedDB, targetEnvironment: "isolated_test" });

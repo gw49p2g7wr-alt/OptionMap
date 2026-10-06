@@ -6,7 +6,7 @@
     "use strict";
     const CATEGORY = Object.freeze({ CENTRAL_BANK: "central_bank", INFLATION: "inflation",
         GROWTH: "growth", LABOR: "labor", SURVEY: "survey", DERIVATIVES: "derivatives",
-        MARKET_SESSION: "market_session" });
+        MARKET_SESSION: "market_session", FIXED_INCOME: "fixed_income" });
     const EVENT_TYPES = Object.freeze({
         BOJ_MPM: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
         BOJ_POLICY_DECISION: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
@@ -17,6 +17,7 @@
         JP_LABOR_FORCE: { category: CATEGORY.LABOR, jurisdiction: "JP" },
         JP_INDUSTRIAL_PRODUCTION: { category: CATEGORY.GROWTH, jurisdiction: "JP" },
         JP_MACHINERY_ORDERS: { category: CATEGORY.GROWTH, jurisdiction: "JP" },
+        JP_JGB_AUCTION: { category: CATEGORY.FIXED_INCOME, jurisdiction: "JP" },
         JP_TANKAN: { category: CATEGORY.SURVEY, jurisdiction: "JP" },
         US_CPI: { category: CATEGORY.INFLATION, jurisdiction: "US" },
         US_PPI: { category: CATEGORY.INFLATION, jurisdiction: "US" },

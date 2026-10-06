@@ -227,11 +227,13 @@ test("canonical input malformed/source mismatch rejects", async () => {
     { sourceLocalSchedule: { ...r.sourceLocalSchedule, startDate: "2026-10-09" } }])
     assert.equal((await C.canonicalize({ ...r, ...changes })).ok, false);
 });
-test("production canonicalizer/registry/taxonomy reject isolated proposal unchanged", async () => {
+test("registered production metadata requires explicit typed conversion; isolated proposal remains unchanged", async () => {
   const registry = require("../js/marketCalendar/sourceRegistry.js"), taxonomy = require("../js/marketCalendar/eventTaxonomy.js");
-  assert.equal(registry.getSource(S.SOURCE_ID), null); assert.equal(taxonomy.isEventType(S.EVENT_TYPE), false);
+  assert.equal(registry.getSource(S.SOURCE_ID).acquisitionEnabled, false); assert.equal(taxonomy.isEventType(S.EVENT_TYPE), true);
   const result = await require("../js/marketCalendar/marketEventCanonicalizer.js").canonicalize(parse(F.current).records[0]);
-  assert.equal(result.ok, false); assert.equal(result.reason, "source_unregistered");
+  assert.equal(result.ok, false); assert.equal(result.reason, "jgb_identity_invalid");
+  const canonicalizer = require("../js/marketCalendar/marketEventCanonicalizer.js");
+  assert.equal((await canonicalizer.canonicalize(canonicalizer.toTypedJgbRecord(parse(F.current).records[0]))).ok, true);
 });
 test("isolated modules have no writer/storage/runtime startup reachability", () => {
   const files = ["mofJgbSource.js", "mofJgbParser.js", "mofJgbCanonical.js"], seen = new Set();
@@ -248,7 +250,7 @@ test("isolated modules have no writer/storage/runtime startup reachability", () 
     if (!file.endsWith("sourceRegistry.js")) assert.doesNotMatch(code, /jp-mof-jgb-auction-calendar/);
   }
   const registry = require("../js/marketCalendar/sourceRegistry.js");
-  assert.equal(registry.getSource(S.SOURCE_ID), null);
+  assert.equal(registry.getSource(S.SOURCE_ID).writerAllowed, false);
   assert.equal(registry.isAcquisitionEnabled(S.SOURCE_ID), false);
 });
 test("native harness is import-only and keeps package identity with no UA override", () => {

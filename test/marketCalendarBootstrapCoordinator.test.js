@@ -15,7 +15,7 @@ const Simulator = require("../js/marketCalendarRuntime/calendarTransitionSimulat
 const BootstrapSchema = require("../js/marketCalendarHistory/bootstrapSchemaV1.js");
 const Coordinator = require("../js/marketCalendarHistory/bootstrapCoordinator.js");
 
-const AT = "2026-09-24T00:00:00.000Z", ACTIVE = Object.keys(Registry.SOURCES);
+const AT = "2026-09-24T00:00:00.000Z", ACTIVE = Registry.HISTORICAL_SOURCE_ORDER;
 const request = value => new Promise((resolve, reject) => {
   value.onsuccess = () => resolve(value.result); value.onerror = () => reject(value.error);
 });

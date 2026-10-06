@@ -20,6 +20,7 @@
         JP_NATIONAL_CPI: "jp-stat-cpi", JP_TOKYO_CPI: "jp-stat-cpi",
         JP_LABOR_FORCE: "jp-stat-labor", JP_GDP: "jp-esri-sna-calendar",
         JP_MACHINERY_ORDERS: "jp-esri-machinery-orders-calendar",
+        JP_JGB_AUCTION: "jp-mof-jgb-auction-calendar",
         JP_INDUSTRIAL_PRODUCTION: "jp-meti-calendar",
         US_FOMC_MEETING: "us-fed-fomc-calendar", US_FOMC_POLICY_DECISION: "us-fed-fomc-calendar",
         US_FED_CHAIR_PRESS_CONFERENCE: "us-fed-fomc-calendar",

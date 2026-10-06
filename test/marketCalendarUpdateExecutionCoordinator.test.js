@@ -118,7 +118,7 @@ test("12 sourceはpeak concurrency 3以下", async () => {
   assert.equal(result.sourceResults.length, 12);
   assert.equal(peak <= 3, true);
   assert.equal(result.summary.peakSourceConcurrency <= 3, true);
-  assert.deepEqual(result.sourceResults.map(item => item.sourceId), Object.keys(Registry.SOURCES));
+  assert.deepEqual(result.sourceResults.map(item => item.sourceId), Registry.getAcquisitionEnabledSourceIds());
 });
 
 test("registry外・blocked・replacedとschedulerはPhase Aへ到達しない", async () => {

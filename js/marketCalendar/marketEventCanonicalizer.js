@@ -29,15 +29,20 @@
             policy.evaluateFormalEligibility(record, source);
         if (!eligibility.eligible) return { ok: false, reason: eligibility.reason, event: null };
         let logical, eventSchedule;
-        try { logical = identity.create({ jurisdiction: source.jurisdiction, authority: source.authority,
+        const jgb = record.eventType === "JP_JGB_AUCTION";
+        try { logical = identity.create(jgb ? { jurisdiction: source.jurisdiction, authority: source.authority,
+            eventType: record.eventType, auctionIdentity: record.auctionIdentity, authorityEventId: null } :
+            { jurisdiction: source.jurisdiction, authority: source.authority,
             eventType: record.eventType, referencePeriod: record.referencePeriod,
             edition: record.edition || "initial", scope: record.scope,
             authorityEventId: record.authorityEventId });
             eventSchedule = schedules.canonicalize(record.sourceLocalSchedule); }
         catch (error) { return { ok: false, reason: error.message, event: null }; }
+        const years = jgb ? record.auctionIdentity.maturity.slice(0, -1) : null;
         const semanticContent = { schemaVersion: 1, logical, schedule: eventSchedule,
             lifecycleStatus: record.sourceStatus || "scheduled",
-            title: { ja: record.titleJa || record.sourceTitle, en: record.titleEn || null },
+            title: jgb ? { ja: `${years}年国債 入札`, en: `${years}-year JGB Auction` } :
+                { ja: record.titleJa || record.sourceTitle, en: record.titleEn || null },
             change: { reason: record.changeReason || null, supersedesRevisionKey: null } };
         const acquisitionEvidence = { sourceId: source.sourceId, authority: source.authority,
             sourceUrl: record.sourceUrl, sourcePublishedAt: record.sourcePublishedAt,
@@ -49,7 +54,7 @@
             acquisitionEvidenceHash = await sha256(acquisitionEvidence);
         const freeze = value => { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
             Object.values(value).forEach(freeze); return Object.freeze(value); };
-        return { ok: true, reason: null, event: freeze({ ...semanticContent,
+        return { ok: true, reason: null, event: freeze({ ...semanticContent, ...(jgb ? { absenceAuthority: "none" } : {}),
             source: acquisitionEvidence, acquisitionEvidence,
             eventKey: logical.eventKey, revisionKey: `${logical.eventKey}|sha256:${canonicalContentHash}`,
             acquisitionEvidenceKey: `${source.sourceId}|sha256:${acquisitionEvidenceHash}`,
@@ -59,5 +64,5 @@
         !(typeof window !== "undefined" && window.document)
         ? { createCanonicalizer: sourceRegistry => factory(identity, schedules, policy, sourceRegistry,
             contract.createSourceContract(sourceRegistry)) } : {};
-    return Object.freeze({ stable, sha256, canonicalize, ...isolatedFactory });
+    return Object.freeze({ stable, sha256, canonicalize, toTypedJgbRecord: contract.toTypedJgbRecord, ...isolatedFactory });
 });

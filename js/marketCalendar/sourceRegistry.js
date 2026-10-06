@@ -61,6 +61,26 @@
         endpointHistory: Object.freeze([{ url: "https://www.nyse.com/markets/hours-calendars",
             status: "replaced", replacement: nyse.canonicalUrl,
             reason: "official_same_host_redirect_to_trade_hours_calendars" }]) });
+    // G1.2b metadata only: no transport/parser imports or acquisition activation.
+    const MOF_JGB_METADATA = Object.freeze({ sourceId: "jp-mof-jgb-auction-calendar",
+        owner: "MOF", sourceOwner: "財務省理財局国債業務課", authority: "MOF", jurisdiction: "JP",
+        authorityLevel: "primary", sourceKind: "official_calendar", formalEligible: true,
+        eventType: "JP_JGB_AUCTION", eventClass: "jgb_auction_schedule", absenceAuthority: "none",
+        canonicalUrl: "https://www.mof.go.jp/jgbs/auction/calendar/index.htm",
+        allowedHosts: Object.freeze(["www.mof.go.jp"]), sourceTimeZone: "Asia/Tokyo",
+        parserId: "mof-jgb-month-isolated", parserVersion: 1, canonicalizationContract: "jgb-auction-typed-v1",
+        acquisitionEnabled: false, writerAllowed: false, writerPermission: "none",
+        route: Object.freeze({ routeKind: "mof_auction_month_set", operation: "source-document-set",
+            host: "www.mof.go.jp", indexPath: "/jgbs/auction/calendar/index.htm",
+            monthPathPattern: "^/jgbs/auction/calendar/[0-9]{2}(0[1-9]|1[0-2])\\.htm$",
+            documentSet: Object.freeze({ kind: "variable", indexRole: "index",
+                discoveredMonthRolePrefix: "month:", discovery: "validated_index_links_only",
+                maxDiscoveredMonths: 36, coverage: "published_months_only" }),
+            fetchPolicy: Object.freeze({ method: "GET", httpsOnly: true, credentialsAllowed: false,
+                arbitraryHeadersAllowed: false, allowedMime: Object.freeze(["text/html"]), maxBytes: 2_000_000,
+                encodingPolicy: "declared_strict_utf8", requestTimeoutMs: 15_000, bodyTimeoutMs: 15_000,
+                maxRedirects: 3, redirectPolicy: "validated_discovered_same_month_only", maxRetries: 0 }) }) });
+    sourceEntries[MOF_JGB_METADATA.sourceId] = MOF_JGB_METADATA;
     const SOURCES = Object.freeze(sourceEntries);
     const BLOCKED_SOURCES = Object.freeze({ "jp-meti-calendar": Object.freeze({ sourceId: "jp-meti-calendar",
         authority: "JP_METI", jurisdiction: "JP", authorityLevel: "primary",
@@ -86,6 +106,12 @@
         getSource(sourceId)?.formalEligible === true;
     function validateSourceUrl(sourceId, value) {
         const source = getSource(sourceId); if (!source) return { valid: false, reason: "source_unregistered" };
+        if (sourceId === MOF_JGB_METADATA.sourceId) {
+            const valid = typeof value === "string" &&
+                /^https:\/\/www\.mof\.go\.jp\/jgbs\/auction\/calendar\/(?:index|\d{2}(?:0[1-9]|1[0-2]))\.htm$/.test(value) &&
+                new URL(value).href === value;
+            return valid ? { valid: true, reason: null, url: value } : { valid: false, reason: "source_url_not_allowed" };
+        }
         try { const url = new URL(value); return url.protocol === "https:" &&
             source.allowedHosts.includes(url.hostname) && !url.username && !url.password
             ? { valid: true, reason: null, url: url.href }
