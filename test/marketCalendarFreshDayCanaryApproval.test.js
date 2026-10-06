@@ -149,8 +149,11 @@ test("canonical content bytes are hashed without whitespace/line-ending normaliz
 test("missing approval / implementation-only A cannot authorize production", () => {
   assert.equal(V.verifyEvidence({}).valid, false);
   assert.equal(P.revision(repo).valid, false);
-  // The previous approval remains history, but lacks the dedicated entry digest.
-  assert.equal(V.parseManifest(fs.readFileSync(path.join(repo, V.MANIFEST_PATH), "utf8")).reason, "manifest_digests_invalid");
+  // Model the historical sixteen-artifact approval explicitly; the repository
+  // may now contain B3's seventeen-artifact manifest, which is data-valid.
+  const stale = JSON.parse(fs.readFileSync(path.join(repo, V.MANIFEST_PATH), "utf8"));
+  delete stale.criticalArtifactDigests["scripts/marketCalendarE4fFreshDayCanaryEntry.js"];
+  assert.equal(V.parseManifest(JSON.stringify(stale)).reason, "manifest_digests_invalid");
 });
 test("P13/P14 no migration/authority transition calls or production imports", () => {
   const source = fs.readFileSync(require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js"), "utf8");

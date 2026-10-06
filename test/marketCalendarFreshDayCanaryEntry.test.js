@@ -17,6 +17,16 @@ function adapter(runController, extra = {}) {
     handoff: async m => { messages.push(m); }, quit: code => { exits.push(code); }, ...extra });
   return { instance, messages, exits };
 }
+function nativeFixture(runController, stdout, quit) {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(require("node:os").tmpdir()), "optionmap-writer-safety-receipt-vm-"));
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ main: entryPath }));
+  const base = require("node:module").createRequire(entryPath);
+  const context = vm.createContext({ __filename: entryPath, module: { exports: {} },
+    process: { type: "browser", platform: process.platform, versions: { electron: "42.5.1" }, stdout: { write: stdout } },
+    require: key => key === "./marketCalendarE4fFreshDayCanary.js" ? { runProductionAcceptance: runController } :
+      key === "electron" ? { app: { getAppPath: () => root, quit: () => quit(0), exit: quit } } : base(key), Buffer });
+  return { root, context, close: () => fs.rmSync(root, { recursive: true }) };
+}
 for (const [id, expression] of [["E1 require", `require(${JSON.stringify(controllerPath)})`],
   ["E2 import", `import(${JSON.stringify(pathToFileURL(controllerPath).href)})`]]) {
   test(id + " controller import performs no startup/network/writer/state access", () => {
@@ -35,25 +45,19 @@ for (const [id, expression] of [["E1 require", `require(${JSON.stringify(control
 test("E3 installed-loader import shape invokes dedicated package entry once", async () => {
   let invocations = 0, quits = 0; const messages = [], order = [];
   const source = fs.readFileSync(entryPath, "utf8");
-  const context = vm.createContext({ __filename: entryPath, module: { exports: {} },
-    process: { type: "browser", versions: { electron: "42.5.1" }, stdout: { write(text, callback) {
-      messages.push(JSON.parse(text)); order.push("handoff"); callback();
-    } } },
-    require: key => {
-      if (key === "node:fs") return { readFileSync: () => JSON.stringify({ main: entryPath }), realpathSync: p => p };
-      if (key === "node:path") return path;
-      if (key === "./marketCalendarE4fFreshDayCanary.js") return { runProductionAcceptance: async () => { invocations++; order.push("controller"); return hold(); } };
-      if (key === "../js/marketCalendarRuntime/freshDayCanaryApproval.js") return V;
-      if (key === "electron") return { app: { getAppPath: () => "/isolated/package", quit: () => { quits++; order.push("quit"); } } };
-      throw Error("unexpected_dependency");
-    } });
+  const fixture = nativeFixture(async () => { invocations++; order.push("controller"); return hold(); },
+    text => { messages.push(JSON.parse(text)); order.push("handoff"); }, () => { quits++; order.push("quit"); });
+  const { context } = fixture;
+  try {
   // No require.main exists in this import-shaped native realm.
   vm.runInContext(source, context);
   const pending = vm.runInContext("globalThis[Symbol.for('optionmap.fresh-day-canary.package-entry.v1')]", context);
   await pending;
   assert.equal(invocations, 1); assert.equal(quits, 1); assert.equal(messages.length, 1);
   assert.deepEqual(order, ["controller", "handoff", "quit"]);
-  assert.equal(Entry.validateDelivery(messages[0], 0).status, "HOLD");
+  assert.equal(messages[0].type, "fresh_day_canary_transport_summary");
+  assert.equal(Entry.readReceipt(fixture.root, 0).delivery.status, "HOLD");
+  } finally { fixture.close(); }
 });
 test("E4 duplicate callbacks join one promise; reject never permits second invocation", async () => {
   let count = 0; const f = adapter(async () => { count++; return hold(); });
@@ -63,31 +67,24 @@ test("E4 duplicate callbacks join one promise; reject never permits second invoc
 test("duplicate entry module evaluation cannot issue another controller call", async () => {
   let count = 0;
   const wrapped = `(function() { ${fs.readFileSync(entryPath, "utf8")} })()`;
-  const c = vm.createContext({ __filename: entryPath, module: { exports: {} },
-    process: { type: "browser", versions: { electron: "42.5.1" }, stdout: { write: (_, cb) => cb() } },
-    require: key => key === "node:fs" ? { readFileSync: () => JSON.stringify({ main: entryPath }), realpathSync: p => p } :
-      key === "node:path" ? path : key === "./marketCalendarE4fFreshDayCanary.js" ? { runProductionAcceptance: async () => { count++; return hold(); } } :
-      key === "../js/marketCalendarRuntime/freshDayCanaryApproval.js" ? V :
-      key === "electron" ? { app: { getAppPath: () => "/isolated", quit() {} } } : null });
+  const fixture = nativeFixture(async () => { count++; return hold(); }, () => {}, () => {}), c = fixture.context;
+  try {
   vm.runInContext(wrapped, c); vm.runInContext(wrapped, c);
   await vm.runInContext("globalThis[Symbol.for('optionmap.fresh-day-canary.package-entry.v1')]", c);
   assert.equal(count, 1);
+  assert.equal(Entry.readReceipt(fixture.root, 0).delivery.status, "HOLD");
+  } finally { fixture.close(); }
 });
 test("native rejection delivers explicit FAIL before Electron exit(1), not quit's zero exit", async () => {
   const order = [], messages = [], source = fs.readFileSync(entryPath, "utf8"); let calls = 0;
-  const c = vm.createContext({ __filename: entryPath, module: { exports: {} },
-    process: { type: "browser", versions: { electron: "42.5.1" }, stdout: { write(text, cb) {
-      messages.push(JSON.parse(text)); order.push("handoff"); cb();
-    } } }, require: key => key === "node:fs" ? { readFileSync: () => JSON.stringify({ main: entryPath }), realpathSync: p => p } :
-      key === "node:path" ? path : key === "./marketCalendarE4fFreshDayCanary.js" ? { runProductionAcceptance: async () => {
-        calls++; throw Error("explicit_acceptance_entry_required");
-      } } : key === "../js/marketCalendarRuntime/freshDayCanaryApproval.js" ? V : key === "electron" ? { app: {
-        getAppPath: () => "/isolated", quit: () => order.push("quit"), exit: code => order.push("exit:" + code)
-      } } : null });
+  const fixture = nativeFixture(async () => { calls++; throw Error("explicit_acceptance_entry_required"); },
+    text => { messages.push(JSON.parse(text)); order.push("handoff"); }, code => order.push("exit:" + code)), c = fixture.context;
+  try {
   vm.runInContext(source, c);
   await vm.runInContext("globalThis[Symbol.for('optionmap.fresh-day-canary.package-entry.v1')]", c);
-  assert.equal(calls, 1); assert.equal(messages[0].receipt.status, "FAIL");
-  assert.deepEqual(order, ["handoff", "exit:1"]); assert.equal(Entry.validateDelivery(messages[0], 0).valid, false);
+  assert.equal(calls, 1); assert.equal(messages[0].status, "FAIL");
+  assert.deepEqual(order, ["handoff", "exit:1"]); assert.equal(Entry.readReceipt(fixture.root, 1).delivery.valid, false);
+  } finally { fixture.close(); }
 });
 test("E5 missing controller receipt yields explicit FAIL and unsuccessful exit", async () => {
   const f = adapter(async () => undefined), m = await f.instance.run();
@@ -132,14 +129,17 @@ test("E11 source/operation/worker/retry input cannot be supplied", async () => {
     assert.throws(() => f.instance.run(input), /entry_arguments_forbidden/);
     await assert.rejects(require(controllerPath).runProductionAcceptance(input), /acceptance_arguments_forbidden/);
   }
-  assert.equal(count, 0); assert.deepEqual(Object.keys(Entry), ["TYPE", "createEntryAdapter", "validateDelivery"]);
+  assert.equal(count, 0); assert.deepEqual(Object.keys(Entry), ["TYPE", "createEntryAdapter", "validateDelivery", "writeReceipt", "readReceipt"]);
   await assert.rejects(require(controllerPath).runProductionAcceptance(), /native_controller_required/);
 });
 test("E12 future approval covers new entry and invalidates old sixteen-artifact approval", () => {
   assert.equal(V.CRITICAL_ARTIFACTS.length, 17);
   assert.equal(V.CRITICAL_ARTIFACTS.filter(p => p === "scripts/marketCalendarE4fFreshDayCanaryEntry.js").length, 1);
   const old = fs.readFileSync(path.resolve(__dirname, "../approvals/marketCalendarFreshDayCanary.json"), "utf8");
-  assert.equal(V.parseManifest(old).reason, "manifest_digests_invalid");
+  assert.equal(V.parseManifest(old).valid, true);
+  const oldSixteen = JSON.parse(old);
+  delete oldSixteen.criticalArtifactDigests["scripts/marketCalendarE4fFreshDayCanaryEntry.js"];
+  assert.equal(V.parseManifest(JSON.stringify(oldSixteen)).reason, "manifest_digests_invalid");
   assert.equal(V.verifyRepository(path.resolve(__dirname, "..")).valid, false);
 });
 test("explicit production export rejects non-dedicated package and extra CLI input before approval/state access", async () => {
@@ -175,6 +175,6 @@ test("non-dedicated package cannot auto-run entry just by importing it", () => {
       key === "node:fs" ? { readFileSync: () => JSON.stringify({ main: "/isolated/other.js" }), realpathSync: p => p } :
       key === "node:path" ? path : key === "./marketCalendarE4fFreshDayCanary.js" ? { runProductionAcceptance: () => calls++ } :
       key === "../js/marketCalendarRuntime/freshDayCanaryApproval.js" ? V :
-      key === "electron" ? { app: { getAppPath: () => "/isolated" } } : null });
+      key === "electron" ? { app: { getAppPath: () => "/isolated" } } : require(key) });
   assert.equal(calls, 0);
 });
