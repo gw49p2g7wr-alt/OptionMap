@@ -31,7 +31,9 @@ function createReader(userData) {
   function pair(directory, selectedGeneration = null, checkOwnership = true) {
     const record = read(directory, "safety.json", Schema.MAX_BYTES);
     if (![1, 2, 3].includes(record?.schemaVersion)) throw Error("safety_envelope_version_unsupported");
-    if (record.schemaVersion === 3 && selectedGeneration !== "extended") throw Error("safety_generation_required");
+    const controlled = Generation.controlledGeneration(selectedGeneration, record.safety.sequence);
+    if (record.schemaVersion === 3 && selectedGeneration !== "extended" && !controlled) throw Error("safety_generation_required");
+    if (controlled !== !!record.controlledLifecycleAudit) throw Error("safety_controlled_generation_mismatch");
     const checked = record.schemaVersion === 3 ? SourceSet.validate(record) : Envelope.validateEnvelope(record);
     if (!checked.valid) throw Error(checked.reason);
     const c = read(directory, "sequence.json", 1024);
@@ -55,7 +57,7 @@ function createReader(userData) {
       if (selected.selection) {
         const s = selected.selection;
         if (s.sequence !== record.safety.sequence || s.stateChecksum !== record.checksum ||
-            record.schemaVersion !== (s.generation === "extended" ? 3 : 2)) throw Error("safety_selection_mismatch");
+            record.schemaVersion !== (s.generation === "baseline" ? 2 : 3)) throw Error("safety_selection_mismatch");
         // Pin the retained production pair. Ignore only its migration ownership:
         // selected immutable generations have their own checked lock/intent state.
         const retained = pair(path.join(userData, "market-calendar-writer-safety"), null, false);
@@ -63,6 +65,10 @@ function createReader(userData) {
           throw Error("safety_retained_baseline_changed");
       }
       highWater = record.safety.sequence;
+      // An authorization-only crash has no pending record yet. Its durable
+      // ownership latch prevents recreating a first-write authorization on restart.
+      try { fs.lstatSync(path.join(userData, Generation.DIRECTORY, "controlled.lock")); throw Error("safety_controlled_attempt_owned"); }
+      catch (e) { if (e.code !== "ENOENT") throw e; }
       safety = record.schemaVersion === 2 ? Envelope.safetyInput(record.safety) : record.safety; status = "valid";
     } catch (e) {
       status = e.code === "ENOENT" && !foundState ? "missing" : "corrupt";

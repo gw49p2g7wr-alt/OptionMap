@@ -6,6 +6,7 @@ const A = require("./formalWriterAuthorityV2.js");
 const Historical = require("./writerSafetyVersionedEnvelope.js");
 const File = require("./writerSafetyFileSchema.js");
 const P = require("./writerSafetySourceSetPermission.js");
+const Controlled = require("./writerSafetyControlledLifecycle.js");
 const VERSION = 3, REASON = "explicit_source_set_migration";
 const INPUT_KEYS = Object.freeze(["expectedEnvelopeVersion", "expectedSourceSetVersion", "expectedPermissionVersion",
   "expectedSequence", "nextEnvelopeVersion", "nextSourceSetVersion", "nextPermissionVersion", "addedSourceIds",
@@ -59,11 +60,14 @@ function validate(record) {
       const result = Historical.validateEnvelope(record);
       return A.freeze({ ...result, kind: "historical", sourceSetVersion: 1, autoUpgrade: false });
     }
-    if (!A.exact(record, ["schemaVersion", "safety", "historicalRecord", "migrationIdentity", "sourceSetAudit", "checksum"]) ||
+    const keys = ["schemaVersion", "safety", "historicalRecord", "migrationIdentity", "sourceSetAudit", "checksum"];
+    if (Object.hasOwn(record || {}, "controlledLifecycleAudit")) keys.push("controlledLifecycleAudit");
+    if (!A.exact(record, keys) ||
       record.schemaVersion !== VERSION || !same(record, File.seal(record)) ||
       !Array.isArray(record.sourceSetAudit) || record.sourceSetAudit.length !== 1) fail("source_set_envelope_invalid");
     const expected = build(record.historicalRecord, requestFor(record.historicalRecord, record.sourceSetAudit[0].gateIdentity));
-    if (!same(record, expected)) fail("source_set_history_or_current_mismatch");
+    if (Object.hasOwn(record, "controlledLifecycleAudit") ? !Controlled.validate(expected, record) : !same(record, expected))
+      fail("source_set_history_or_current_mismatch");
     return A.freeze({ valid: true, reason: null, kind: "source_set_v2", sourceSetVersion: 2,
       autoUpgrade: false, writeAllowed: false, executionAllowed: false });
   } catch (e) { return A.freeze({ valid: false, reason: /^[a-z_]+$/.test(e.message) ? e.message : "source_set_envelope_invalid",
