@@ -99,7 +99,7 @@ function count(mutations) {
     throw Error("controlled_operation_set_invalid");
   return Object.fromEntries(Gate.FIELDS.map((field, i) => [field, mutations[COUNT_OPERATIONS[i]].length]));
 }
-async function prepare({ source, snapshot, attemptIdentity }) {
+async function buildPreparation({ source, snapshot, attemptIdentity }, nativeMaterial) {
   source = structuredClone(source); // Freeze the acquisition epoch across asynchronous comparison.
   if (!A.isHash(attemptIdentity) || source?.sourceId !== SOURCE || source.routeIdentity !== Mof.routeIdentity || source.acquisitionOutcome !== "complete" ||
     source.candidateStatus !== "available" || source.failedRoles?.length || !Array.isArray(source.canonicalRecords))
@@ -166,16 +166,21 @@ async function prepare({ source, snapshot, attemptIdentity }) {
       mutations, counts, transactionPreparation: "all_hashes_before_transaction" };
     const plan = A.freeze({ ...base, planIdentity: A.hash(base) });
     if (!(await Shadow.validateShadowPlan(plan)).valid) throw Error("controlled_shadow_plan_invalid");
-    const execution = Core.prepareExecution(plan, before, Object.fromEntries(PC.ARRAY_KEYS.map(k => [k, mutations[k].length])));
+    const execution = nativeMaterial ? null : Core.prepareExecution(plan, before, Object.fromEntries(PC.ARRAY_KEYS.map(k => [k, mutations[k].length])));
     const expected = Core.applyToMemory(before, plan, Core.expectedWrites(plan, before));
     const token = Object.freeze({});
     const data = A.freeze({ plan, before, expected, attemptIdentity, semanticPlanIdentity: SEMANTIC_IDENTITY,
       acquisitionIdentity, documentSetIdentity: source.documentSetIdentity,
       documentObservationIdentity: A.hash(docs), evidenceIdentities: observations.map(r => r.evidenceIdentity),
       comparisonIdentity: base.comparisonIdentity, formalPrecondition: base.preconditionIdentity, planIdentity: plan.planIdentity });
-    preparations.set(token, { data, execution, consumed: false }); return token;
+    preparations.set(token, { data, execution, nativeMaterial, consumed: false }); return token;
   } finally { Cycle.close(cycle); }
 }
 function inspect(token) { const p = preparations.get(token); if (!p || p.consumed) throw Error("controlled_preparation_invalid"); return p.data; }
+function inspectNativeMaterial(token) { const p = preparations.get(token);
+  if (!p?.nativeMaterial || p.execution !== null) throw Error("native_material_only_required"); return inspect(token); }
 function take(token) { const p = preparations.get(token); inspect(token); p.consumed = true; return { data: p.data, execution: p.execution }; }
-module.exports = Object.freeze({ SOURCE, OPERATION, ACCEPTED_EVENTS, COUNTS, SEMANTIC_IDENTITY, count, prepare, inspect, take });
+const prepare = input => buildPreparation(input, false);
+const prepareNativeMaterial = input => buildPreparation(input, true);
+module.exports = Object.freeze({ SOURCE, OPERATION, ACCEPTED_EVENTS, COUNTS, SEMANTIC_IDENTITY, count, prepare,
+  prepareNativeMaterial, inspectNativeMaterial, inspect, take });
