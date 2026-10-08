@@ -46,9 +46,9 @@ function createReader(userData) {
     }
     return record;
   }
-  function load() {
+  function readState(diagnosticControlledOwnership = false) {
     audit.loads++; const start = performance.now();
-    let status = "corrupt", reason = null, safety = null, record = null, selected = null;
+    let status = "corrupt", reason = null, safety = null, record = null, selected = null, controlledAttemptOwned = false;
     foundState = false;
     try {
       selected = Generation.select(userData, read); foundState = !!selected.selection;
@@ -67,7 +67,9 @@ function createReader(userData) {
       highWater = record.safety.sequence;
       // An authorization-only crash has no pending record yet. Its durable
       // ownership latch prevents recreating a first-write authorization on restart.
-      try { fs.lstatSync(path.join(userData, Generation.DIRECTORY, "controlled.lock")); throw Error("safety_controlled_attempt_owned"); }
+      try { fs.lstatSync(path.join(userData, Generation.DIRECTORY, "controlled.lock"));
+        if (!diagnosticControlledOwnership) throw Error("safety_controlled_attempt_owned");
+        controlledAttemptOwned = true; }
       catch (e) { if (e.code !== "ENOENT") throw e; }
       safety = record.schemaVersion === 2 ? Envelope.safetyInput(record.safety) : record.safety; status = "valid";
     } catch (e) {
@@ -80,8 +82,11 @@ function createReader(userData) {
       permissionVersion: record?.safety.sourcePermissionVersion ?? null,
       permissions: record?.schemaVersion === 3 ? Permission.PERMISSIONS : null,
       authorityCeiling: record?.schemaVersion === 3 ? Envelope.policyFor(3).global : null,
+      ...(diagnosticControlledOwnership ? { controlledAttemptOwned, retryAllowed: false } : {}),
       writeAllowed: false, executionAllowed: false, latencyMs: performance.now() - start, audit: { ...audit } });
   }
-  return Object.freeze({ load, audit: () => ({ ...audit }) });
+  // Explicit read-only diagnosis preserves all generation/checkpoint/history
+  // checks. It can describe owned state but never releases ownership or resumes.
+  return Object.freeze({ load: () => readState(), inspectControlledState: () => readState(true), audit: () => ({ ...audit }) });
 }
 module.exports = Object.freeze({ RELATIVE_PATH, createReader });
