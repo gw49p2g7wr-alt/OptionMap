@@ -20,7 +20,11 @@
         2: Object.freeze({ version: 2, candidateOnly: true, sourceIds: Object.freeze([
             ...HISTORICAL_SOURCE_IDS, "jp-mof-jgb-auction-calendar"].sort()) })
     });
+    // Legacy transport/diagnostic contract remains exact12. Normal acquisition
+    // activation is separate so historical canary routes cannot inherit MOF.
     const ACQUISITION_ENABLED_SOURCE_IDS = HISTORICAL_SOURCE_ORDER;
+    const NORMAL_ACQUISITION_ENABLED_SOURCE_IDS = Object.freeze([
+        ...HISTORICAL_SOURCE_ORDER, "jp-mof-jgb-auction-calendar"]);
     const getSourceSet = version => Object.hasOwn(SOURCE_SETS, version) &&
         Number.isSafeInteger(version) ? SOURCE_SETS[version] : null;
     const getHistoricalSourceSet = (authorityVersion, permissionVersion) =>
@@ -61,7 +65,7 @@
         endpointHistory: Object.freeze([{ url: "https://www.nyse.com/markets/hours-calendars",
             status: "replaced", replacement: nyse.canonicalUrl,
             reason: "official_same_host_redirect_to_trade_hours_calendars" }]) });
-    // G1.2b metadata only: no transport/parser imports or acquisition activation.
+    // Fixed normal acquisition activation only; no transport or writer imports.
     const MOF_JGB_METADATA = Object.freeze({ sourceId: "jp-mof-jgb-auction-calendar",
         owner: "MOF", sourceOwner: "財務省理財局国債業務課", authority: "MOF", jurisdiction: "JP",
         authorityLevel: "primary", sourceKind: "official_calendar", formalEligible: true,
@@ -69,7 +73,7 @@
         canonicalUrl: "https://www.mof.go.jp/jgbs/auction/calendar/index.htm",
         allowedHosts: Object.freeze(["www.mof.go.jp"]), sourceTimeZone: "Asia/Tokyo",
         parserId: "mof-jgb-month-isolated", parserVersion: 1, canonicalizationContract: "jgb-auction-typed-v1",
-        acquisitionEnabled: false, writerAllowed: false, writerPermission: "none",
+        acquisitionEnabled: true, writerAllowed: false, writerPermission: "none",
         route: Object.freeze({ routeKind: "mof_auction_month_set", operation: "source-document-set",
             host: "www.mof.go.jp", indexPath: "/jgbs/auction/calendar/index.htm",
             monthPathPattern: "^/jgbs/auction/calendar/[0-9]{2}(0[1-9]|1[0-2])\\.htm$",
@@ -102,6 +106,9 @@
     function getAcquisitionEnabledSourceIds() {
         return selectRegisteredEnabledSourceIds(Object.keys(SOURCES), ACQUISITION_ENABLED_SOURCE_IDS);
     }
+    function getNormalAcquisitionEnabledSourceIds() {
+        return selectRegisteredEnabledSourceIds(Object.keys(SOURCES), NORMAL_ACQUISITION_ENABLED_SOURCE_IDS);
+    }
     const isAcquisitionEnabled = sourceId => ACQUISITION_ENABLED_SOURCE_IDS.includes(sourceId) &&
         getSource(sourceId)?.formalEligible === true;
     function validateSourceUrl(sourceId, value) {
@@ -123,6 +130,7 @@
             "jp-esri-machinery-orders-calendar", "jp-esri-sna-calendar"]) }) });
     return Object.freeze({ SOURCES, BLOCKED_SOURCES, REPLACED_SOURCES, getSource, getKnownSource,
         validateSourceUrl, HISTORICAL_SOURCE_ORDER, HISTORICAL_SOURCE_IDS, SOURCE_SETS,
-        getSourceSet, getHistoricalSourceSet, ACQUISITION_ENABLED_SOURCE_IDS,
+        getSourceSet, getHistoricalSourceSet, ACQUISITION_ENABLED_SOURCE_IDS, NORMAL_ACQUISITION_ENABLED_SOURCE_IDS,
+        getNormalAcquisitionEnabledSourceIds,
         selectRegisteredEnabledSourceIds, getAcquisitionEnabledSourceIds, isAcquisitionEnabled });
 });

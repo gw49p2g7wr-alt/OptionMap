@@ -157,7 +157,8 @@ test("R17 cleanup and singleflight leave no active cycle/cache, next request has
 });
 test("main startup/manual share a single fixed adapter; IPC has no new shadow capability", () => {
   const main = fs.readFileSync(path.resolve(__dirname, "../main.js"), "utf8");
-  assert.equal((main.match(/automaticShadowRuntime.createRuntime/g) || []).length, 1);
+  assert.equal((main.match(/normalAcquisitionRuntime.create/g) || []).length, 1);
+  assert.match(main, /runtimeStateOwner: "renderer"/);
   assert.match(main, /calendarShadowRuntime.check\(request\)/); assert.doesNotMatch(main, /return.*\.diagnostics\(/);
   assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, "../preload.js"), "utf8"), /automaticFormalShadow/);
 });

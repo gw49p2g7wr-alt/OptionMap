@@ -9,13 +9,14 @@ const Controller = require("../js/marketCalendarRuntime/calendarUpdateUiControll
 const Flights = require("../js/marketCalendarRuntime/sourceSingleFlight.js");
 const Pool = require("../js/marketCalendarRuntime/boundedTaskPool.js");
 const MarketBootstrap = require("../js/startupBootstrap.js");
-const ids = Service.ACTIVE_SOURCE_IDS, AT = "2026-09-25T00:00:00.000Z", runtimes = [];
+const Contracts = require("../js/marketCalendarRuntime/normalAcquisitionContract.js");
+const ids = Contracts.NORMAL13.sourceIds, AT = "2026-09-25T00:00:00.000Z", runtimes = [];
 const builder = { buildCalendarCandidate: async ({ sourceId }) => ({ sourceId,
   formalEligible: true, candidateStatus: "available", recordCount: 1 }) };
 const simulator = { simulateCalendarTransition: async () => ({ simulationStatus: "new",
   commitOutcome: "writer_disabled" }) };
 function setup({ indexedDB = new IDBFactory(), at = AT, fail = [], gate, bridgeGate } = {}) {
-  const calls = [], decisions = [], service = Service.createCalendarManualCheckService({ builder,
+  const calls = [], decisions = [], service = Service.createCalendarManualCheckService({ builder, acquisitionContract: Contracts.NORMAL13,
     simulator, now: () => at, acquire: async ({ sourceId }) => {
       calls.push(sourceId); if (gate) await gate;
       return fail.includes(sourceId) ? { success: false, reason: "request_timeout", diagnostics: [] } :
@@ -49,12 +50,12 @@ test.after(() => console.log("D2b isolated runtime audit", JSON.stringify(runtim
   return sum;
 }, {}))));
 
-test("first startup checks 12 sources, bounded at three, creates only Runtime State DB", async () => {
+test("first normal startup checks 13 sources, bounded at three, creates only Runtime State DB", async () => {
   const f = setup(), output = await f.runtime.startup();
-  assert.equal(output.state, "success"); assert.equal(f.calls.length, 12);
+  assert.equal(output.state, "success"); assert.equal(f.calls.length, 13);
   assert.equal(f.decisions[0].trigger, "startup"); assert.ok(output.peakSourceConcurrency <= 3);
   assert.deepEqual(await f.indexedDB.databases(), [{ name: Store.DATABASE_NAME, version: 1 }]);
-  assert.equal(f.runtime.diagnostics().successfulWrites, 12);
+  assert.equal(f.runtime.diagnostics().successfulWrites, 13);
 });
 test("same JST day second launch skips every source without write; next JST day updates", async () => {
   const first = setup(); await first.runtime.startup();
@@ -63,9 +64,9 @@ test("same JST day second launch skips every source without write; next JST day 
   assert.equal(second.calls.length, 0); assert.equal(second.runtime.diagnostics().successfulWrites, 0);
   assert.equal(skipped.runtimePhase, "skipped"); assert.equal(skipped.checkedAt, AT);
   const third = setup({ indexedDB: first.indexedDB, at: "2026-09-26T00:00:00.000+09:00" });
-  await third.runtime.startup(); assert.equal(third.calls.length, 12);
+  await third.runtime.startup(); assert.equal(third.calls.length, 13);
 });
-test("partial startup retains 10 successes; cooldown skips all; retry selects only failed pair", async () => {
+test("partial startup retains 11 successes; cooldown skips all; retry selects only failed pair", async () => {
   const first = setup({ fail: ids.slice(-2) });
   assert.equal((await first.runtime.startup()).state, "partial");
   const cooldown = setup({ indexedDB: first.indexedDB, at: "2026-09-25T00:59:59.000Z" });
@@ -81,7 +82,7 @@ test("all failure returns UI failed, preserves grid and permits manual retry aft
   assert.equal(mounted.controller.getState().state, "failed");
   assert.equal(mounted.nodes.get("marketCalendarUpdateButton").disabled, false);
   const retry = setup({ indexedDB: f.indexedDB, at: "2026-09-25T01:00:00.000Z" });
-  await retry.runtime.check(); assert.equal(retry.calls.length, 12);
+  await retry.runtime.check(); assert.equal(retry.calls.length, 13);
 });
 test("startup is idempotent and concurrent manual joins existing source flights", async () => {
   const gate = deferred(), f = setup({ gate: gate.promise });
@@ -89,20 +90,20 @@ test("startup is idempotent and concurrent manual joins existing source flights"
   await until(() => f.calls.length === 3);
   assert.equal(Flights.getFlightDiagnostics().activeFlightCount, 3);
   const b = f.runtime.check(); assert.equal(a, b);
-  gate.resolve(); await Promise.all([a, b]); assert.equal(f.calls.length, 12);
-  assert.equal(f.runtime.diagnostics().successfulWrites, 12);
+  gate.resolve(); await Promise.all([a, b]); assert.equal(f.calls.length, 13);
+  assert.equal(f.runtime.diagnostics().successfulWrites, 13);
 });
 test("manual during runtime read joins startup decision; no duplicate acquisition", async () => {
   const gate = deferred(), factory = new IDBFactory();
   const f = setup({ indexedDB: { open: factory.open.bind(factory),
     databases: async () => { await gate.promise; return factory.databases(); } } });
   const a = f.runtime.startup(), b = f.runtime.check(); assert.equal(a, b);
-  assert.equal(f.calls.length, 0); gate.resolve(); await a; assert.equal(f.calls.length, 12);
+  assert.equal(f.calls.length, 0); gate.resolve(); await a; assert.equal(f.calls.length, 13);
 });
 test("manual during decision bridge joins startup, with exactly one B1 request", async () => {
   const gate = deferred(), f = setup({ bridgeGate: gate.promise }), a = f.runtime.startup();
   await until(() => f.decisions.length === 1); const b = f.runtime.check(); assert.equal(a, b);
-  gate.resolve(); await b; assert.equal(f.decisions.length, 1); assert.equal(f.calls.length, 12);
+  gate.resolve(); await b; assert.equal(f.decisions.length, 1); assert.equal(f.calls.length, 13);
 });
 test("UI manual during restore wins over stale restore and prevents redundant startup", async () => {
   const gate = deferred(); let automatic = 0, manual = 0;

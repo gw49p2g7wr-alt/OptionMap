@@ -134,7 +134,7 @@ test("O10 transitive shadow dependencies cannot reach writer/core/one-shot; runt
   visit(path.join(root, "js/marketCalendarRuntime/automaticFormalShadow.js"));
   // E4e-1R authorizes the shared main-only adapter, never direct writer/cycle APIs in IPC.
   const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
-  assert.match(main, /automaticFormalShadowRuntime\.js/);
+  assert.match(main, /normalCalendarAcquisitionRuntime\.js/);
   assert.doesNotMatch(main, /formalShadowCycle|formalShadowElectronRead|firstProductionWriteExecutor|formalControlledWriterCore/);
   for (const file of ["preload.js", "index.html"])
     assert.doesNotMatch(fs.readFileSync(path.join(root, file), "utf8"),

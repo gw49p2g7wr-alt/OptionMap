@@ -1,6 +1,6 @@
 "use strict";
 
-// Explicit main-owned normal13 factory. NOT wired into main.js in G1.6a.
+// Explicit main-owned normal13 factory, reused by normal production composition.
 // Acquires operational state only; no authorization/safety/writer dependency.
 const Contracts = require("./normalAcquisitionContract.js");
 const Manual = require("./calendarManualCheckService.js");
@@ -15,10 +15,18 @@ const Compare = require("./formalExactComparison.js").createNormal13Comparison()
 const Cycle = require("./formalShadowCycle.js");
 const Routes = require("./calendarRouteAuthority.js");
 const Network = require("./calendarNetworkPolicy.js");
+const Reader = require("./formalShadowElectronRead.js");
+const LaborStore = require("./laborRuntimeStateElectron.js");
+const CpiStore = require("./cpiRuntimeStateElectron.js");
+const BlsStore = require("./blsRuntimeStateElectron.js");
 function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
-  acquire, builder, simulator, adapterFactory } = {}) {
+  acquire, builder, simulator, adapterFactory, webContents, runtimeStateOwner = "main" } = {}) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
-  if (typeof fetchImpl !== "function" || typeof readFormal !== "function") throw TypeError("normal_runtime_configuration_invalid");
+  if (typeof fetchImpl !== "function" || !["main", "renderer"].includes(runtimeStateOwner)) throw TypeError("normal_runtime_configuration_invalid");
+  const read = readFormal || Reader.createReader(webContents);
+  if (typeof read !== "function") throw TypeError("normal_runtime_configuration_invalid");
+  stores = stores || { labor: LaborStore.createLaborRuntimeStateElectron({ webContents }),
+    cpi: CpiStore.createCpiRuntimeStateElectron({ webContents }), bls: BlsStore.createBlsRuntimeStateElectron({ webContents }) };
   const acquisitionContract = Contracts.NORMAL13, ids = Contracts.resolve(acquisitionContract);
   const mof = Mof.create({ acquisitionContract, fetchImpl, now });
   const legacyAcquire = acquire || Acquisition.createCalendarAcquisitionService({ fetchImpl }).acquire;
@@ -39,7 +47,10 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
   const labor = Labor.createLaborProductionCheck({ ...common, legacyService: legacy, store: stores?.labor });
   const cpi = Cpi.createCpiProductionCheck({ ...common, legacyService: labor, store: stores?.cpi });
   const service = Bls.createBlsProductionCheck({ ...common, legacyService: cpi, store: stores?.bls });
-  const operational = State.createRuntimeStateIntegration({ service, store, targetEnvironment, acquisitionContract });
+  // Existing UI startup runtime owns legacy persistence/session counters. Never
+  // wrap it a second time in main; managed Labor/CPI/BLS keep their own owners.
+  const operational = runtimeStateOwner === "renderer" ? service :
+    State.createRuntimeStateIntegration({ service, store, targetEnvironment, acquisitionContract });
   function check(request = {}) {
     if (active) return active;
     captures = new Map(); last = null; mofResult = null;
@@ -48,7 +59,7 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
       if (!captures.size) { last = { status: "skipped", reason: "no_fresh_acquisition" }; return result; }
       let cycle;
       try {
-        const before = await readFormal();
+        const before = await read();
         if (before.status !== "ok") { last = { status: "unsafe", reason: before.reason }; return result; }
         cycle = Cycle.create(before.snapshot, before.schemaFingerprint);
         const sourceResults = ids.map(sourceId => captures.get(sourceId) || { sourceId,

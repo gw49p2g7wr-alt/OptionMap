@@ -54,7 +54,7 @@ function invokeCalendarCheck(args) {
       [request.runtimeStates, request.sessionStates].some(value => value !== undefined &&
         (!value || typeof value !== "object" || Array.isArray(value))) ||
       (request.sourceIds !== undefined && (!Array.isArray(request.sourceIds) ||
-        request.sourceIds.length === 0 || request.sourceIds.length > 12 ||
+        request.sourceIds.length === 0 || request.sourceIds.length > 13 ||
         request.sourceIds.some(sourceId => typeof sourceId !== "string" ||
           !/^[a-z][a-z0-9-]{2,80}$/.test(sourceId))))) {
     return Promise.resolve(INVALID_ARGUMENT_RESPONSE);

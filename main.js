@@ -28,8 +28,7 @@ const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
 const calendarAcquisition = require(
   "./js/marketCalendarRuntime/calendarAcquisitionService.js"
 );
-const automaticShadowRuntime = require("./js/marketCalendarRuntime/automaticFormalShadowRuntime.js");
-const writerSafetyReadOnly = require("./js/marketCalendarRuntime/writerSafetyReadOnly.js");
+const normalAcquisitionRuntime = require("./js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
 let calendarShadowRuntime = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
@@ -218,9 +217,9 @@ ipcMain.handle("check-market-calendar-sources", async (event, request) => {
   if (!owner || owner !== mainWindow) return { state: "unavailable", mode: "writer_disabled",
     reasonClass: "invalid_sender", sources: [], failedSourceIds: [] };
   try {
-    if (!calendarShadowRuntime) calendarShadowRuntime = automaticShadowRuntime.createRuntime({
+    if (!calendarShadowRuntime) calendarShadowRuntime = normalAcquisitionRuntime.create({
       webContents: event.sender, fetchImpl: (url, options) => net.fetch(url, options),
-      loadSafety: writerSafetyReadOnly.createReader(app.getPath("userData")).load,
+      runtimeStateOwner: "renderer",
       acquire: request => calendarAcquisitionService.acquire(request)
     });
     return await calendarShadowRuntime.check(request);

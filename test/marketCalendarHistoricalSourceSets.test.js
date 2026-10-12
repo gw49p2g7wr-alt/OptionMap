@@ -164,10 +164,11 @@ test("H10 pure selector chooses only explicitly enabled registered entries", () 
   assert.throws(() => Registry.selectRegisteredEnabledSourceIds(ORDER, [MOF]), /acquisition_source_set_invalid/);
   assert.throws(() => Registry.selectRegisteredEnabledSourceIds(ORDER, [ORDER[0], ORDER[0]]), /acquisition_source_set_invalid/);
 });
-test("H11 historical sources and current startup order remain twelve despite disabled metadata registration", () => {
+test("H11 historical selectors stay twelve while explicit normal activation adds only MOF", () => {
   assert.deepEqual(Object.keys(Registry.SOURCES).filter(id => IDS.includes(id)), ORDER);
   assert.deepEqual(Registry.getAcquisitionEnabledSourceIds(), ORDER);
-  assert.equal(Registry.getSource(MOF).acquisitionEnabled, false); assert.equal(Registry.isAcquisitionEnabled(MOF), false);
+  assert.equal(Registry.getSource(MOF).acquisitionEnabled, true); assert.equal(Registry.isAcquisitionEnabled(MOF), false);
+  assert.deepEqual(Registry.getNormalAcquisitionEnabledSourceIds(), [...ORDER, MOF]);
   assert.equal(A.PRODUCTION_POLICY.global.state, "disabled");
 });
 test("H12 Machinery-only startup ceiling, manual denial and BOJ ineligibility remain exact", () => {

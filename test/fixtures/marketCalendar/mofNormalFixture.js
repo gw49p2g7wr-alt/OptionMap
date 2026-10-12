@@ -23,7 +23,7 @@ function completed(id) {
       lastHttpStatus: 200, lastDiagnosticClass: null }, completedAt: at });
   assert(done.valid); return done.state;
 }
-async function setup({ store, patch = {}, readFormal } = {}) {
+async function setup({ store, patch = {}, readFormal, compose = Runtime.create } = {}) {
   const f = await Old.fixture(), accepted = await Accepted.source("normal-seed");
   const run = { sourceId: MOF, runId: "normal-seed", acceptedAt: "2026-10-09T00:02:00.000Z",
     fetchedAt: [...new Set(accepted.canonicalRecords.map(r => r.acquisitionEvidence.fetchedAt))],
@@ -66,7 +66,7 @@ async function setup({ store, patch = {}, readFormal } = {}) {
       recordCount: s.canonicalRecords.length, parserStatus: "success", canonicalizationStatus: "success",
       parserDiagnostics: [], canonicalDiagnostics: [], sourceIdentity };
   };
-  const runtime = Runtime.create({ store, stores, targetEnvironment: "isolated_test", now: () => clock,
+  const runtime = compose({ store, stores, targetEnvironment: "isolated_test", now: () => clock,
     fetchImpl: async (url, opts) => { requests.push({ url, method: opts.method, redirect: opts.redirect, credentials: opts.credentials });
       assert(url in documents); const d = documents[url];
       return typeof d === "function" ? d(url, opts) : new Response(d, { headers: { "content-type": "text/html; charset=UTF-8" } }); },

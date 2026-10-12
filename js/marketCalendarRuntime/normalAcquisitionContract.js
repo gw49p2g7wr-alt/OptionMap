@@ -1,7 +1,7 @@
 "use strict";
 
 // Main-side factory capability, never selected by renderer/check request fields.
-// Production activation remains a separate gate; historical defaults stay exact12.
+// Production normal activation is code-fixed; historical defaults stay exact12.
 const Registry = require("../marketCalendar/sourceRegistry.js");
 const NORMAL13 = Object.freeze({ version: 2, sourceIds: Object.freeze([
   ...Registry.HISTORICAL_SOURCE_ORDER, "jp-mof-jgb-auction-calendar"

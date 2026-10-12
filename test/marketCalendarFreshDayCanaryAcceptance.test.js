@@ -10,6 +10,10 @@ const Controller = require("../scripts/marketCalendarE4fFreshDayCanary.js"), His
 const Canary = require("../js/marketCalendarRuntime/machineryStartupCanary.js"), Fixture = require("./fixtures/marketCalendar/automaticShadowFixture.js");
 const Native = require("../scripts/marketCalendarE4fEnvelopeNative.js");
 const H = label => A.hash({ label });
+// Normal acquisition activation may intentionally edit these integration files.
+// This historical controller must still never modify their accepted input bytes.
+const integrationBytes = Object.fromEntries(["main.js", "preload.js"].map(p =>
+  [p, fs.readFileSync(path.resolve(__dirname, "..", p))]));
 function legacy() { return Old.build(null, S.createMemorySafety(), null, "provision_disabled", A.PRODUCTION_POLICY); }
 function versioned() {
   return E.append(E.migrate(legacy(), H("fixture")), { type: "authority_transition", expectedAuthorityVersion: 2,
@@ -191,8 +195,10 @@ test("preflight load does not rewrite isolated safety; historical/core/schema/ma
   const file = path.join(root, OldStore.RELATIVE_STATE_PATH), before = fs.readFileSync(file);
   P.loadIsolated(root); assert.deepEqual(fs.readFileSync(file), before);
   for (const p of ["scripts/marketCalendarE4fStartupCanary.js", "js/marketCalendarHistory/formalControlledWriterCore.js",
-    "js/marketCalendarHistory/writerSafetyVersionedEnvelope.js", "js/marketCalendarHistory/productionSchemaV1.js", "main.js", "preload.js"])
+    "js/marketCalendarHistory/writerSafetyVersionedEnvelope.js", "js/marketCalendarHistory/productionSchemaV1.js"])
     assert.deepEqual(fs.readFileSync(path.resolve(__dirname, "..", p)), cp.execFileSync("git", ["show", `HEAD:${p}`]));
+  for (const p of ["main.js", "preload.js"])
+    assert.deepEqual(fs.readFileSync(path.resolve(__dirname, "..", p)), integrationBytes[p]);
   for (const p of P.IMPLEMENTATION_FILES.filter(p => !p.startsWith("test/"))) {
     const source = fs.readFileSync(path.resolve(__dirname, "..", p), "utf8");
     assert.equal(/\.migrate\s*\(|\.transition\s*\(|\.append\s*\(|\.issueAuthorizationCandidate\s*\(/.test(source), false);

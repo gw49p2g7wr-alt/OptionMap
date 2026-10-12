@@ -21,7 +21,7 @@ const diagnosticClass = source => {
 // The application composes only the fixed Runtime State capability and narrow check bridge.
 function createRuntimeStateIntegration({ service, store, targetEnvironment, acquisitionContract } = {}) {
   if (acquisitionContract !== undefined && !Contracts) throw TypeError("normal_acquisition_contract_invalid");
-  const activeSourceIds = Contracts ? Contracts.resolve(acquisitionContract) : Registry.getAcquisitionEnabledSourceIds();
+  const activeSourceIds = Contracts ? Contracts.resolve(acquisitionContract) : Registry.getNormalAcquisitionEnabledSourceIds();
   if (!["isolated_test", "browser_runtime"].includes(targetEnvironment) || !service?.check || !store?.readAll || !store?.write)
     throw new TypeError("isolated_test_configuration_required");
   let active = null, startupPromise = null;

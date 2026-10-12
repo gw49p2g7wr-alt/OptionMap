@@ -29,9 +29,9 @@ test("R1 registry contains exact MOF metadata without an acquisition binding", (
     assert.equal(s.parserId, "mof-jgb-month-isolated"); assert.equal(s.canonicalizationContract, "jgb-auction-typed-v1");
     assert(Object.isFrozen(s)); assert.equal(Policy.evaluateFormalEligibility(F.typed(), s).eligible, true);
 });
-test("R2 MOF registration cannot generate acquisition or writer permission", () => {
+test("R2 normal MOF activation cannot expand legacy transport or writer permission", () => {
     const s = Registry.getSource(SOURCE);
-    assert.equal(s.acquisitionEnabled, false); assert.equal(Registry.isAcquisitionEnabled(SOURCE), false);
+    assert.equal(s.acquisitionEnabled, true); assert.equal(Registry.isAcquisitionEnabled(SOURCE), false);
     assert.equal(s.writerAllowed, false); assert.equal(s.writerPermission, "none");
     assert.equal(V1.selectWriterState(SOURCE).reason, "source_unknown");
     assert.equal(A.PRODUCTION_POLICY.permissions.entries.some(e => e.sourceId === SOURCE), false);

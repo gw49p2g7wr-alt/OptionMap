@@ -95,7 +95,7 @@ test("A10 existing12 state fields and managed v2 bindings unchanged in meaning",
   assert.equal((await f.store.readAll()).value.length, 10); // three controlled sources remain main-owned
 });
 test("A11/A12 historical defaults, Machinery ceiling, BOJ permission are unchanged", () => {
-  assert.equal(Registry.getSource(F.MOF).acquisitionEnabled, false); assert.equal(Registry.getSource(F.MOF).writerAllowed, false);
+  assert.equal(Registry.getSource(F.MOF).acquisitionEnabled, true); assert.equal(Registry.getSource(F.MOF).writerAllowed, false);
   assert.equal(Registry.getAcquisitionEnabledSourceIds().length, 12);
   const policy = require("../js/marketCalendarHistory/writerSafetyVersionedEnvelope.js").policyFor(3);
   assert.deepEqual(policy.global.permittedSources, ["jp-esri-machinery-orders-calendar"]);

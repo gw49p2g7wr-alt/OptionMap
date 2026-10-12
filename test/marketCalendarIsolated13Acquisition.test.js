@@ -15,7 +15,7 @@ const success = id => ({ sourceId: id, lastAttemptAt: F.AT, lastSuccessAt: F.AT,
   lastHttpStatus: 200, lastDiagnosticClass: null, coordinatorVersion: 1 });
 test("isolated explicit enablement cannot alter production flags or accept lookalike input", () => {
   assert.throws(() => F.Mof.create({ enablement: { ...F.Mof.ENABLEMENT }, fetchImpl: async () => {} }), /isolated_enablement/);
-  assert.equal(Registry.getSource(S.SOURCE_ID).acquisitionEnabled, false);
+  assert.equal(Registry.getSource(S.SOURCE_ID).acquisitionEnabled, true); // separate code-fixed normal activation
   assert.equal(Registry.getSource(S.SOURCE_ID).writerAllowed, false);
   assert.equal(Registry.getAcquisitionEnabledSourceIds().length, 12);
   assert.equal(Acquisition.SOURCE_IDS.length, 13);

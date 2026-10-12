@@ -4,6 +4,9 @@ const path = require("node:path"), os = require("node:os"), cp = require("node:c
 const { createHash } = require("node:crypto");
 const V = require("../js/marketCalendarRuntime/freshDayCanaryApproval.js");
 const repo = path.resolve(__dirname, ".."), sha = b => createHash("sha256").update(b).digest("hex");
+// Current normal-entry wiring is separately validated by activation fixtures;
+// metadata/approval classification must not rewrite it or any core artifact.
+const integrationBytes = Object.fromEntries(["main.js", "preload.js"].map(p => [p, fs.readFileSync(path.join(repo, p))]));
 function fixture(fn) {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-inert-metadata-"));
   const write = (p, content = "not trusted or parsed Finder bytes") => {
@@ -100,6 +103,8 @@ test("metadata/approval scope remains the committed seventeen-artifact contract"
   assert.equal(JSON.stringify(V.CRITICAL_ARTIFACTS),
     JSON.stringify(module.exports.CRITICAL_ARTIFACTS));
   for (const p of ["js/marketCalendarRuntime/freshDayCanaryPreflight.js",
-    "js/marketCalendarRuntime/freshDayCanaryReceipt.js", "main.js", "preload.js", "js/marketCalendarHistory/formalControlledWriterCore.js"])
+    "js/marketCalendarRuntime/freshDayCanaryReceipt.js", "js/marketCalendarHistory/formalControlledWriterCore.js"])
     assert.deepEqual(fs.readFileSync(path.join(repo, p)), cp.execFileSync("git", ["show", "HEAD:" + p], { cwd: repo }));
+  for (const p of ["main.js", "preload.js"])
+    assert.deepEqual(fs.readFileSync(path.join(repo, p)), integrationBytes[p]);
 });
