@@ -4,6 +4,7 @@ const Registry = require("../marketCalendar/sourceRegistry.js");
 const Execution = require("./updateExecutionCoordinator.js");
 const Builder = require("./calendarCandidateBuilder.js");
 const Simulator = require("./calendarTransitionSimulator.js");
+const Contracts = require("./normalAcquisitionContract.js");
 
 const MODE = "writer_disabled", ACTIVE_SOURCE_IDS = Registry.getAcquisitionEnabledSourceIds();
 const SOURCE_NAMES = Object.freeze({
@@ -22,10 +23,10 @@ function freeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   Object.values(value).forEach(freeze); return Object.freeze(value);
 }
-function requestedSources(sourceIds) {
+function requestedSources(sourceIds, ACTIVE_SOURCE_IDS) {
   if (sourceIds === undefined) return [...ACTIVE_SOURCE_IDS];
   if (!Array.isArray(sourceIds) || sourceIds.length === 0 || sourceIds.length > ACTIVE_SOURCE_IDS.length ||
-      sourceIds.some(sourceId => typeof sourceId !== "string" || !Registry.isAcquisitionEnabled(sourceId)))
+      sourceIds.some(sourceId => typeof sourceId !== "string" || !ACTIVE_SOURCE_IDS.includes(sourceId)))
     return null;
   const selected = new Set(sourceIds);
   return ACTIVE_SOURCE_IDS.filter(sourceId => selected.has(sourceId));
@@ -41,6 +42,7 @@ function reasonClass(planned, candidate, simulation) {
 }
 
 function createCalendarManualCheckService(configuration = {}) {
+  const activeSourceIds = Contracts.resolve(configuration.acquisitionContract);
   const acquire = configuration.acquire, builder = configuration.builder || Builder,
     simulator = configuration.simulator || Simulator, executionFactory = configuration.executionFactory ||
       (options => Execution.createUpdateExecutionCoordinator(options)), now = configuration.now ||
@@ -62,11 +64,12 @@ function createCalendarManualCheckService(configuration = {}) {
   async function execute(sourceIds, options) {
     const requestedAt = now(), acquisitions = new Map(), coordinator = executionFactory({
       acquire: async request => { const envelope = await acquire(request);
-        acquisitions.set(request.sourceId, envelope); return envelope; }
+        acquisitions.set(request.sourceId, envelope); return envelope; },
+      acquisitionContract: configuration.acquisitionContract
     }), execution = await coordinator.requestUpdate({ trigger: "manual", ...options, requestedAt, sourceIds }),
     sources = [];
     for (const planned of execution.sourceResults) {
-      const base = { sourceId: planned.sourceId, displayName: SOURCE_NAMES[planned.sourceId] ||
+      const base = { sourceId: planned.sourceId, displayName: SOURCE_NAMES[planned.sourceId] || Registry.getSource(planned.sourceId)?.sourceOwner ||
         planned.sourceId || "不明なsource", status: "failed", reasonClass: null,
         acquisitionStatus: planned.acquisitionStatus, candidateStatus: "not_attempted",
         transitionStatus: "not_attempted", recordCount: 0, commitOutcome: MODE };
@@ -118,7 +121,7 @@ function createCalendarManualCheckService(configuration = {}) {
   }
 
   function check({ sourceIds, trigger = "manual", runtimeStates, sessionStates } = {}) {
-    const selected = requestedSources(sourceIds);
+    const selected = requestedSources(sourceIds, activeSourceIds);
     if (!selected || !["manual", "startup"].includes(trigger)) return Promise.resolve(freeze({ state: "unavailable", mode: MODE,
       checkedAt: now(), requestedSourceCount: 0, successfulSourceCount: 0, failedSourceCount: 0,
       sources: [], failedSourceIds: [], reasonClass: "source_selection_invalid" }));

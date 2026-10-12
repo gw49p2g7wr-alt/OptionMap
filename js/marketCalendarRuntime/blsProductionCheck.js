@@ -5,10 +5,12 @@ const Policy = require("./routeReevaluationPolicy.js");
 const Continuation = require("./activeRouteContinuation.js");
 const Flights = require("./sourceSingleFlight.js");
 const Manual = require("./calendarManualCheckService.js");
+const Contracts = require("./normalAcquisitionContract.js");
 const ID = "us-bls-calendar", EXCLUDED = [];
 function createBlsProductionCheck({ store, legacyService, fetchImpl, now = () => new Date().toISOString(),
   getAuthority = () => Authority.PRODUCTION_AUTHORITY, adapterFactory = Adapter.createRouteAdapter,
-  onAcquisition } = {}) {
+  onAcquisition, acquisitionContract } = {}) {
+  const activeSourceIds = Contracts.resolve(acquisitionContract);
   if (!store?.read || !store?.reserveReevaluation || !store?.completeReevaluation || !legacyService?.check ||
       typeof fetchImpl !== "function") throw TypeError("bls_configuration_invalid");
   let active = null;
@@ -97,7 +99,7 @@ function createBlsProductionCheck({ store, legacyService, fetchImpl, now = () =>
     return flight.executionOutcome || { ...base, reasonClass: "flight_failed" };
   }
   async function execute(request) {
-    const ids = request.sourceIds || Manual.ACTIVE_SOURCE_IDS;
+    const ids = request.sourceIds || activeSourceIds;
     const selected = Authority.selectRoute({ sourceId: ID, operation: Flights.OPERATION }, getAuthority());
     if (selected.valid && selected.routeKind === "legacy") return legacyService.check(request);
     const legacyIds = ids.filter(id => id !== ID && !EXCLUDED.includes(id));
@@ -120,7 +122,7 @@ function createBlsProductionCheck({ store, legacyService, fetchImpl, now = () =>
         Object.keys(request).some(k => !["sourceIds", "trigger", "runtimeStates", "sessionStates"].includes(k)) ||
         request.trigger !== undefined && !["startup", "manual"].includes(request.trigger) ||
         request.sourceIds !== undefined && (!Array.isArray(request.sourceIds) || !request.sourceIds.length ||
-          request.sourceIds.some(id => !Manual.ACTIVE_SOURCE_IDS.includes(id))))
+          request.sourceIds.some(id => !activeSourceIds.includes(id))))
       return Promise.resolve({ state: "unavailable", sources: [], reasonClass: "invalid_argument", mode: "writer_disabled" });
     if (active) return active;
     active = execute(structuredClone(request)).finally(() => { active = null; }); return active;

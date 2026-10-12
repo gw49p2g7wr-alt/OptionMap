@@ -4,6 +4,7 @@ const registry = require("../marketCalendar/sourceRegistry.js");
 const policy = require("./updatePolicy.js");
 
 const CLASSIFICATIONS = Object.freeze(["acquisition_candidate", "no_acquisition", "invalid"]);
+const Contracts = require("./normalAcquisitionContract.js");
 const ACTIVE_SOURCE_IDS = registry.getAcquisitionEnabledSourceIds();
 const DEFAULT_FORMAL_STATE = Object.freeze({ databaseStatus: "absent", schemaStatus: "unknown",
   sourceCursorStatus: "absent", lastAcceptedAt: null, securityStatus: "clear" });
@@ -26,6 +27,10 @@ function invalidSourceResult(sourceId, reason, trigger, requestedAt) {
     classification: "invalid", trigger, requestedAt };
 }
 
+function coordinatorFor(acquisitionContract) {
+const ACTIVE_SOURCE_IDS = Contracts.resolve(acquisitionContract);
+const enabled = id => ACTIVE_SOURCE_IDS.includes(id);
+const selectedPolicy = acquisitionContract === Contracts.NORMAL13 ? policy.createNormal13Policy() : policy;
 function selectSources(sourceIds) {
   if (sourceIds === undefined) return { requestedCount: ACTIVE_SOURCE_IDS.length,
     active: [...ACTIVE_SOURCE_IDS], invalid: [] };
@@ -36,7 +41,7 @@ function selectSources(sourceIds) {
     if (typeof sourceId !== "string" || sourceId.length === 0) {
       invalidByKey.set("malformed", { sourceId: null, reason: "malformed_source_id" });
     } else if (registry.SOURCES[sourceId]) {
-      if (registry.isAcquisitionEnabled(sourceId)) activeSet.add(sourceId);
+      if (enabled(sourceId)) activeSet.add(sourceId);
       else invalidByKey.set(`disabled:${sourceId}`, { sourceId, reason: "acquisition_disabled" });
     }
     else if (registry.BLOCKED_SOURCES[sourceId])
@@ -74,7 +79,7 @@ function planUpdate(input) {
         request.requestedAt));
       continue;
     }
-    const decision = policy.evaluateSourceUpdate({ sourceId, trigger: request.trigger,
+    const decision = selectedPolicy.evaluateSourceUpdate({ sourceId, trigger: request.trigger,
       requestedAt: request.requestedAt,
       formalState: Object.hasOwn(formal.value, sourceId) ? formal.value[sourceId] : DEFAULT_FORMAL_STATE,
       runtimeState: Object.hasOwn(runtime.value, sourceId) ? runtime.value[sourceId] : null,
@@ -102,4 +107,6 @@ function planUpdate(input) {
     nonAcquisitionResults, summary });
 }
 
-module.exports = Object.freeze({ ACTIVE_SOURCE_IDS, CLASSIFICATIONS, planUpdate });
+return Object.freeze({ ACTIVE_SOURCE_IDS, CLASSIFICATIONS, planUpdate });
+}
+module.exports = Object.freeze({ ...coordinatorFor(), createUpdateCoordinator: coordinatorFor });

@@ -131,6 +131,9 @@ function evaluateSourceUpdate(input) {
 return Object.freeze({ POLICY_VERSION, TRIGGERS, DECISIONS, REASONS, DEFAULT_POLICY,
   evaluateSourceUpdate });
 }
+function normal13Policy() {
+  const ids = require("./normalAcquisitionContract.js").resolve(require("./normalAcquisitionContract.js").NORMAL13);
+  return policyFor(Object.freeze({ ...productionRegistry, isAcquisitionEnabled: id => ids.includes(id) }));
+}
 module.exports = Object.freeze({ ...policyFor(productionRegistry),
-  createIsolated13Policy: () => policyFor(Object.freeze({ ...productionRegistry,
-    isAcquisitionEnabled: id => productionRegistry.getSourceSet(2).sourceIds.includes(id) })) });
+  createNormal13Policy: normal13Policy, createIsolated13Policy: normal13Policy });

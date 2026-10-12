@@ -52,13 +52,14 @@ function baseSourceResult(planning) {
 }
 
 function createUpdateExecutionCoordinator(configuration = {}) {
+  const scopedPlanner = planner.createUpdateCoordinator(configuration.acquisitionContract);
   const service = configuration.service || acquisitionApi.createCalendarAcquisitionService(
     configuration.acquisitionOptions || {});
   const acquire = configuration.acquire || (request => service.acquire(request));
   const policyIdentity = configuration.acquisitionPolicyIdentity || ACQUISITION_POLICY_IDENTITY;
 
   async function requestUpdate(input) {
-    const plan = planner.planUpdate(input);
+    const plan = scopedPlanner.planUpdate(input);
     const tasks = plan.acquisitionCandidates.map(candidate => ({ taskIdentity: candidate.sourceId,
       execute: () => flights.runSourceFlight({ sourceId: candidate.sourceId,
         operation: flights.OPERATION, acquisitionPolicyIdentity: policyIdentity,

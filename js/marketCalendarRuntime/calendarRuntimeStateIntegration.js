@@ -2,10 +2,11 @@
   const node = typeof module === "object" && module.exports && !root?.document;
   const api = factory(node ? require("./sourceUpdateState.js") : root.OptionMapCalendarSourceUpdateState,
     node ? require("../marketCalendar/sourceRegistry.js") : root.OptionMapMarketEventSourceRegistry,
-    node ? require("./calendarManualCheckService.js").SOURCE_NAMES : null);
+    node ? require("./calendarManualCheckService.js").SOURCE_NAMES : null,
+    node ? require("./normalAcquisitionContract.js") : null);
   if (node) module.exports = api;
   if (root) root.OptionMapCalendarRuntimeStateIntegration = api;
-})(typeof window !== "undefined" ? window : globalThis, function (B1, Registry, sourceNames) {
+})(typeof window !== "undefined" ? window : globalThis, function (B1, Registry, sourceNames, Contracts) {
 "use strict";
 const SOURCE_NAMES = sourceNames || Object.fromEntries(Object.values(Registry.SOURCES)
   .map(source => [source.sourceId, source.authority]));
@@ -18,7 +19,9 @@ const diagnosticClass = source => {
 };
 
 // The application composes only the fixed Runtime State capability and narrow check bridge.
-function createRuntimeStateIntegration({ service, store, targetEnvironment } = {}) {
+function createRuntimeStateIntegration({ service, store, targetEnvironment, acquisitionContract } = {}) {
+  if (acquisitionContract !== undefined && !Contracts) throw TypeError("normal_acquisition_contract_invalid");
+  const activeSourceIds = Contracts ? Contracts.resolve(acquisitionContract) : Registry.getAcquisitionEnabledSourceIds();
   if (!["isolated_test", "browser_runtime"].includes(targetEnvironment) || !service?.check || !store?.readAll || !store?.write)
     throw new TypeError("isolated_test_configuration_required");
   let active = null, startupPromise = null;
@@ -74,14 +77,14 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment } = {
     if (saved.status === "absent") return { ...base, state: "idle" };
     if (saved.status !== "ok") return { ...base, state: "unavailable",
       runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
-    const sources = saved.value.filter(x => Registry.isAcquisitionEnabled(x.sourceId) && x.lastOutcome !== "none").map(x => ({
-      sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId],
+    const sources = saved.value.filter(x => activeSourceIds.includes(x.sourceId) && x.lastOutcome !== "none").map(x => ({
+      sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId] || Registry.getSource(x.sourceId)?.sourceOwner || x.sourceId,
       status: x.lastOutcome === "success" ? "success" : "failed",
       reasonClass: x.lastDiagnosticClass })).concat((saved.invalidSources || []).filter(x => x.sourceId)
-        .map(x => ({ sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId], status: "failed",
+        .map(x => ({ sourceId: x.sourceId, displayName: SOURCE_NAMES[x.sourceId] || Registry.getSource(x.sourceId)?.sourceOwner || x.sourceId, status: "failed",
           reasonClass: "runtime_state_invalid" }))), successfulSourceCount =
         sources.filter(x => x.status === "success").length, failedSourceIds =
-        sources.filter(x => x.status !== "success").map(x => x.sourceId), total = Registry.getAcquisitionEnabledSourceIds().length;
+        sources.filter(x => x.status !== "success").map(x => x.sourceId), total = activeSourceIds.length;
     return { ...base, sources, failedSourceIds, successfulSourceCount,
       requestedSourceCount: total, failedSourceCount: failedSourceIds.length,
       state: !sources.length ? "idle" : successfulSourceCount === total ? "success" :

@@ -132,4 +132,5 @@ return Object.freeze({ SOURCE_IDS, compare });
 }
 // Separate, fixed isolated scope. Historical comparison/authority remain exact12.
 module.exports = Object.freeze({ ...comparisonFor(Registry.HISTORICAL_SOURCE_IDS),
+  createNormal13Comparison: () => comparisonFor(Registry.getSourceSet(2).sourceIds),
   createIsolated13Comparison: () => comparisonFor(Registry.getSourceSet(2).sourceIds) });
