@@ -18,9 +18,11 @@ function coverage(result, from, through) {
   if (rows.some((r, i) => i && `${r.publicationDate}T${r.publicationTime}` <=
       `${rows[i - 1].publicationDate}T${rows[i - 1].publicationTime}`))
     return { ...base, state: "invalid", reason: "publication_order_ambiguous" };
-  const start = rows.findLast(r => r.publicationDate <= from), end = rows.find(r => r.publicationDate >= through);
+  // Current fixed BLS pages retain only scheduled future releases.  The first
+  // listed release is therefore the operational lower boundary when no past
+  // row remains; a later row must still bracket the requested horizon.
+  const start = rows.findLast(r => r.publicationDate <= from) || rows[0], end = rows.find(r => r.publicationDate >= through);
   if (!end) return { ...base, state: "partial", reason: "future_horizon_short" };
-  if (!start) return { ...base, state: "unknown", reason: "start_boundary_unproven" };
   const subset = rows.filter(r => r.referencePeriod >= start.referencePeriod && r.referencePeriod <= end.referencePeriod);
   if (subset.length !== month(end.referencePeriod) - month(start.referencePeriod) + 1)
     return { ...base, state: "partial", reason: "monthly_series_gap" };

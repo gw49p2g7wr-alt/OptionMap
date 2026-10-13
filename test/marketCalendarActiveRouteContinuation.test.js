@@ -34,6 +34,7 @@ async function setup(name) {
         const role = require("../js/marketCalendarIsolated/blsFixedRoute.js").ROLES.find(r => r.url === url).role;
         body = B.html(role, [...B.rows[role], ...(role === "employment_situation" ?
           [["November 2026", "Dec. 04, 2026", "08:30 AM"]] : [])]);
+        if (failure === "structure") body = body.replace("Schedule of Releases for the ", "Unexpected Releases for the ");
       } else body = F.page(id, (name === "cpi" ? ["national", "tokyo"] : ["basic"]).flatMap(lane =>
         ["08", "09", "10"].map((month, i) => F.monthly(id, lane, "2026-" + month, "2026-" + ["09", "10", "11"][i] + "-15"))));
       return new Response(body, { headers: { "content-type": "text/html; charset=UTF-8" } });
@@ -137,6 +138,21 @@ test("BLS normal partial preserves candidates in memory, no role fields in stora
   const saved = await f.read(); assert.equal(saved.lastOutcome, "failure");
   assert.equal(saved.lastSuccessAt, DAY1); assert.equal(Object.hasOwn(saved, "failedRoles"), false);
   assert.equal(f.audit().reservations, 1);
+});
+test("BLS blocked parser state clears only through an accepted normal manual success", async () => {
+  const f = await setup("bls"); await f.check(); f.date(DAY2); f.fail("structure");
+  assert.equal((await f.check("manual", f.create())).state, "failed");
+  let saved = await f.read();
+  assert.equal(saved.lastOutcome, "failure"); assert.equal(saved.lastDiagnosticClass, "parser_structure_change");
+  const blocked = await f.check("startup", f.create());
+  assert.equal(blocked.sources[0].reasonClass, "automatic_retry_disabled_parser_structure_change");
+  const requests = f.requests(), writes = f.audit().writes;
+  assert.equal(f.requests(), requests); assert.equal(f.audit().writes, writes);
+  f.date("2026-09-30T03:00:00.000Z"); f.fail(null);
+  const recovered = await f.check("manual", f.create());
+  assert.equal(recovered.state, "success"); assert.equal(recovered.sources[0].acquisitionMode, "normal_active_route");
+  saved = await f.read(); assert.equal(saved.lastOutcome, "success");
+  assert.equal(saved.lastDiagnosticClass, null); assert.equal(saved.retryAfter, null);
 });
 test("duplicate one-shot guard remains a guard after normal continuation", async () => {
   const f = await setup("cpi"); await f.check(); f.date(DAY2); await f.check("manual");

@@ -12,6 +12,15 @@ function sentinel(){const audit={productionAttempts:0,networkAttempts:0};
   const noNetwork=()=>{audit.networkAttempts++;throw Error("isolated_network_forbidden");};global.fetch=noNetwork;
   for(const m of ["node:http","node:https"])for(const k of ["get","request"])require(m)[k]=noNetwork;return audit;
 }
+function killOwnedProcessGroup(pid){
+  if(!Number.isInteger(pid)||pid<=0)throw Error("cleanup_pid_invalid");
+  const uid=process.getuid(),listed=cp.spawnSync("ps",["-axo","pid=,pgid=,uid="],{encoding:"utf8"});
+  if(listed.status!==0)throw Error("cleanup_inventory_failed");
+  const owned=listed.stdout.trim().split("\n").map(line=>line.trim().split(/\s+/).map(Number))
+    .filter(([candidate,pgid,owner])=>candidate>0&&pgid===pid&&owner===uid&&candidate!==process.pid)
+    .map(([candidate])=>candidate);
+  for(const candidate of owned)try{process.kill(candidate,"SIGKILL");}catch(error){if(error.code!=="ESRCH")throw error;}
+}
 async function worker(){
   const {app,BrowserWindow,session}=require("electron"),pack=app.getAppPath();
   const config=JSON.parse(fs.readFileSync(path.join(pack,"fixture.json"),"utf8"));
@@ -75,7 +84,7 @@ function launch(root,profile,fixture,mode,fault,wiring=false){
   finally{fs.closeSync(out);fs.closeSync(err);}
   const hard=["after_authorization","before_window","before_load","after_load","after_challenge","started_before_permit","commit_before_readback","readback_before_completion"];
   const crash=mode==="execute"&&(child.status===86&&fault==="after_authorization"||child.signal==="SIGKILL"&&hard.includes(fault));
-  if(child.error||crash){try{process.kill(-child.pid,"SIGKILL");}catch(e){if(e.code!=="ESRCH")throw e;}}
+  if(child.error||crash)killOwnedProcessGroup(child.pid);
   if(child.error||child.signal&&!crash)throw Error("isolated_native_child_failed: "+fs.readFileSync(path.join(pack,"stderr.log"),"utf8"));
   let result=null;if(child.status===0){const b=fs.readFileSync(path.join(pack,"result.json")),m=JSON.parse(fs.readFileSync(path.join(pack,"result.json.complete")));
     assert.equal(b.length,m.bytes);assert.equal(sha(b),m.sha256);result=JSON.parse(b);}

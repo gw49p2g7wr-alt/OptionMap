@@ -85,6 +85,17 @@ test("complete: four roles, multiple months, fixed evidence, 42-day operational 
   assert.equal(a.absenceAuthority, "none"); assert.equal(a.disappearance, "not_evaluated");
   for (const d of a.documents) for (const e of d.canonicalRecords) assert.equal(e.acquisitionEvidence.sourceUrl, d.requestedUrl);
 });
+test("current future-only pages use their first release as the operational lower boundary", async () => {
+  const a = F.acquisition();
+  for (const role of R.ROLES) {
+    const rows = role.role === "jolts" ? [["October 2026", "Dec. 01, 2026", "10:00 AM"]] :
+      [["October 2026", "Nov. 10, 2026", "08:30 AM"], ["November 2026", "Dec. 10, 2026", "08:30 AM"]];
+    a.documents[R.ROLES.indexOf(role)] = F.document(role.role, F.html(role.role, rows));
+  }
+  const result = await assess(a, "2026-10-14");
+  assert.equal(result.outcome, "complete"); assert.equal(result.coverageState, "sufficient");
+  assert.ok(result.roleCoverage.every(c => c.state === "sufficient"));
+});
 test("deterministic row/document ordering and repeated assessment", async () => {
   const first = await assess(), input = F.acquisition();
   input.documents = R.ROLES.map(r => F.document(r.role, F.html(r.role, [...F.rows[r.role]].reverse()))).reverse();
