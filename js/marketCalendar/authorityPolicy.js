@@ -17,6 +17,7 @@
     const FORMAL_SOURCE_BY_EVENT_TYPE = Object.freeze({
         BOJ_MPM: "jp-boj-calendar", BOJ_POLICY_DECISION: "jp-boj-calendar",
         BOJ_GOVERNOR_PRESS_CONFERENCE: "jp-boj-calendar", JP_TANKAN: "jp-boj-calendar",
+        BOJ_SPEECH: "jp-boj-calendar",
         JP_NATIONAL_CPI: "jp-stat-cpi", JP_TOKYO_CPI: "jp-stat-cpi",
         JP_LABOR_FORCE: "jp-stat-labor", JP_GDP: "jp-esri-sna-calendar",
         JP_MACHINERY_ORDERS: "jp-esri-machinery-orders-calendar",

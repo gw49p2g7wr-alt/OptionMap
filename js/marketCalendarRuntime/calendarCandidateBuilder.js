@@ -38,8 +38,8 @@ function safeDiagnostics(values) {
     value.length <= 500 && !/(?:file:\/\/|[A-Za-z]:\\|\/(?:Users|home|var|private)\/)/.test(value)
     ? value : "diagnostic_redacted");
 }
-function validateAcquisition(sourceId, acquisition) {
-  const source = Registry.getSource(sourceId), policy = Policy.getPolicy(sourceId);
+function validateAcquisition(sourceId, acquisition, documentContract = null) {
+  const source = Registry.getSource(sourceId), policy = Policy.getPolicy(sourceId, documentContract);
   if (!source || !policy || !ADAPTERS.has(sourceId)) return { valid: false, reason: "source_unknown" };
   if (!acquisition || typeof acquisition !== "object" || Array.isArray(acquisition))
     return { valid: false, reason: "acquisition_result_malformed" };
@@ -86,7 +86,7 @@ function createCalendarCandidateBuilder(configuration = {}) {
   const shadowApi = configuration.shadowApi || Shadow;
   async function buildCalendarCandidate(input) {
     const sourceId = typeof input?.sourceId === "string" ? input.sourceId : null;
-    const checked = validateAcquisition(sourceId, input?.acquisitionResult);
+    const checked = validateAcquisition(sourceId, input?.acquisitionResult, configuration.documentContract || null);
     if (!checked.valid) return result(sourceId, checked.unavailable ? "unavailable" : "rejected",
       checked.reason);
     const adapter = adapterMap.get(sourceId);
@@ -129,7 +129,8 @@ function createCalendarCandidateBuilder(configuration = {}) {
     return result(sourceId, "available", null, { formalEligible: true, candidateIdentity,
       recordCount: canonicalRecords.length, canonicalRecords, parserStatus: assessment.parserStatus,
       canonicalizationStatus: assessment.canonicalizationStatus, parserDiagnostics,
-      canonicalDiagnostics, encodingEvidence, sourceIdentity });
+      canonicalDiagnostics, encodingEvidence, sourceIdentity,
+      ...(assessment.coverageAudit ? { coverageAudit: assessment.coverageAudit } : {}) });
   }
   return Object.freeze({ buildCalendarCandidate });
 }

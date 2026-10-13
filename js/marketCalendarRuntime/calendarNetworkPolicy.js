@@ -24,6 +24,14 @@ const documentPolicy = (role, url, kind, maxBytes, pathPattern = null, options =
     encodingEvidenceOnly: options.encodingEvidenceOnly === true,
     allowValueOnlyWorkbookSanitization: options.allowValueOnlyWorkbookSanitization === true });
 
+// Explicit current normal-acquisition contract; historical primary-only routes stay frozen.
+const BOJ_COVERAGE_V2 = Object.freeze({ sourceId: "jp-boj-calendar", version: 2,
+  documents: Object.freeze([
+    documentPolicy("primary", "https://www.boj.or.jp/about/calendar/", "html", 2_000_000),
+    documentPolicy("speeches", "https://www.boj.or.jp/about/press/index.htm", "html", 2_000_000),
+    documentPolicy("tankan", "https://www.boj.or.jp/statistics/outline/tkohyos.xlsx", "xlsx", 5_000_000)
+  ]) });
+
 const sourcePolicies = Object.freeze({
   "jp-boj-calendar": Object.freeze({ documents: Object.freeze([
     documentPolicy("primary", registry.getSource("jp-boj-calendar").canonicalUrl, "html", 2_000_000)
@@ -134,8 +142,12 @@ function validateMime(policy, contentType) {
     : Object.freeze({ valid: false, mime: mime || null, reason: "mime_not_allowed" });
 }
 
-function getPolicy(sourceId) { return sourcePolicies[sourceId] || null; }
+function getPolicy(sourceId, documentContract = null) {
+  if (documentContract !== null) return documentContract === BOJ_COVERAGE_V2 &&
+    sourceId === BOJ_COVERAGE_V2.sourceId ? BOJ_COVERAGE_V2 : null;
+  return sourcePolicies[sourceId] || null;
+}
 
 module.exports = Object.freeze({ OPERATION, MAX_REDIRECTS, MAX_RETRIES,
   REQUEST_TIMEOUT_MS, BODY_TIMEOUT_MS, MIME, SOURCE_POLICIES: sourcePolicies,
-  cleanMime, validateRequest, validateUrl, validateMime, getPolicy });
+  cleanMime, validateRequest, validateUrl, validateMime, getPolicy, BOJ_COVERAGE_V2 });

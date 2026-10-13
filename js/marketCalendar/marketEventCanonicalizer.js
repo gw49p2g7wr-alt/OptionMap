@@ -29,8 +29,9 @@
             policy.evaluateFormalEligibility(record, source);
         if (!eligibility.eligible) return { ok: false, reason: eligibility.reason, event: null };
         let logical, eventSchedule;
-        const jgb = record.eventType === "JP_JGB_AUCTION";
-        try { logical = identity.create(jgb ? { jurisdiction: source.jurisdiction, authority: source.authority,
+        const jgb = record.eventType === "JP_JGB_AUCTION", speech = record.eventType === "BOJ_SPEECH";
+        try { logical = identity.create(speech ? { jurisdiction: source.jurisdiction, authority: source.authority,
+            eventType: record.eventType, speechIdentity: record.speechIdentity } : jgb ? { jurisdiction: source.jurisdiction, authority: source.authority,
             eventType: record.eventType, auctionIdentity: record.auctionIdentity, authorityEventId: null } :
             { jurisdiction: source.jurisdiction, authority: source.authority,
             eventType: record.eventType, referencePeriod: record.referencePeriod,
@@ -54,7 +55,8 @@
             acquisitionEvidenceHash = await sha256(acquisitionEvidence);
         const freeze = value => { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
             Object.values(value).forEach(freeze); return Object.freeze(value); };
-        return { ok: true, reason: null, event: freeze({ ...semanticContent, ...(jgb ? { absenceAuthority: "none" } : {}),
+        return { ok: true, reason: null, event: freeze({ ...semanticContent,
+            ...(jgb || speech || record.eventType === "JP_TANKAN" ? { absenceAuthority: "none" } : {}),
             source: acquisitionEvidence, acquisitionEvidence,
             eventKey: logical.eventKey, revisionKey: `${logical.eventKey}|sha256:${canonicalContentHash}`,
             acquisitionEvidenceKey: `${source.sourceId}|sha256:${acquisitionEvidenceHash}`,

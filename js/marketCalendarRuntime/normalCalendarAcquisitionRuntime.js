@@ -6,6 +6,7 @@ const Contracts = require("./normalAcquisitionContract.js");
 const Manual = require("./calendarManualCheckService.js");
 const Acquisition = require("./calendarAcquisitionService.js");
 const Mof = require("./mofNormalAcquisition.js");
+const Boj = require("./bojCoverageAcquisition.js");
 const Labor = require("./laborProductionCheck.js");
 const Cpi = require("./cpiProductionCheck.js");
 const Bls = require("./blsProductionCheck.js");
@@ -29,11 +30,13 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
     cpi: CpiStore.createCpiRuntimeStateElectron({ webContents }), bls: BlsStore.createBlsRuntimeStateElectron({ webContents }) };
   const acquisitionContract = Contracts.NORMAL13, ids = Contracts.resolve(acquisitionContract);
   const mof = Mof.create({ acquisitionContract, fetchImpl, now });
+  const boj = Boj.create({ fetchImpl, now });
   const legacyAcquire = acquire || Acquisition.createCalendarAcquisitionService({ fetchImpl }).acquire;
   let captures = new Map(), active = null, last = null, mofResult = null;
   const capture = result => captures.set(result.sourceId, Projection.projectAcquisition(result));
   const legacy = Manual.createCalendarManualCheckService({ acquisitionContract, now, simulator,
-    builder: Mof.builder(builder), acquire: async request => {
+    builder: Mof.builder(Boj.builder(builder)), acquire: async request => {
+      if (request.sourceId === Boj.SOURCE_ID && !acquire) return boj.acquire(request);
       if (request.sourceId !== Mof.SOURCE_ID) return legacyAcquire(request);
       mofResult = await mof.acquire(request); return mofResult;
     },
@@ -41,6 +44,7 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
       const selection = Routes.selectRoute({ sourceId: result.sourceId, operation: Network.OPERATION }, Routes.PRODUCTION_AUTHORITY);
       capture({ ...(result.sourceId === Mof.SOURCE_ID ? { ...mofResult.normalProjection,
         acquisitionOutcome: result.acquisitionOutcome } : result), routeIdentity: result.sourceId === Mof.SOURCE_ID ? Mof.routeIdentity :
+        result.sourceId === Boj.SOURCE_ID && !acquire ? Boj.routeIdentity :
         selection.routeKind === "legacy" ? selection.routeIdentity : null });
     } });
   const common = { acquisitionContract, fetchImpl, now, adapterFactory, onAcquisition: capture };

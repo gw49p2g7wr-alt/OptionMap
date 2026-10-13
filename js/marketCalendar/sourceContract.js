@@ -61,6 +61,13 @@
     function validateSourceRecord(value) {
         const errors = [], source = registry?.getSource(value?.sourceId);
         if (!source) errors.push("source_unregistered");
+        if (value?.eventType === "BOJ_SPEECH") {
+            if (value.sourceId !== "jp-boj-calendar" || !identity.validateSpeechIdentity(value.speechIdentity) ||
+                value.speechIdentity.eventDate !== value.sourceLocalSchedule?.startDate ||
+                value.absenceAuthority !== "none" || value.sourceStatus !== "scheduled" ||
+                ["referencePeriod", "edition", "scope"].some(k => Object.hasOwn(value, k)))
+                errors.push("boj_speech_identity_invalid");
+        } else if (value?.speechIdentity !== undefined) errors.push("speech_identity_for_wrong_event_type");
         if (isJgb(value)) errors.push(...jgbErrors(value, source));
         else if (value?.auctionIdentity !== undefined) errors.push("auction_identity_for_wrong_event_type");
         if (!taxonomy?.isEventType(value?.eventType)) errors.push("event_type_invalid");

@@ -8,6 +8,17 @@
     "use strict";
     const component = value => typeof value === "string" && value.length > 0 && !value.includes("|");
     const JGB_MATURITIES = Object.freeze(["2Y", "5Y", "10Y", "20Y", "30Y", "40Y"]);
+    function validateSpeechIdentity(value) {
+        const keys = ["sourceId", "family", "speakerRole", "speakerId", "eventDate", "officialEventComponent"];
+        return !!value && typeof value === "object" && !Array.isArray(value) &&
+            Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value, k)) &&
+            value.sourceId === "jp-boj-calendar" && value.family === "speech_remarks" &&
+            ["governor", "deputy_governor", "policy_board_member"].includes(value.speakerRole) &&
+            typeof value.speakerId === "string" && /^[一-龯ぁ-んァ-ヶ]{1,30}$/.test(value.speakerId) &&
+            validAuctionDate(value.eventDate) && component(value.officialEventComponent) &&
+            value.officialEventComponent.length <= 200 &&
+            /^(?:venue:.+|publication:ko\d{6}[a-z])$/.test(value.officialEventComponent);
+    }
     function validAuctionDate(value) {
         if (typeof value !== "string" || !/^20\d{2}-\d{2}-\d{2}$/.test(value)) return false;
         const time = Date.parse(`${value}T00:00:00.000Z`);
@@ -22,6 +33,16 @@
             validAuctionDate(value.auctionDate);
     }
     function eventKeyFor(value) {
+        if (value?.eventType === "BOJ_SPEECH") {
+            if (value.jurisdiction !== "JP" || value.authority !== "BOJ" ||
+                !validateSpeechIdentity(value.speechIdentity) || !taxonomy?.isEventType(value.eventType) ||
+                ["referencePeriod", "edition", "scope"].some(k => Object.hasOwn(value, k)))
+                throw new TypeError("boj_speech_identity_invalid");
+            const s = value.speechIdentity;
+            return ["JP", "BOJ", "BOJ_SPEECH", s.sourceId, s.family, s.speakerRole,
+                s.speakerId, s.eventDate, s.officialEventComponent].join("|");
+        }
+        if (value?.speechIdentity !== undefined) throw new TypeError("speech_identity_for_wrong_event_type");
         if (value?.eventType === "JP_JGB_AUCTION") {
             if (!taxonomy?.isEventType(value.eventType) || taxonomy.EVENT_TYPES[value.eventType].jurisdiction !== "JP" ||
                 value.jurisdiction !== "JP" || value.authority !== "MOF" ||
@@ -41,6 +62,9 @@
     }
     function create(value) {
         const eventKey = eventKeyFor(value);
+        if (value.eventType === "BOJ_SPEECH") return Object.freeze({ eventKey,
+            jurisdiction: "JP", authority: "BOJ", eventType: "BOJ_SPEECH",
+            speechIdentity: Object.freeze({ ...value.speechIdentity }), authorityEventId: null });
         if (value.eventType === "JP_JGB_AUCTION") return Object.freeze({ eventKey,
             jurisdiction: "JP", authority: "MOF", eventType: "JP_JGB_AUCTION",
             auctionIdentity: Object.freeze({ ...value.auctionIdentity }), authorityEventId: null });
@@ -48,5 +72,6 @@
             eventType: value.eventType, referencePeriod: value.referencePeriod, edition: value.edition,
             scope: value.scope, authorityEventId: value.authorityEventId || null });
     }
-    return Object.freeze({ eventKeyFor, create, JGB_MATURITIES, validAuctionDate, validateAuctionIdentity });
+    return Object.freeze({ eventKeyFor, create, JGB_MATURITIES, validAuctionDate, validateAuctionIdentity,
+        validateSpeechIdentity });
 });

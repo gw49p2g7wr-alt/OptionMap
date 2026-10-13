@@ -11,6 +11,7 @@
         BOJ_MPM: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
         BOJ_POLICY_DECISION: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
         BOJ_GOVERNOR_PRESS_CONFERENCE: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
+        BOJ_SPEECH: { category: CATEGORY.CENTRAL_BANK, jurisdiction: "JP" },
         JP_NATIONAL_CPI: { category: CATEGORY.INFLATION, jurisdiction: "JP" },
         JP_TOKYO_CPI: { category: CATEGORY.INFLATION, jurisdiction: "JP" },
         JP_GDP: { category: CATEGORY.GROWTH, jurisdiction: "JP" },

@@ -202,7 +202,9 @@ function createCalendarAcquisitionService(configuration = {}) {
     if (!checked.valid) return publicFailure(checked.reason,
       [{ stage: "request_validation", reason: checked.reason }], false);
     if (typeof fetchImpl !== "function") return publicFailure("network_unavailable", [], true);
-    const sourcePolicy = policyApi.getPolicy(checked.sourceId), requestedAt = now().toISOString(), documents = [];
+    const sourcePolicy = policyApi.getPolicy(checked.sourceId, configuration.documentContract || null);
+    if (!sourcePolicy) return publicFailure("document_contract_invalid");
+    const requestedAt = now().toISOString(), documents = [];
     for (const documentPolicy of sourcePolicy.documents) {
       let url = documentPolicy.url;
       if (documentPolicy.role === "workbook") {

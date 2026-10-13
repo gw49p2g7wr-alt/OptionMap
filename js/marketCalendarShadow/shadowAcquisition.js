@@ -64,7 +64,8 @@
                     eventTypes, duplicates, identityCollisions, timezoneResolution: diagnostics.some(value =>
                         value.startsWith("timezone:")) ? "failure" : canonical.length ? "success" : "not_evaluated",
                     encoding: clone(acquired.encoding || null), exclusions, diagnostics, formalEligible,
-                    formalCanonicalSet: formalEligible ? canonical : [] })); }
+                    formalCanonicalSet: formalEligible ? canonical : [],
+                    ...(acquired.coverageAudit ? { coverageAudit: clone(acquired.coverageAudit) } : {}) })); }
             return freeze({ shadow: true, readOnly: true, storageWrite: false, uiConnected: false,
                 timeTravelConnected: false, schedulerConnected: false, notificationConnected: false,
                 overallV2Connected: false, generatedAt: new Date().toISOString(), sources: sourceResults }); }
