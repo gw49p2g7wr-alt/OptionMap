@@ -5975,7 +5975,7 @@ async function fetchQriData({ requestId } = {}) {
                 priceResult: livePriceAcquisition?.success === false ? null : {
                     ...livePriceAcquisition, available: true, origin: "live", mode: "automatic"
                 },
-                activeContract: payload.canonicalV2?.contract || null,
+                activeContract: livePriceAcquisition?.contract || null,
                 pageTradingDate: payload.canonicalV2?.tradingDate || null,
                 pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
                 sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl,

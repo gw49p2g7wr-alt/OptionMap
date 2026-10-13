@@ -208,6 +208,19 @@ test("current-price contract不一致とacquisition未検証はunavailable", asy
     }
 });
 
+test("QRI option限月とverified futures price限月は別identityとしてmarketSnapshotを昇格", async () => {
+    const deps = dependencies(); const mobile = deps.getMobileSummary();
+    deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
+        currentPrice: { ...mobile.payload.currentPrice, contract: "2026-12" } } });
+    const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        contract: "2026-12" } });
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.summary.contract, "2026-12");
+    assert.equal(result.sections.qriOptions.summary.contract, "2026-09");
+});
+
 test("saved/cache/reference current-price factへfallbackしない", async () => {
     for (const patch of [{ sourceKind: "saved", origin: "saved" },
         { sourceKind: "cache", origin: "cache" }, { sourceKind: "reference", origin: "reference" }]) {

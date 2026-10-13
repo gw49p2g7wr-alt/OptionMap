@@ -191,6 +191,13 @@ test("publication input uses acquisition values rather than currentPriceState", 
     assert.doesNotMatch(publication, /currentPriceState|localStorage|document\./);
     assert.match(publication, /activeRequestId|canonicalV2|fetchedAt/);
 });
+test("price identity binds to the acquired futures contract, not the QRI option contract", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const start = html.indexOf("const livePriceAcquisition");
+    const publication = html.slice(start, html.indexOf("if (priceResult?.success", start));
+    assert.match(publication, /activeContract:\s*livePriceAcquisition\?\.contract/);
+    assert.doesNotMatch(publication, /activeContract:\s*payload\.canonicalV2\?\.contract/);
+});
 test("no Morning collector or storage wiring was added", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const publication = html.slice(html.indexOf("const livePriceAcquisition"),

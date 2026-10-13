@@ -48,6 +48,11 @@ test("missing QRI tradingDate", () => assert.equal(evaluate(x => { x.qriFormalId
 test("QRI invalid", () => assert.equal(evaluate(x => { x.qriFormalIdentity.identityVerified = false; }).reason, "identity_unverified"));
 test("price mapping unresolved", () => assert.equal(evaluate(x => { x.currentPriceLiveIdentity.qriTradingDateMapping.mappingVerified = false; }).reason, "price_mapping_unresolved"));
 test("contract mismatch", () => assert.equal(evaluate(x => { x.currentPriceLiveIdentity.contract = "2026-12"; }).reason, "contract_mismatch"));
+test("separately verified futures and QRI option contracts remain ineligible for Morning", () => {
+    const result = evaluate(x => { x.currentPriceLiveIdentity.contract = "2026-12"; });
+    assert.deepEqual([result.status, result.reason, result.comparisonEligible],
+        ["mismatch", "contract_mismatch", false]);
+});
 test("contract roll comparison", () => { const before = evaluate(); const after = evaluate(x => { x.qriFormalIdentity.contract = "2026-12";
     x.currentPriceLiveIdentity.contract = "2026-12"; }); assert.equal(Scope.compareFormalSessionScopes(before, after).reason, "contract_roll"); });
 test("overall binding mismatch", () => assert.equal(evaluate(x => { x.overallV2Envelope.optionSourceIdentity.canonicalVersionKey = "old"; }).reason, "source_binding_mismatch"));
