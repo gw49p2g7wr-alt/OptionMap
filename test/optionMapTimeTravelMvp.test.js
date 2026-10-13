@@ -12,7 +12,8 @@ async function createObservationDb(factory, name, records = [], wrong = false) {
     const db = await new Promise((resolve, reject) => { const open = factory.open(name, 1);
         open.onupgradeneeded = () => { const store = open.result.createObjectStore(
             wrong ? "wrong" : "observations", { keyPath: "observationId" });
-        if (!wrong) store.createIndex("byMarketDate", "marketDate"); };
+        if (!wrong) { store.createIndex("byMarketDate", "marketDate");
+            store.createIndex("byObservedAt", "observedAt"); } };
         open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
     if (!wrong && records.length) { const transaction = db.transaction("observations", "readwrite");
         records.forEach(value => transaction.objectStore("observations").put(value)); await done(transaction); }
@@ -33,7 +34,8 @@ async function createPriceDb(factory, records = [], wrong = false) {
     const db = await new Promise((resolve, reject) => { const open = factory.open("optionMapPriceSnapshots", 1);
         open.onupgradeneeded = () => { const store = open.result.createObjectStore(
             wrong ? "wrong" : "snapshots", { keyPath: "snapshotId" });
-        if (!wrong) store.createIndex("byMarketDate", "marketDate"); };
+        if (!wrong) { store.createIndex("byMarketDate", "marketDate");
+            store.createIndex("byObservedAt", "observedAt"); } };
         open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
     if (!wrong && records.length) { const transaction = db.transaction("snapshots", "readwrite");
         records.forEach(value => transaction.objectStore("snapshots").put(value)); await done(transaction); }
@@ -144,7 +146,7 @@ test("historical viewは保存断面・Morning・QRIを専用領域へ描画", a
     assert.match(nodes.timeTravelMorning.children.at(-1).textContent, /保存なし/);
     assert.deepEqual(qriCalls, [{ selectedTradingDate: "2026-09-18", selectedContract: "2026-10" }]);
 });
-test("Price Snapshotはexact marketDateだけreadonly取得しconnectionをclose", async () => {
+test("Price Snapshotはexact JST観測日だけreadonly取得しconnectionをclose", async () => {
     const factory = new IDBFactory(); await createPriceDb(factory, [
         priceSnapshot("a", "2026-09-18", "2026-09-18T01:00:00.000Z", 42000),
         priceSnapshot("b", "2026-09-19", "2026-09-19T01:00:00.000Z", 42100)]);

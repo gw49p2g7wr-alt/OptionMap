@@ -51,10 +51,19 @@
         return readDatabase(indexedDB, DATABASES.observations, async database => {
             const transaction = database.transaction("observations", "readonly"), done = transactionDone(transaction);
             const records = await requestValue(transaction.objectStore("observations")
-                .index("byMarketDate").getAll(calendarDate));
+                .index("byObservedAt").getAll());
             await done;
-            return clone(records).sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+            return clone(records).filter(record => observedOn(record, calendarDate))
+                .sort((a, b) => a.observedAt.localeCompare(b.observedAt));
         });
+    }
+    // The Calendar selects a JST observation day, not the source's trading day.
+    // Keep marketDate and QRI/morning trading-date contracts untouched. Parse
+    // timestamps rather than compare ISO strings: stored offsets may differ.
+    function observedOn(record, calendarDate) {
+        const instant = Date.parse(record?.observedAt);
+        return validDate(calendarDate) && Number.isFinite(instant) &&
+            new Date(instant + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) === calendarDate;
     }
     async function qriFor(indexedDB, calendarDate) {
         return readDatabase(indexedDB, DATABASES.qri, async database => {
@@ -69,9 +78,10 @@
         return readDatabase(indexedDB, DATABASES.prices, async database => {
             const transaction = database.transaction("snapshots", "readonly"), done = transactionDone(transaction);
             const records = await requestValue(transaction.objectStore("snapshots")
-                .index("byMarketDate").getAll(calendarDate));
+                .index("byObservedAt").getAll());
             await done;
-            return clone(records).sort((a, b) => a.observedAt.localeCompare(b.observedAt) ||
+            return clone(records).filter(record => observedOn(record, calendarDate))
+                .sort((a, b) => a.observedAt.localeCompare(b.observedAt) ||
                 String(a.snapshotId).localeCompare(String(b.snapshotId)));
         });
     }
