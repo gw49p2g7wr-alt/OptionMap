@@ -31,6 +31,10 @@ function bindResolvedProfile(root, selection = null, record = null) {
   function permits(p, operation, writing = false) {
     if (typeof p !== "string" || !path.isAbsolute(p) || path.normalize(p) !== p || p.includes("\0")) return false;
     if (parents.includes(p)) return !writing && Base.PARENT_METADATA.includes(operation);
+    // Read-only generation dispatch may test the exact additive namespace.
+    // No contents, enumeration or mutation: a present new version stops this
+    // historical controlled adapter rather than granting it new authority.
+    if(p===path.join(root,"market-calendar-mof-startup-canary"))return !writing&&operation==="lstatSync";
     const translated = map(p);
     if (!writing && translated && template.permits(translated, operation, false)) return true;
     if (directories.has(p)) return !writing && ["lstatSync", "statSync", "realpathSync", "existsSync", "openDirectoryForSync"].includes(operation) ||

@@ -60,6 +60,10 @@ function createRuntimeStateIntegration({ service, store, targetEnvironment, acqu
           diagnostics.push("runtime_state_persist_failed");
       } catch (_) { diagnostics.push("runtime_state_persist_failed"); }
     }
+    // Notification carries no authority/data. Private preload/main verifies the
+    // real persisted MOF row against its captured acquisition and document epoch.
+    if(input?.trigger==="startup"&&typeof window!=="undefined"&&typeof window.dispatchEvent==="function"&&typeof CustomEvent==="function")
+      window.dispatchEvent(new CustomEvent("optionmap:calendar-persisted"));
     return { ...result, runtimeStateDiagnostics: [...new Set(diagnostics)] };
   }
   function check(input) {

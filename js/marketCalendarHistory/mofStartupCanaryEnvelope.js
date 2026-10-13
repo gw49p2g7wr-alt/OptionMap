@@ -4,7 +4,9 @@
 const A = require("./formalWriterAuthorityV2.js"), Old = require("./writerSafetySourceSetEnvelope.js");
 const File = require("./writerSafetyFileSchema.js"), Historical = require("./writerSafetyVersionedEnvelope.js");
 const VERSION = 4, SOURCE = "jp-mof-jgb-auction-calendar", OPERATION = "startup-canary-new-only";
+const DIRECTORY="market-calendar-mof-startup-canary";
 const PHASES = Object.freeze(["prepared", "formal_write_started", "commit_observed", "readback_verified", "completed"]);
+const ACTIVATION_REASONS=Object.freeze(["explicit_isolated_mof_startup_canary","explicit_production_mof_startup_canary"]);
 const COUNTS = A.freeze({ eventEntryCreate: 1, eventEntryUpdate: 0, semanticRevisionCreate: 1,
   semanticRevisionClose: 0, evidenceCreate: 1, observationCreate: 1, sourceRunCreate: 1, sourceCursorUpdate: 1 });
 const material = { contractVersion: 1, authorityVersion: 1, sourceId: SOURCE, operation: OPERATION,
@@ -17,16 +19,16 @@ const BINDING_FIELDS = Object.freeze(["sourceId", "operation", "attemptIdentity"
 const same = (a, b) => A.hash(a) === A.hash(b);
 const fail = reason => { throw Error(reason); };
 function sealSafety(s) { const { validationIdentity: _, ...m } = structuredClone(s); return { ...m, validationIdentity: A.hash(m) }; }
-function activate(historicalRecord, gateIdentity) {
+function activate(historicalRecord, gateIdentity, reason=ACTIVATION_REASONS[0]) {
   if (!Old.validate(historicalRecord).valid || historicalRecord.schemaVersion !== 3 ||
       historicalRecord.controlledLifecycleAudit?.at(-1)?.phase !== "completed" || historicalRecord.safety.pendingFence ||
       historicalRecord.safety.globalSuspend.suspended || historicalRecord.safety.sources.some(s => s.suspended) ||
-      historicalRecord.safety.persistedAuthorityVersion !== 3 || !A.isHash(gateIdentity)) fail("canary_activation_precondition_invalid");
+      historicalRecord.safety.persistedAuthorityVersion !== 3 || !A.isHash(gateIdentity)||!ACTIVATION_REASONS.includes(reason)) fail("canary_activation_precondition_invalid");
   const old = historicalRecord.safety;
   if (historicalRecord.historicalRecord.legacyRecord.transitionAudit.length + historicalRecord.historicalRecord.transitionAudit.length +
       historicalRecord.sourceSetAudit.length + historicalRecord.controlledLifecycleAudit.length + 1 + PHASES.length > File.MAX_AUDIT)
     fail("canary_audit_capacity_reached");
-  const activation = { gateIdentity, reason: "explicit_isolated_mof_startup_canary", previousChecksum: historicalRecord.checksum,
+  const activation = { gateIdentity, reason, previousChecksum: historicalRecord.checksum,
     previousSequence: old.sequence, nextSequence: old.sequence + 1, canaryAuthorityIdentity: AUTHORITY.identity };
   return File.seal({ schemaVersion: VERSION, historicalRecord: structuredClone(historicalRecord),
     canaryAuthority: AUTHORITY, activationAudit: { ...activation, identity: A.hash(activation) },
@@ -69,7 +71,7 @@ function validate(record) {
   try {
     if (!A.exact(record, ["schemaVersion", "historicalRecord", "canaryAuthority", "activationAudit", "safety", "lifecycleAudit", "checksum"]) ||
         record.schemaVersion !== VERSION || !same(record, File.seal(record))) fail("canary_envelope_invalid");
-    const base = activate(record.historicalRecord, record.activationAudit.gateIdentity);
+    const base = activate(record.historicalRecord, record.activationAudit.gateIdentity,record.activationAudit.reason);
     if (!same(record, replay(base, record.lifecycleAudit))) fail("canary_history_or_current_mismatch");
     return A.freeze({ valid: true, reason: null, historicalAuthority: Historical.policyFor(3).global,
       canaryAuthority: AUTHORITY, generalWriteAllowed: false, manualWriteAllowed: false });
@@ -79,7 +81,7 @@ function append(current, phase, binding, proof = null) {
   if (!validate(current).valid || phase !== PHASES[current.lifecycleAudit.length]) fail("canary_phase_invalid");
   const entry = { phase, previousSequence: current.safety.sequence, nextSequence: current.safety.sequence + 1,
     previousIdentity: current.lifecycleAudit.at(-1)?.identity || current.activationAudit.identity, binding, proof };
-  return replay(activate(current.historicalRecord, current.activationAudit.gateIdentity),
+  return replay(activate(current.historicalRecord, current.activationAudit.gateIdentity,current.activationAudit.reason),
     [...current.lifecycleAudit, { ...entry, identity: A.hash(entry) }]);
 }
-module.exports = Object.freeze({ VERSION, SOURCE, OPERATION, PHASES, COUNTS, AUTHORITY, BINDING_FIELDS, activate, validate, append, assertBinding });
+module.exports = Object.freeze({ VERSION, SOURCE, OPERATION, DIRECTORY, PHASES, COUNTS, AUTHORITY, BINDING_FIELDS, ACTIVATION_REASONS, activate, validate, append, assertBinding });

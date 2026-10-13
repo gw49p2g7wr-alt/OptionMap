@@ -17,6 +17,11 @@ function createIsolatedStartupContext(input) {
       !A.isHash(cycleIdentity) || !Number.isFinite(Date.parse(checkedAt))) throw Error("canary_startup_context_invalid");
   const token = Object.freeze({}); contexts.set(token, { cycleIdentity, checkedAt, spent: false }); return token;
 }
+function createProductionStartupContext(proof){
+  if(process.type!=="browser"||!process.versions.electron)throw Error("native_main_required");
+  const binding=require("../marketCalendarRuntime/mofStartupPersistenceBridge.js").consumeProof(proof,true),token=Object.freeze({});
+  contexts.set(token,{cycleIdentity:binding.cycleIdentity,checkedAt:binding.checkedAt,spent:false,persistence:binding});return token;
+}
 // Stop-only coordination hook for a pre-existing Machinery attempt. It never
 // issues/changes Machinery authority; trusted composition must reserve the
 // cycle before either source's writer. No production wiring in this Gate.
@@ -73,6 +78,8 @@ async function prepare({ context, record, source, sourceOutcome, runtimeState, s
   }
   const before = structuredClone(snapshot), cycle = Cycle.create(before, Schema.EXPECTED_FINGERPRINT);
   try {
+    if(ctx.persistence&&(ctx.persistence.runtimeIdentity!==A.hash(runtimeState)||ctx.persistence.acquisitionIdentity!==
+      A.hash({source,runtimeState,checkedAt:ctx.checkedAt})))throw Error("canary_persistence_binding_invalid");
     const comparison = await Compare.compare({ sourceResults: Compare.SOURCE_IDS.map(id => id === E.SOURCE ? source :
       { sourceId: id, canonicalRecords: [], acquisitionOutcome: "not_attempted", candidateStatus: "unavailable", absenceAuthority: "none" }),
       formalSnapshot: before, cycleContext: cycle });
@@ -111,10 +118,11 @@ async function prepare({ context, record, source, sourceOutcome, runtimeState, s
       candidateIdentity, runtimeIdentity: A.hash(runtimeState), semanticPlanIdentity: A.hash({ key, hash: records.find(r => r.eventKey === key).canonicalContentHash,
         mutationClass: "new-only", counts: E.COUNTS, authority: E.AUTHORITY.identity }), acquisitionIdentity,
       comparisonIdentity: base.comparisonIdentity, formalPrecondition: base.preconditionIdentity, planIdentity: plan.planIdentity,
-      safetySequence: record.safety.sequence, safetyIdentity: record.safety.validationIdentity });
+      safetySequence: record.safety.sequence, safetyIdentity: record.safety.validationIdentity,
+      ...(ctx.persistence?{productionStartup:true,persistenceBinding:ctx.persistence}:{}) });
     preparations.set(token, { data, spent: false }); return Object.freeze({ status: "prepared", preparation: token, comparison: own });
   } finally { Cycle.close(cycle); }
 }
 function inspect(token) { const p = preparations.get(token); if (!p || p.spent) throw Error("canary_preparation_unknown_or_spent"); return p.data; }
 function consume(token) { const d = inspect(token); preparations.get(token).spent = true; return d; }
-module.exports = Object.freeze({ createIsolatedStartupContext, observeExistingMachineryAttempt, prepare, inspect, consume });
+module.exports = Object.freeze({ createIsolatedStartupContext, createProductionStartupContext, observeExistingMachineryAttempt, prepare, inspect, consume });

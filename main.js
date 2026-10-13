@@ -30,6 +30,8 @@ const calendarAcquisition = require(
 );
 const normalAcquisitionRuntime = require("./js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
 let calendarShadowRuntime = null;
+let calendarCanaryRuntime = null;
+let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
@@ -212,20 +214,30 @@ ipcMain.handle("request-market-calendar-source", async (event, request) => {
   }
 });
 
+function ensureCalendarRuntime(webContents) {
+  if (!calendarShadowRuntime) calendarShadowRuntime = normalAcquisitionRuntime.create({
+    webContents, fetchImpl: (url, options) => net.fetch(url, options),
+    runtimeStateOwner: "renderer",
+    acquire: request => calendarAcquisitionService.acquire(request)
+  });
+  return calendarShadowRuntime;
+}
+
 ipcMain.handle("check-market-calendar-sources", async (event, request) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   if (!owner || owner !== mainWindow) return { state: "unavailable", mode: "writer_disabled",
     reasonClass: "invalid_sender", sources: [], failedSourceIds: [] };
   try {
-    if (!calendarShadowRuntime) calendarShadowRuntime = normalAcquisitionRuntime.create({
-      webContents: event.sender, fetchImpl: (url, options) => net.fetch(url, options),
-      runtimeStateOwner: "renderer",
-      acquire: request => calendarAcquisitionService.acquire(request)
-    });
-    return await calendarShadowRuntime.check(request);
+    ensureCalendarRuntime(event.sender);
+    return await (calendarCanaryRuntime ? calendarCanaryRuntime.check(event,request) : calendarShadowRuntime.check(request));
   }
   catch (_error) { return { state: "failed", mode: "writer_disabled",
     reasonClass: "manual_check_failed", sources: [], failedSourceIds: [] }; }
+});
+ipcMain.handle("optionmap:mof-startup:claim",event=>calendarCanaryRuntime ? calendarCanaryRuntime.claim(event) : null);
+ipcMain.handle("optionmap:mof-startup:persisted",(event,receipt)=>{
+  if(!calendarCanaryRuntime)throw Error("startup_canary_unavailable");
+  return calendarCanaryRuntime.persisted(event,receipt);
 });
 
 ipcMain.handle("save-full-export-json", (event, request) => {
@@ -602,6 +614,7 @@ console.log(
 );
 
 function createWindow() {
+  const canaryContext=productionCanaryContext;
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -615,6 +628,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    calendarCanaryRuntime?.close();calendarCanaryRuntime=null;
     calendarShadowRuntime = null;
   });
   const mainDocumentUrl = pathToFileURL(
@@ -624,10 +638,21 @@ function createWindow() {
     if (targetUrl !== mainDocumentUrl) event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  if(canaryContext&&mainWindow.webContents.mainFrame){
+    const normal={check:request=>{
+      ensureCalendarRuntime(mainWindow.webContents);
+      return calendarShadowRuntime.check(request);
+    },diagnostics:()=>calendarShadowRuntime?.diagnostics()||{}};
+    calendarCanaryRuntime=require("./js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js").createProductionRuntime(canaryContext,mainWindow.webContents,normal);
+  }
   mainWindow.loadFile("index.html");
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(()=>{
+  productionCanaryContext=process.versions?.electron
+    ? require("./js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js").initializeProductionContext() : null;
+  app.whenReady().then(createWindow);
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

@@ -26,6 +26,7 @@ async function worker(){
   const W=require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"),C=require("../js/marketCalendarRuntime/mofStartupCanaryController.js");
   const Reader=require("../js/marketCalendarRuntime/formalShadowElectronRead.js"),Schema=require("../js/marketCalendarHistory/productionSchemaV1.js"),A=require("../js/marketCalendarHistory/formalWriterAuthorityV2.js");
   await app.whenReady();stage="app_ready";let result,window;
+  if(config.wiring&&config.mode==="execute")Store.createProductionStore().activate(A.hash("G1.7-production-factory-isolated-fixture"));
   const s=Store.createIsolatedStore({targetEnvironment:"isolated_test",fixtureRoot:config.root,crashAt:null}),loaded=s.load();assert.equal(loaded.status,"valid",loaded.reason);
   if(config.mode==="read"){
     stage="read_window";
@@ -45,11 +46,14 @@ async function worker(){
         await new Promise((resolve,reject)=>{const tx=db.transaction(order.map(x=>x[1]),'readwrite');for(const [f,n]of order)for(const row of snapshot[f])tx.objectStore(n).add(row);
           tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});const out={name:db.name,version:db.version,origin:location.origin,url:location.href,realChromium:true};db.close();return out;})()`);
     }finally{await window.close();}
+    if(config.wiring){result=await wiringCycle(f,config.wiring);}
+    else{
     const context=P.createIsolatedStartupContext({targetEnvironment:"isolated_test",cycleIdentity:A.hash("native-startup"),checkedAt:f.checkedAt});
     const planned=await P.prepare({...f,record:loaded.record,context});
     if(planned.status==="skipped")result={status:"PASS",skip:planned,writerAttempts:0,storeAudit:s.audit()};
     else{const controller=C.createIsolatedController({targetEnvironment:"isolated_test",fixtureRoot:config.root,preparation:planned.preparation,fault:config.fault});
       result=await controller.start();result.audit=controller.audit();await assert.rejects(controller.start(),/attempt_replayed/);}
+    }
     result.security=security;result.parity=parity;
   }
   stage="cleanup";s.close();assert.equal(BrowserWindow.getAllWindows().length,0);await session.defaultSession.closeAllConnections();clearTimeout(watchdog);
@@ -60,10 +64,10 @@ async function worker(){
   fs.writeFileSync(file+".complete",JSON.stringify({bytes:bytes.length,sha256:sha(bytes)}),{flag:"wx",mode:0o600});
   console.log(JSON.stringify({mode:config.mode,status:result.status,bytes:bytes.length}));app.exit(0);
 }
-function launch(root,profile,fixture,mode,fault){
+function launch(root,profile,fixture,mode,fault,wiring=false){
   const pack=path.join(root,"package");fs.mkdirSync(pack,{recursive:true});
   fs.writeFileSync(path.join(pack,"package.json"),JSON.stringify({name:"optionmap",version:"1.1.0-beta.6",main:__filename}));
-  fs.writeFileSync(path.join(pack,"fixture.json"),JSON.stringify({root,fixture,mode,fault}));
+  fs.writeFileSync(path.join(pack,"fixture.json"),JSON.stringify({root,fixture,mode,fault,wiring}));
   for(const name of ["result.json","result.json.complete"]){const p=path.join(pack,name);if(fs.existsSync(p))fs.unlinkSync(p);}
   const env={...process.env};for(const k of ["ELECTRON_RUN_AS_NODE","NODE_TEST_CONTEXT","NODE_CHANNEL_FD","NODE_CHANNEL_SERIALIZATION_MODE"])delete env[k];
   const out=fs.openSync(path.join(pack,"stdout.log"),"w"),err=fs.openSync(path.join(pack,"stderr.log"),"w");let child;
@@ -77,22 +81,53 @@ function launch(root,profile,fixture,mode,fault){
     assert.equal(b.length,m.bytes);assert.equal(sha(b),m.sha256);result=JSON.parse(b);}
   return {code:crash?86:child.status,result,stderr:fs.readFileSync(path.join(pack,"stderr.log"),"utf8")};
 }
-async function nativeCase(fault=null,newEvents=1){
+async function nativeCase(fault=null,newEvents=1,wiring=false){
   const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),"optionmap-g14bg-fixture-g17-native-"));
   try{
     const Guard=require("./marketCalendarG14bFilesystemGuard.js"),Store=require("../js/marketCalendarHistory/mofStartupCanaryStore.js"),
       F=require("../test/fixtures/marketCalendar/mofStartupCanaryFixture.js"),A=require("../js/marketCalendarHistory/formalWriterAuthorityV2.js");
     const policy=Guard.createIsolatedPolicy({targetEnvironment:"isolated_test",fixtureRoot:root}),fixture=await F.setup({newEvents});
     fs.mkdirSync(policy.profile,{recursive:true,mode:0o700});const s=Store.createIsolatedStore({targetEnvironment:"isolated_test",fixtureRoot:root,crashAt:null});
-    s.activateHistorical(fixture.historical,fixture.gate);s.close();const history=A.hash(fixture.historical);
-    const executed=launch(root,policy.profile,fixture,"execute",fault),reload=launch(root,policy.profile,null,"read",null);
+    if(wiring)require("../test/fixtures/marketCalendar/mofStartupWiringFixture.js").seedHistorical(policy.profile,fixture.historical);
+    else s.activateHistorical(fixture.historical,fixture.gate);s.close();const history=A.hash(fixture.historical);
+    const executed=launch(root,policy.profile,fixture,"execute",fault,wiring),reload=launch(root,policy.profile,null,"read",null,wiring);
     assert.equal(reload.code,0,reload.stderr);assert.equal(reload.result.loaded.status,"valid",reload.result.loaded.reason);
     assert.equal(A.hash(reload.result.loaded.record.historicalRecord),history);assert.equal(reload.result.formal.audit.readwrite,0);
-    if(!fault)assert.equal(executed.result?.status,"PASS",executed.result?.reason||executed.stderr);
+    if(!fault&&wiring!=="stale")assert.equal(executed.result?.status,"PASS",executed.result?.reason||executed.stderr);
     const processes=cp.spawnSync("ps",["-axo","pid=,command="],{encoding:"utf8"});assert.equal(processes.status,0);
     assert.equal(processes.stdout.split("\n").filter(r=>r.includes(policy.profile)).length,0,"isolated_process_leftover");
     return {executed,reload,historyUnchanged:true,cleanup:{profiles:0,children:0}};
   }finally{fs.rmSync(root,{recursive:true});}
+}
+async function wiringCycle(f,mode){
+  const {BrowserWindow,ipcMain}=require("electron"),W=require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"),
+    Reader=require("../js/marketCalendarRuntime/formalShadowElectronRead.js"),Bridge=require("../js/marketCalendarRuntime/mofStartupPersistenceBridge.js"),
+    Production=require("../js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js"),Normal=require("../js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
+  const win=new BrowserWindow({show:false,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(ROOT,"preload.js")}});
+  let composition,resolveDone;const done=new Promise(r=>{resolveDone=r;});
+  try{
+    const nf=await require("../test/fixtures/marketCalendar/mofNormalFixture.js").setup({readFormal:Reader.createReader(win.webContents),
+      compose:c=>Normal.create({...c,webContents:win.webContents,runtimeStateOwner:"renderer",now:()=>new Date().toISOString()})});
+    if(f.source.canonicalRecords.length>16){const u="https://www.mof.go.jp/jgbs/auction/calendar/2612.htm";
+      nf.documents[u]=nf.documents[u].replace("</tbody>",require("../test/fixtures/marketCalendar/mofJgbFixture.js").row("12月28日","10年利付国債")+"</tbody>");}
+    const context=Production.initializeProductionContext();assert(context);assert.equal(Production.validateProductionContext({}),false);
+    composition=Production.createProductionRuntime(context,win.webContents,nf.runtime);
+    ipcMain.handle(Bridge.CLAIM,e=>composition.claim(e));
+    ipcMain.handle("check-market-calendar-sources",(e,r)=>composition.check(e,r));
+    ipcMain.handle(Bridge.PERSISTED,async(e,r)=>{try{const v=await composition.persisted(e,r);resolveDone(null);return v;}catch(error){resolveDone(error.message);throw error;}});
+    await win.loadFile(W.DOCUMENT);
+    for(const p of ["js/marketCalendar/sourceRegistry.js","js/marketCalendarRuntime/sourceUpdateState.js","js/storage/marketCalendarRuntimeStateStore.js",
+      "js/marketCalendarRuntime/calendarRuntimeStateIntegration.js","js/marketCalendarRuntime/calendarStartupRuntime.js"])
+      await win.webContents.executeJavaScript(fs.readFileSync(path.join(ROOT,p),"utf8"));
+    if(mode==="stale")await win.webContents.executeJavaScript(`(()=>{const m=OptionMapCalendarRuntimeStateStore,c=m.createRuntimeStateStore;
+      m.createRuntimeStateStore;globalThis.__staleStore={...m,createRuntimeStateStore:o=>{const s=c(o);return {...s,write:(id,r)=>s.write(id,id==='jp-mof-jgb-auction-calendar'?{...r,lastSuccessAt:'2026-10-09T00:00:00.000Z'}:r)};}};return true;})()`);
+    const startup=mode==="stale"?await win.webContents.executeJavaScript(`(async()=>{const s=__staleStore.createRuntimeStateStore({indexedDB,targetEnvironment:'browser_runtime'});
+      const rt=OptionMapCalendarRuntimeStateIntegration.createRuntimeStateIntegration({store:s,targetEnvironment:'browser_runtime',service:{check:r=>optionMapBridge.checkCalendarSources(r)}});return rt.startup();})()`):
+      await win.webContents.executeJavaScript("OptionMapCalendarStartupRuntime.create({bridge:optionMapBridge}).startup()");
+    const reason=await done,diagnostics=composition.diagnostics();
+    return {status:reason?"FAIL":"PASS",reason,diagnostics,normal:startup,requests:nf.requests.length,
+      safety:require("../js/marketCalendarRuntime/writerSafetyReadOnly.js").createReader(require("electron").app.getPath("userData")).load()};
+  }finally{composition?.close();for(const c of [Bridge.CLAIM,Bridge.PERSISTED,"check-market-calendar-sources"])ipcMain.removeHandler(c);win.destroy();}
 }
 async function atomicWorker(mode,root,crashAt){
   const guard=sentinel(),Store=require("../js/marketCalendarHistory/mofStartupCanaryStore.js"),P=require("../js/marketCalendarHistory/mofStartupCanaryPlan.js"),

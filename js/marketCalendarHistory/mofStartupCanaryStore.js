@@ -1,25 +1,28 @@
 "use strict";
 
-// ISOLATED ONLY. New fixed namespace; never changes the historical selection or
-// records. No production factory, arbitrary root, generic patch or reset API.
+// Fixed namespace; never changes the historical selection or records.
+// Separate production factory; no public arbitrary root/patch/reset API.
 const fs = require("node:fs"), path = require("node:path"), { randomUUID } = require("node:crypto");
 const A = require("./formalWriterAuthorityV2.js"), E = require("./mofStartupCanaryEnvelope.js"), Plan = require("./mofStartupCanaryPlan.js");
 const File = require("./writerSafetyFileSchema.js"), Atomic = require("./writerSafetyAtomicCore.js"), Core = require("./formalControlledWriterCore.js");
 const Cycle = require("../marketCalendarRuntime/formalShadowCycle.js"), Schema = require("./productionSchemaV1.js");
 const Guard = require("../../scripts/marketCalendarG14bFilesystemGuard.js");
-const DIRECTORY = "market-calendar-mof-startup-canary";
+const Profile = require("./writerSafetyInitialProvisioning.js");
+const DIRECTORY = E.DIRECTORY;
 const CRASH_POINTS = Object.freeze(["after_authorization", ...["activation", ...E.PHASES].flatMap(p =>
   [`before_publish_${p}`, `after_${p}`, ...Atomic.CRASH_POINTS.map(k => `${p}:${k}`)])]);
 function createIsolatedStore(options) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document ||
       !A.exact(options, ["targetEnvironment", "fixtureRoot", "crashAt"]) || options.targetEnvironment !== "isolated_test" ||
       options.crashAt !== null && !CRASH_POINTS.includes(options.crashAt)) throw Error("isolated_canary_store_required");
-  const profile = Guard.createIsolatedPolicy({targetEnvironment: options.targetEnvironment, fixtureRoot: options.fixtureRoot}).profile,
-    directory = path.join(profile, DIRECTORY);
+  return build(Guard.createIsolatedPolicy({targetEnvironment: options.targetEnvironment, fixtureRoot: options.fixtureRoot}).profile, options.crashAt);
+}
+function build(profile, crashAt, production=false) {
+  const directory = path.join(profile, DIRECTORY);
   const owner = randomUUID(), lock = path.join(directory, "attempt.lock"), pointer = path.join(directory, "selection.json");
   const audit = { loads: 0, persists: 0, authorizations: 0, writes: 0, handles: 0, mainTokens: 0, writerExecution: 0 };
   const handles = new WeakMap(); let owned = false, healthy = true, current = null, issued = false;
-  const point = name => { if (options.crashAt === name) {
+  const point = name => { if (crashAt === name) {
     if (process.type === "browser") { process.kill(process.pid, "SIGKILL"); throw Error("isolated_crash_failed"); }
     process.exit(86);
   } };
@@ -72,7 +75,7 @@ function createIsolatedStore(options) {
     try {
       const generation = `mof-canary-${next.safety.sequence}`, parent = path.join(directory, generation);
       fs.mkdirSync(parent, {mode: 0o700}); syncDir(directory);
-      const atomicCrash = options.crashAt?.startsWith(phase + ":") ? options.crashAt.slice(phase.length + 1) : null;
+      const atomicCrash = crashAt?.startsWith(phase + ":") ? crashAt.slice(phase.length + 1) : null;
       io = Atomic.create(path.join(parent, Atomic.DIRECTORY), { crashAt: atomicCrash }); io.acquire({provision: true});
       const checkpoint = File.seal({schemaVersion: E.VERSION, sequence: next.safety.sequence, stateChecksum: next.checksum});
       io.replace(next, checkpoint);
@@ -90,7 +93,7 @@ function createIsolatedStore(options) {
   function release() { checkOwned(); fs.unlinkSync(lock); syncDir(directory); owned = false; }
   function activateHistorical(historical, gateIdentity) {
     if (issued || exists(directory)) throw Error("canary_activation_already_exists"); issued = true;
-    const next = E.activate(historical, gateIdentity); secure(profile); fs.mkdirSync(directory, {mode: 0o700}); syncDir(profile);
+    const next = E.activate(historical, gateIdentity,E.ACTIVATION_REASONS[production?1:0]); secure(profile); fs.mkdirSync(directory, {mode: 0o700}); syncDir(profile);
     own(); const r = persist(next, "activation"); release(); return r;
   }
   function begin(preparation) {
@@ -132,4 +135,15 @@ function createIsolatedStore(options) {
   return Object.freeze({load,activateHistorical,begin,markWriteStarted,markCommitObserved,markReadbackVerified,complete,
     close: () => {}, audit: () => A.freeze({...audit,owned,healthy})});
 }
-module.exports = Object.freeze({DIRECTORY,CRASH_POINTS,createIsolatedStore});
+function createProductionStore(...args) {
+  if (args.length) throw Error("production_path_override_rejected");
+  const root = Profile.resolveProductionProfile(), store = build(root, null,true);
+  const {activateHistorical, ...lifecycle} = store;
+  return Object.freeze({...lifecycle, activate(gateIdentity) {
+    const old = require("../marketCalendarRuntime/writerSafetyReadOnly.js").createReader(root).load();
+    if (old.status !== "valid" || old.envelopeVersion !== 3 || old.controlledAttemptOwned || old.safety.pendingFence ||
+        old.record.controlledLifecycleAudit?.at(-1)?.phase !== "completed") throw Error("canary_production_activation_unavailable");
+    return activateHistorical(old.record, gateIdentity);
+  }});
+}
+module.exports = Object.freeze({DIRECTORY,CRASH_POINTS,createIsolatedStore,createProductionStore});

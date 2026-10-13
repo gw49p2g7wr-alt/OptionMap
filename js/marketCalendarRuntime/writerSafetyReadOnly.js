@@ -8,11 +8,12 @@ const Envelope = require("../marketCalendarHistory/writerSafetyVersionedEnvelope
 const SourceSet = require("../marketCalendarHistory/writerSafetySourceSetEnvelope.js");
 const Permission = require("../marketCalendarHistory/writerSafetySourceSetPermission.js");
 const Generation = require("./writerSafetyGenerationReadOnly.js");
+const Canary = require("../marketCalendarHistory/mofStartupCanaryEnvelope.js");
 const RELATIVE_PATH = "market-calendar-writer-safety/safety.json";
 function createReader(userData) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
   if (typeof userData !== "string" || !path.isAbsolute(userData)) throw Error("main_profile_required");
-  let highWater = -1, foundState = false;
+  let highWater = -1, canaryHighWater = -1, foundState = false;
   const audit = { loads: 0, reads: 0, writes: 0, handles: 0 };
   function read(directory, name, limit) {
     Generation.secureDirectory(directory);
@@ -46,8 +47,8 @@ function createReader(userData) {
     }
     return record;
   }
-  function readState(diagnosticControlledOwnership = false) {
-    audit.loads++; const start = performance.now();
+  function readHistoricalState(diagnosticControlledOwnership = false) {
+    const start = performance.now();
     let status = "corrupt", reason = null, safety = null, record = null, selected = null, controlledAttemptOwned = false;
     foundState = false;
     try {
@@ -84,6 +85,43 @@ function createReader(userData) {
       authorityCeiling: record?.schemaVersion === 3 ? Envelope.policyFor(3).global : null,
       ...(diagnosticControlledOwnership ? { controlledAttemptOwned, retryAllowed: false } : {}),
       writeAllowed: false, executionAllowed: false, latencyMs: performance.now() - start, audit: { ...audit } });
+  }
+  function readState(diagnosticControlledOwnership = false) {
+    audit.loads++; const start = performance.now();
+    const directory = path.join(userData, Canary.DIRECTORY);
+    try { fs.lstatSync(directory); }
+    catch (e) { if (e.code === "ENOENT") return readHistoricalState(diagnosticControlledOwnership);
+      return A.freeze({status:"corrupt",reason:"safety_read_failed",record:null,safety:null,writeAllowed:false,executionAllowed:false}); }
+    // A present Envelope4 namespace (even partially activated) never falls back.
+    try {
+      Generation.secureDirectory(userData); Generation.secureDirectory(directory);
+      const p = read(directory, "selection.json", 1024);
+      if (!A.exact(p,["schemaVersion","generation","sequence","stateChecksum","checksum"]) || p.schemaVersion !== 1 ||
+          !A.integer(p.sequence) || p.generation !== `mof-canary-${p.sequence}` || Schema.seal(p).checksum !== p.checksum)
+        throw Error("canary_selection_invalid");
+      const parent = path.join(directory,p.generation); Generation.secureDirectory(parent);
+      const d = path.join(parent,"market-calendar-writer-safety"), r = read(d,"safety.json",Schema.MAX_BYTES), c = read(d,"sequence.json",1024);
+      if (!Canary.validate(r).valid || r.schemaVersion !== 4 || r.checksum !== p.stateChecksum || r.safety.sequence !== p.sequence ||
+          !A.exact(c,["schemaVersion","sequence","stateChecksum","checksum"]) || c.schemaVersion !== 4 || c.sequence !== p.sequence ||
+          c.stateChecksum !== r.checksum || Schema.seal(c).checksum !== c.checksum) throw Error("canary_generation_invalid");
+      for(const name of ["ownership.lock","update.intent"]) {
+        try { fs.lstatSync(path.join(d,name)); throw Error("canary_generation_unverified"); } catch(e) { if(e.code!=="ENOENT")throw e; }
+      }
+      let owned=false;
+      try { fs.lstatSync(path.join(directory,"attempt.lock")); owned=true; } catch(e) { if(e.code!=="ENOENT")throw e; }
+      if(owned&&!diagnosticControlledOwnership)throw Error("canary_attempt_owned");
+      const old=readHistoricalState(true);
+      if(old.status!=="valid"||old.controlledAttemptOwned||old.envelopeVersion!==3||old.record.checksum!==r.historicalRecord.checksum)
+        throw Error("canary_retained_history_changed");
+      if(p.sequence<canaryHighWater)throw Error("safety_sequence_invalid"); canaryHighWater=p.sequence;
+      return A.freeze({status:"valid",reason:null,record:r,safety:r.safety,generation:p.generation,envelopeVersion:4,
+        sourceSetVersion:2,permissionVersion:2,permissions:Permission.PERMISSIONS,authorityCeiling:Envelope.policyFor(3).global,
+        canaryAuthority:Canary.AUTHORITY,...(diagnosticControlledOwnership?{controlledAttemptOwned:owned,retryAllowed:false}:{}),
+        writeAllowed:false,executionAllowed:false,latencyMs:performance.now()-start,audit:{...audit}});
+    } catch(e) {
+      return A.freeze({status:"corrupt",reason:/^[a-z_]+$/.test(e.message)?e.message:"safety_read_failed",record:null,safety:null,
+        writeAllowed:false,executionAllowed:false,latencyMs:performance.now()-start,audit:{...audit}});
+    }
   }
   // Explicit read-only diagnosis preserves all generation/checkpoint/history
   // checks. It can describe owned state but never releases ownership or resumes.
