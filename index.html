@@ -1815,6 +1815,7 @@ window.OptionMapFullExportUi.configure({
         const session = collectorState?.facts?.marketSession || null;
         const freshnessAdapter = window.OptionMapFullExportFreshness
             .createFullExportFreshnessAdapter({
+                now: () => new Date().toISOString(),
                 getMarketSession: () => session,
                 getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
                 getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,

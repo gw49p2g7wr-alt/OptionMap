@@ -41,6 +41,61 @@
             : unavailable("freshness_api_unavailable");
     }
 
+    function jstParts(value) {
+        if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
+        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo",
+            year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit",
+            minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
+        const part = type => parts.find(item => item.type === type)?.value;
+        const date = `${part("year")}-${part("month")}-${part("day")}`;
+        const minute = Number(part("hour")) * 60 + Number(part("minute"));
+        return /^20\d{2}-\d{2}-\d{2}$/.test(date) && Number.isFinite(minute)
+            ? { date, minute } : null;
+    }
+
+    function previousDate(value) {
+        const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() - 1);
+        return date.toISOString().slice(0, 10);
+    }
+
+    function sessionOf(value) {
+        const parts = jstParts(value);
+        if (!parts) return null;
+        if (parts.minute >= 8 * 60 + 45 && parts.minute <= 15 * 60 + 45)
+            return { kind: "day", key: parts.date };
+        if (parts.minute >= 17 * 60) return { kind: "night", key: parts.date };
+        if (parts.minute <= 6 * 60) return { kind: "night", key: previousDate(parts.date) };
+        return null;
+    }
+
+    function classifyCurrentPriceSessionFreshness({ fact, observedAt, expectedTradingDate,
+        fetchState = {} } = {}) {
+        const quotedAt = fact?.quotedAtNormalized;
+        const quoteSession = sessionOf(quotedAt), observedSession = sessionOf(observedAt);
+        const base = { origin: fact?.origin || null,
+            dataTradingDate: fact?.qriTradingDateMapping?.qriTradingDate || null,
+            sourceUpdatedAt: quotedAt || null, fetchedAt: fact?.fetchedAt || fetchState.fetchedAt || null,
+            lastAttemptedAt: fetchState.fetchedAt || null,
+            lastAttemptStatus: attemptStatus(fetchState.status), displayEligible: true,
+            staleSince: null, diagnostics: { policyType: "current_price_session",
+                timeZone: "Asia/Tokyo", expectedTradingDate: expectedTradingDate || null,
+                quoteSession, observedSession, sessionMatched: false } };
+        if (!quoteSession || !jstParts(quotedAt)) return { ...base, status: "unavailable",
+            reason: "quote_timestamp_unavailable", displayEligible: false,
+            calculationEligible: "ineligible", staleReason: null };
+        if (!observedSession) return { ...base, status: "stale", reason: "stale_reference",
+            calculationEligible: "ineligible", staleReason: "session_closed" };
+        if (Date.parse(quotedAt) > Date.parse(observedAt)) return { ...base, status: "unavailable",
+            reason: "quote_timestamp_invalid", displayEligible: false,
+            calculationEligible: "ineligible", staleReason: null };
+        const matched = quoteSession.kind === observedSession.kind && quoteSession.key === observedSession.key;
+        base.diagnostics.sessionMatched = matched;
+        return matched ? { ...base, status: "fresh", reason: "current_session",
+            calculationEligible: "eligible", staleReason: null }
+            : { ...base, status: "stale", reason: "stale_reference",
+                calculationEligible: "ineligible", staleReason: "previous_session_quote" };
+    }
+
     function createFullExportFreshnessAdapter(configuration = {}) {
         function sessionDate() {
             const session = configuration.getMarketSession?.();
@@ -57,15 +112,10 @@
             const mappedDate = mapping?.mappingVerified === true
                 ? mapping.mappedDate || mapping.qriTradingDate || null : null;
             const fetchState = configuration.getFetchState?.("qri") || {};
-            return daily({ sourceType: "current_price", origin: fact.origin,
-                hasData: true, dataTradingDate: mappedDate,
-                sourceUpdatedAt: fact.quotedAt || null, quotedAt: fact.quotedAt || null,
-                fetchedAt: fact.fetchedAt || fetchState.fetchedAt || null,
-                expectedTradingDate: sessionDate(), lastAttemptedAt: fetchState.fetchedAt || null,
-                lastAttemptStatus: attemptStatus(fetchState.status), mode: fact.mode,
-                contract: fact.contract, validation: fact.identityVerified === true,
-                signatureValid: fact.acquisitionVerified === true,
-                calculationEligible: "eligible" });
+            return classifyCurrentPriceSessionFreshness({ fact: { ...fact,
+                qriTradingDateMapping: { ...mapping, qriTradingDate: mappedDate } },
+                observedAt: configuration.now?.() || null,
+                expectedTradingDate: sessionDate(), fetchState });
         }
 
         function qriOptions() {
@@ -184,5 +234,6 @@
         return Object.freeze({ getSectionFreshness });
     }
 
-    return Object.freeze({ ADAPTER_VERSION, createFullExportFreshnessAdapter });
+    return Object.freeze({ ADAPTER_VERSION, classifyCurrentPriceSessionFreshness,
+        createFullExportFreshnessAdapter });
 });

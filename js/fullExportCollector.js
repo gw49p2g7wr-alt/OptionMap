@@ -92,14 +92,20 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             return unavailable("current_price_identity_mismatch", "current-price",
                 freshnessFor(configuration, "marketSnapshot", mobile?.freshness?.currentPriceAt));
         }
+        const marketFreshness = freshnessFor(configuration, "marketSnapshot",
+            price.quotedAt || price.fetchedAt);
+        if (automaticValid && marketFreshness.status !== "fresh") {
+            return unavailable(marketFreshness.status === "stale"
+                ? "current_price_stale_reference" : "current_price_freshness_unavailable",
+            "current-price", marketFreshness);
+        }
         return envelope({ authority: { source: price.source,
             sourceClass: automaticValid ? "formal_live" : "user_input",
             origin: automaticValid ? "live" : "manual",
             formalStatus: automaticValid ? "verified" : "unverified" },
         asOf: { tradingDate: marketSession?.tradingDate || null,
             fetchedAt: price.fetchedAt || null },
-        freshness: freshnessFor(configuration, "marketSnapshot",
-            price.quotedAt || price.fetchedAt),
+        freshness: marketFreshness,
         summary: { available: true, value: price.value, mode: price.mode,
             source: price.source, contract: price.contract || null },
         details: { quotedAt: price.quotedAt || null, fetchedAt: price.fetchedAt || null,

@@ -68,6 +68,7 @@ function dependencies(overrides = {}) {
                     published: true, value: 20 }] } }] }] };
     return {
         now: () => "2026-09-06T07:15:00+09:00",
+        getSectionFreshness: () => ({ status: "fresh", reason: "current_session" }),
         contractsMatch,
         getMobileSummary: () => ({ marketDate: "2026-09-07",
             payload: { currentPrice: { available: true, status: "available", value: 42125,
@@ -206,6 +207,16 @@ test("current-price contract不一致とacquisition未検証はunavailable", asy
         const result = await awaitFullExport(deps);
         assert.equal(result.sections.marketSnapshot.reason, "current_price_identity_mismatch");
     }
+});
+
+test("stale reference freshness never promotes an automatic marketSnapshot", async () => {
+    const result = await collect({ getSectionFreshness: name => name === "marketSnapshot"
+        ? { status: "stale", reason: "stale_reference", displayEligible: true,
+            calculationEligible: "ineligible" }
+        : { status: "fresh", reason: "current" } });
+    assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    assert.equal(result.sections.marketSnapshot.reason, "current_price_stale_reference");
+    assert.equal(result.sections.marketSnapshot.freshness.status, "stale");
 });
 
 test("QRI option限月とverified futures price限月は別identityとしてmarketSnapshotを昇格", async () => {

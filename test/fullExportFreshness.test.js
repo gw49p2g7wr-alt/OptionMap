@@ -21,11 +21,13 @@ function dependencies(overrides = {}) {
             signature: "wo-signature", origin: "history", remoteCheckStatus: "current" }
     };
     return {
+        now: () => "2026-09-05T05:45:00+09:00",
         getMarketSession: () => ({ formalTradingDate: "2026-09-07" }),
         getCurrentPriceIdentity: () => ({ status: "available", fact: { available: true,
             sourceKind: "live", origin: "live", mode: "automatic", identityVerified: true,
             acquisitionVerified: true, currentRequestVerified: true, contract: "2026-09",
-            quotedAt: "2026-09-05T06:00:00+09:00", fetchedAt: "2026-09-06T00:05:00Z",
+            quotedAt: "09/05 05:30", quotedAtNormalized: "2026-09-05T05:30:00+09:00",
+            fetchedAt: "2026-09-06T00:05:00Z",
             qriTradingDateMapping: { mappingVerified: true,
                 mappingSource: "same_date_explicit", qriTradingDate: "2026-09-07" } } }),
         getQriFormalIdentity: () => ({ status: "available", fact: {
@@ -112,7 +114,7 @@ test("importantLevelsはQRI freshnessを再計算せず投影", () => {
         ...qri, projectionSource: "qriOptions" });
 });
 
-test("weekend cross-dateの未解決contextをsame-dateへ推測しない", () => {
+test("QRI date mapping unresolved does not replace same-session futures evidence", () => {
     const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
     deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
         qriTradingDateMapping: { mappingVerified: false, mappingSource: null,
@@ -120,9 +122,68 @@ test("weekend cross-dateの未解決contextをsame-dateへ推測しない", () =
             qriTradingDate: "2026-09-07", status: "date_context_unresolved" } } });
     const result = createFullExportFreshnessAdapter(deps)
         .getSectionFreshness("marketSnapshot");
-    assert.equal(result.status, "stale");
-    assert.equal(result.reason, "date_unverifiable");
+    assert.equal(result.status, "fresh");
+    assert.equal(result.reason, "current_session");
     assert.equal(result.dataTradingDate, null);
+});
+
+test("F1 same-session quote is fresh current", () => {
+    const result = createFullExportFreshnessAdapter(dependencies())
+        .getSectionFreshness("marketSnapshot");
+    assert.deepEqual([result.status, result.reason, result.calculationEligible],
+        ["fresh", "current_session", "eligible"]);
+});
+
+test("F2/F3 pre-session previous quote is stale reference including stock holiday", () => {
+    const deps = dependencies({ now: () => "2026-10-12T07:25:00+09:00" });
+    const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        quotedAtNormalized: "2026-10-10T06:00:00+09:00" } });
+    const result = createFullExportFreshnessAdapter(deps).getSectionFreshness("marketSnapshot");
+    assert.deepEqual([result.status, result.reason, result.staleReason],
+        ["stale", "stale_reference", "session_closed"]);
+});
+
+test("F4 stock holiday after futures open accepts a same-session quote", () => {
+    const deps = dependencies({ now: () => "2026-10-12T09:05:00+09:00" });
+    const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        quotedAtNormalized: "2026-10-12T09:00:00+09:00" } });
+    assert.equal(createFullExportFreshnessAdapter(deps)
+        .getSectionFreshness("marketSnapshot").status, "fresh");
+});
+
+test("session open naturally replaces stale reference with fresh current without reset", () => {
+    let observedAt = "2026-10-12T07:25:00+09:00";
+    let quotedAtNormalized = "2026-10-10T06:00:00+09:00";
+    const deps = dependencies({ now: () => observedAt });
+    const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        quotedAtNormalized } });
+    const adapter = createFullExportFreshnessAdapter(deps);
+    assert.equal(adapter.getSectionFreshness("marketSnapshot").status, "stale");
+    observedAt = "2026-10-12T09:05:00+09:00";
+    quotedAtNormalized = "2026-10-12T09:00:00+09:00";
+    assert.equal(adapter.getSectionFreshness("marketSnapshot").status, "fresh");
+});
+
+test("F5 night session uses one session across JST midnight", () => {
+    const deps = dependencies({ now: () => "2026-10-14T01:00:00+09:00" });
+    const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        quotedAtNormalized: "2026-10-13T23:55:00+09:00" } });
+    const result = createFullExportFreshnessAdapter(deps).getSectionFreshness("marketSnapshot");
+    assert.equal(result.status, "fresh");
+    assert.equal(result.diagnostics.quoteSession.key, "2026-10-13");
+});
+
+test("F6 unknown quote timestamp fails closed", () => {
+    const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
+    deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
+        quotedAtNormalized: null } });
+    const result = createFullExportFreshnessAdapter(deps).getSectionFreshness("marketSnapshot");
+    assert.deepEqual([result.status, result.reason, result.displayEligible],
+        ["unavailable", "quote_timestamp_unavailable", false]);
 });
 
 test("participant partialをfreshness上の欠損へ変換しない", () => {
