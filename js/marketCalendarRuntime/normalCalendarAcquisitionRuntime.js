@@ -30,7 +30,7 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
     cpi: CpiStore.createCpiRuntimeStateElectron({ webContents }), bls: BlsStore.createBlsRuntimeStateElectron({ webContents }) };
   const acquisitionContract = Contracts.NORMAL13, ids = Contracts.resolve(acquisitionContract);
   const mof = Mof.create({ acquisitionContract, fetchImpl, now });
-  const boj = Boj.create({ fetchImpl, now });
+  const boj = Boj.createShould({ fetchImpl, now });
   const legacyAcquire = acquire || Acquisition.createCalendarAcquisitionService({ fetchImpl }).acquire;
   let captures = new Map(), active = null, last = null, mofResult = null;
   const capture = result => captures.set(result.sourceId, Projection.projectAcquisition(result));
@@ -44,7 +44,7 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
       const selection = Routes.selectRoute({ sourceId: result.sourceId, operation: Network.OPERATION }, Routes.PRODUCTION_AUTHORITY);
       capture({ ...(result.sourceId === Mof.SOURCE_ID ? { ...mofResult.normalProjection,
         acquisitionOutcome: result.acquisitionOutcome } : result), routeIdentity: result.sourceId === Mof.SOURCE_ID ? Mof.routeIdentity :
-        result.sourceId === Boj.SOURCE_ID && !acquire ? Boj.routeIdentity :
+        result.sourceId === Boj.SOURCE_ID && !acquire ? Boj.shouldRouteIdentity :
         selection.routeKind === "legacy" ? selection.routeIdentity : null });
     } });
   const common = { acquisitionContract, fetchImpl, now, adapterFactory, onAcquisition: capture };

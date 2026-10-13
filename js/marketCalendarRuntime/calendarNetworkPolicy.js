@@ -31,6 +31,10 @@ const BOJ_COVERAGE_V2 = Object.freeze({ sourceId: "jp-boj-calendar", version: 2,
     documentPolicy("speeches", "https://www.boj.or.jp/about/press/index.htm", "html", 2_000_000),
     documentPolicy("tankan", "https://www.boj.or.jp/statistics/outline/tkohyos.xlsx", "xlsx", 5_000_000)
   ]) });
+const BOJ_COVERAGE_V3 = Object.freeze({ sourceId: "jp-boj-calendar", version: 3,
+  documents: Object.freeze([...BOJ_COVERAGE_V2.documents,
+    documentPolicy("meeting_publications", "https://www.boj.or.jp/mopo/mpmsche_minu/index.htm", "html", 2_000_000)
+  ]) });
 
 const sourcePolicies = Object.freeze({
   "jp-boj-calendar": Object.freeze({ documents: Object.freeze([
@@ -143,11 +147,11 @@ function validateMime(policy, contentType) {
 }
 
 function getPolicy(sourceId, documentContract = null) {
-  if (documentContract !== null) return documentContract === BOJ_COVERAGE_V2 &&
-    sourceId === BOJ_COVERAGE_V2.sourceId ? BOJ_COVERAGE_V2 : null;
+  if (documentContract !== null) return [BOJ_COVERAGE_V2, BOJ_COVERAGE_V3].includes(documentContract) &&
+    sourceId === documentContract.sourceId ? documentContract : null;
   return sourcePolicies[sourceId] || null;
 }
 
 module.exports = Object.freeze({ OPERATION, MAX_REDIRECTS, MAX_RETRIES,
   REQUEST_TIMEOUT_MS, BODY_TIMEOUT_MS, MIME, SOURCE_POLICIES: sourcePolicies,
-  cleanMime, validateRequest, validateUrl, validateMime, getPolicy, BOJ_COVERAGE_V2 });
+  cleanMime, validateRequest, validateUrl, validateMime, getPolicy, BOJ_COVERAGE_V2, BOJ_COVERAGE_V3 });

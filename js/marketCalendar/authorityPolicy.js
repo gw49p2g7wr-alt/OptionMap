@@ -18,6 +18,8 @@
         BOJ_MPM: "jp-boj-calendar", BOJ_POLICY_DECISION: "jp-boj-calendar",
         BOJ_GOVERNOR_PRESS_CONFERENCE: "jp-boj-calendar", JP_TANKAN: "jp-boj-calendar",
         BOJ_SPEECH: "jp-boj-calendar",
+        BOJ_SUMMARY_OF_OPINIONS: "jp-boj-calendar", BOJ_OUTLOOK_REPORT: "jp-boj-calendar",
+        BOJ_MPM_MINUTES: "jp-boj-calendar", JP_CGPI: "jp-boj-calendar",
         JP_NATIONAL_CPI: "jp-stat-cpi", JP_TOKYO_CPI: "jp-stat-cpi",
         JP_LABOR_FORCE: "jp-stat-labor", JP_GDP: "jp-esri-sna-calendar",
         JP_MACHINERY_ORDERS: "jp-esri-machinery-orders-calendar",

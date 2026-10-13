@@ -8,6 +8,22 @@
     "use strict";
     const component = value => typeof value === "string" && value.length > 0 && !value.includes("|");
     const JGB_MATURITIES = Object.freeze(["2Y", "5Y", "10Y", "20Y", "30Y", "40Y"]);
+    const BOJ_PUBLICATIONS = Object.freeze({ BOJ_SUMMARY_OF_OPINIONS: Object.freeze(["summary_of_opinions", "summary"]),
+        BOJ_OUTLOOK_REPORT: Object.freeze(["outlook_report", "basic_view"]), BOJ_MPM_MINUTES: Object.freeze(["meeting_minutes", "minutes"]),
+        JP_CGPI: Object.freeze(["CGPI", "monthly_release"]) });
+    function validateBojPublicationIdentity(eventType, value) {
+        const type = Object.hasOwn(BOJ_PUBLICATIONS, eventType) ? BOJ_PUBLICATIONS[eventType] : null, cgpi = eventType === "JP_CGPI";
+        const keys = ["sourceId", "authority", "family", "reportType", "publicationDate",
+            ...(cgpi ? ["referencePeriod"] : ["meetingStartDate", "meetingEndDate"])];
+        if (!type || !value || typeof value !== "object" || Array.isArray(value) ||
+            Object.keys(value).length !== keys.length || !keys.every(k => Object.hasOwn(value, k)) ||
+            value.sourceId !== "jp-boj-calendar" || value.authority !== "BOJ" || value.family !== type[0] ||
+            value.reportType !== type[1] || !validAuctionDate(value.publicationDate)) return false;
+        return cgpi ? /^20\d{2}-(0[1-9]|1[0-2])$/.test(value.referencePeriod) &&
+            value.referencePeriod < value.publicationDate.slice(0, 7) :
+            validAuctionDate(value.meetingStartDate) && validAuctionDate(value.meetingEndDate) &&
+            value.meetingStartDate <= value.meetingEndDate && value.meetingEndDate <= value.publicationDate;
+    }
     function validateSpeechIdentity(value) {
         const keys = ["sourceId", "family", "speakerRole", "speakerId", "eventDate", "officialEventComponent"];
         return !!value && typeof value === "object" && !Array.isArray(value) &&
@@ -33,6 +49,17 @@
             validAuctionDate(value.auctionDate);
     }
     function eventKeyFor(value) {
+        if (Object.hasOwn(BOJ_PUBLICATIONS, value?.eventType)) {
+            if (value.jurisdiction !== "JP" || value.authority !== "BOJ" ||
+                !validateBojPublicationIdentity(value.eventType, value.bojPublicationIdentity) ||
+                ["referencePeriod", "edition", "scope", "speechIdentity", "auctionIdentity"].some(k => Object.hasOwn(value, k)) ||
+                value.authorityEventId != null) throw new TypeError("boj_publication_identity_invalid");
+            const p = value.bojPublicationIdentity;
+            return ["JP", "BOJ", value.eventType, p.sourceId, p.family, p.reportType,
+                ...(value.eventType === "JP_CGPI" ? [p.referencePeriod] : [p.meetingStartDate, p.meetingEndDate]),
+                p.publicationDate].join("|");
+        }
+        if (value?.bojPublicationIdentity !== undefined) throw new TypeError("boj_publication_wrong_event_type");
         if (value?.eventType === "BOJ_SPEECH") {
             if (value.jurisdiction !== "JP" || value.authority !== "BOJ" ||
                 !validateSpeechIdentity(value.speechIdentity) || !taxonomy?.isEventType(value.eventType) ||
@@ -62,6 +89,9 @@
     }
     function create(value) {
         const eventKey = eventKeyFor(value);
+        if (Object.hasOwn(BOJ_PUBLICATIONS, value.eventType)) return Object.freeze({ eventKey,
+            jurisdiction: "JP", authority: "BOJ", eventType: value.eventType,
+            bojPublicationIdentity: Object.freeze({ ...value.bojPublicationIdentity }), authorityEventId: null });
         if (value.eventType === "BOJ_SPEECH") return Object.freeze({ eventKey,
             jurisdiction: "JP", authority: "BOJ", eventType: "BOJ_SPEECH",
             speechIdentity: Object.freeze({ ...value.speechIdentity }), authorityEventId: null });
@@ -73,5 +103,5 @@
             scope: value.scope, authorityEventId: value.authorityEventId || null });
     }
     return Object.freeze({ eventKeyFor, create, JGB_MATURITIES, validAuctionDate, validateAuctionIdentity,
-        validateSpeechIdentity });
+        validateSpeechIdentity, BOJ_PUBLICATIONS, validateBojPublicationIdentity });
 });

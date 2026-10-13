@@ -7,12 +7,14 @@ const Acquisition = require("./calendarAcquisitionService.js");
 const Builder = require("./calendarCandidateBuilder.js");
 const Canonical = require("../marketCalendar/marketEventCanonicalizer.js");
 const Parser = require("./bojCoverageParser.js");
+const Should = require("./bojShouldParser.js");
 const Encoding = require("../marketCalendarShadow/htmlEncoding.js");
 const SOURCE_ID = "jp-boj-calendar", contract = Policy.BOJ_COVERAGE_V2;
-const routeIdentity = Crypto.createHash("sha256").update(JSON.stringify({ sourceId: SOURCE_ID,
+const routeFor = contract => Crypto.createHash("sha256").update(JSON.stringify({ sourceId: SOURCE_ID,
   documentContract: contract, maxRedirects: Policy.MAX_REDIRECTS, maxRetries: 0,
   credentials: "omit", requestTimeoutMs: Policy.REQUEST_TIMEOUT_MS, bodyTimeoutMs: Policy.BODY_TIMEOUT_MS })).digest("hex");
-function adapter() {
+const routeIdentity = routeFor(contract), shouldRouteIdentity = routeFor(Policy.BOJ_COVERAGE_V3);
+function adapter(contract) {
   return Object.freeze({ sourceId: SOURCE_ID, async acquire({ fetcher, runId }) {
     const source = Registry.getSource(SOURCE_ID), fetches = [], parsed = [];
     for (const document of contract.documents) {
@@ -22,32 +24,39 @@ function adapter() {
         parserId: source.parserId, parserVersion: source.parserVersion, rawContentHash: f.contentHash,
         requestId: f.requestId || null, runId, httpMetadata: { httpStatus: f.httpStatus,
           finalUrl: f.finalUrl, contentType: f.contentType, redirects: f.redirects } };
-      if (document.kind === "xlsx") parsed.push(Parser.parseTankan(f.bytes, context));
+      if (document.kind === "xlsx") {
+        parsed.push(Parser.parseTankan(f.bytes, context));
+        if (contract.version === 3) parsed.push(Should.parseCgpi(f.bytes, context));
+      }
       else {
         const decoded = Encoding.decodeHtml(f.bytes, f.contentType);
         if (!decoded.ok) return { fetches, records: [], diagnostics: [`encoding:${decoded.reason}`] };
         parsed.push(document.role === "primary" ? Parser.parseExisting(decoded.text, context)
-          : Parser.parseSpeeches(decoded.text, context));
+          : document.role === "speeches" ? Parser.parseSpeeches(decoded.text, context) : Should.parseMeetings(decoded.text, context));
       }
     }
     const diagnostics = parsed.flatMap(p => p.diagnostics);
     if (diagnostics.length) return { fetches, records: [], diagnostics };
     try {
-      const speeches = Parser.dedupeSpeeches(parsed[1].records), records =
+      const speeches = Parser.dedupeSpeeches(parsed[1].records), should = contract.version === 3
+        ? Should.dedupe([...parsed[3].records, ...parsed[4].records]) : null, records =
         [...parsed[0].records, ...speeches.records, ...parsed[2].records];
-      return { fetches, records, diagnostics: [], coverageAudit: { documentCount: 3,
+      if (should) records.push(...should.records);
+      return { fetches, records, diagnostics: [], coverageAudit: { documentCount: contract.documents.length,
         existingPolicyMeeting: parsed[0].records.length, speechesRemarks: speeches.records.length,
-        tankan: parsed[2].records.length, deduped: speeches.deduped,
-        excluded: parsed[1].excluded, malformed: 0, unknown: 0, absenceAuthority: "none" } };
+        tankan: parsed[2].records.length, deduped: speeches.deduped + (should?.deduped || 0),
+        excluded: parsed[1].excluded, malformed: 0, unknown: 0, absenceAuthority: "none",
+        ...(should ? { should: Object.fromEntries(Should.TYPES.map(type => [type, should.records.filter(r => r.eventType === type).length])),
+          unpublished: parsed[3].unpublished + parsed[4].unpublished } : {}) } };
     } catch (e) { return { fetches, records: [], diagnostics: [e.message] }; }
   } });
 }
-function create({ fetchImpl, now = () => new Date().toISOString() } = {}) {
+function build(contract, { fetchImpl, now = () => new Date().toISOString() } = {}) {
   if (process.type === "renderer") throw Error("main_side_only");
   const transport = Acquisition.createCalendarAcquisitionService({ fetchImpl, now: () => new Date(now()),
     maxRetries: 0, documentContract: contract });
   const builder = Builder.createCalendarCandidateBuilder({ documentContract: contract,
-    adapterMap: new Map([[SOURCE_ID, adapter()]]) });
+    adapterMap: new Map([[SOURCE_ID, adapter(contract)]]) });
   async function acquire(request) {
     if (request?.sourceId !== SOURCE_ID) return { success: false, reason: "source_mismatch", documents: [] };
     const raw = await transport.acquire(request);
@@ -56,7 +65,7 @@ function create({ fetchImpl, now = () => new Date().toISOString() } = {}) {
     const success = raw.success === true && candidate.candidateStatus === "available";
     return { ...raw, success, reason: success ? null : raw.reason || candidate.parserDiagnostics[0] || "boj_coverage_rejected",
       documents: (raw.documents || []).map(({ parserInput, ...health }) => health),
-      candidate, bojCoverageVersion: 2, routeIdentity,
+      candidate, bojCoverageVersion: contract.version, routeIdentity: routeFor(contract),
       coverageAudit: candidate.coverageAudit || null, acquisitionIdentity: success ?
         await Canonical.sha256({ candidateIdentity: candidate.candidateIdentity, fetchedAt: raw.fetchedAt,
           documents: raw.documents.map(d => ({ role: d.role, contentSha256: d.contentSha256 })) }) : null };
@@ -65,7 +74,8 @@ function create({ fetchImpl, now = () => new Date().toISOString() } = {}) {
 }
 function builder(legacy = Builder) {
   return Object.freeze({ buildCalendarCandidate: input => input?.sourceId === SOURCE_ID &&
-    input.acquisitionResult?.bojCoverageVersion === 2
+    [2, 3].includes(input.acquisitionResult?.bojCoverageVersion)
     ? Promise.resolve(input.acquisitionResult.candidate) : legacy.buildCalendarCandidate(input) });
 }
-module.exports = Object.freeze({ SOURCE_ID, routeIdentity, create, builder });
+module.exports = Object.freeze({ SOURCE_ID, routeIdentity, shouldRouteIdentity,
+  create: options => build(Policy.BOJ_COVERAGE_V2, options), createShould: options => build(Policy.BOJ_COVERAGE_V3, options), builder });

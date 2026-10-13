@@ -61,6 +61,14 @@
     function validateSourceRecord(value) {
         const errors = [], source = registry?.getSource(value?.sourceId);
         if (!source) errors.push("source_unregistered");
+        if (Object.hasOwn(identity.BOJ_PUBLICATIONS, value?.eventType)) {
+            if (value.sourceId !== "jp-boj-calendar" ||
+                !identity.validateBojPublicationIdentity(value.eventType, value.bojPublicationIdentity) ||
+                value.bojPublicationIdentity.publicationDate !== value.sourceLocalSchedule?.startDate ||
+                value.absenceAuthority !== "none" || value.sourceStatus !== "scheduled" || value.authorityEventId != null ||
+                ["referencePeriod", "edition", "scope", "speechIdentity", "auctionIdentity"].some(k => Object.hasOwn(value, k)))
+                errors.push("boj_publication_identity_invalid");
+        } else if (value?.bojPublicationIdentity !== undefined) errors.push("boj_publication_wrong_event_type");
         if (value?.eventType === "BOJ_SPEECH") {
             if (value.sourceId !== "jp-boj-calendar" || !identity.validateSpeechIdentity(value.speechIdentity) ||
                 value.speechIdentity.eventDate !== value.sourceLocalSchedule?.startDate ||

@@ -128,22 +128,26 @@ test("normal BOJ acquisition persists existing Runtime State once; same JST day 
   const forbidden = async () => { throw Error("unexpected_managed_write"); };
   const managed = { read: async () => ({ status: "ok", value: null }), reserveReevaluation: forbidden,
     completeReevaluation: forbidden, completeActiveAcquisition: forbidden };
-  const runtime = Runtime.create({ fetchImpl: async url => { requests++; return Fixture.response(url); },
+  const ShouldFixture = require("./fixtures/marketCalendar/bojShouldFixture.js");
+  const runtime = Runtime.create({ fetchImpl: async url => { requests++; return ShouldFixture.response(url); },
     store, stores: { cpi: managed, labor: managed, bls: managed }, targetEnvironment: "isolated_test",
     now: () => context.fetchedAt, readFormal: async () => { reads++; return { status: "ok", snapshot: structuredClone(snapshot),
       schemaFingerprint: Schema.EXPECTED_FINGERPRINT, audit: { readonly: 1, readwrite: 0 } }; } });
   const r = await runtime.check({ trigger: "startup", sourceIds: [Coverage.SOURCE_ID] });
-  A.equal(r.state, "success", JSON.stringify(r)); A.equal(r.sources[0].recordCount, 14);
-  A.equal(requests, 3); A.equal((await store.read(Coverage.SOURCE_ID)).value.lastSuccessAt, context.fetchedAt);
+  A.equal(r.state, "success", JSON.stringify(r)); A.equal(r.sources[0].recordCount, ShouldFixture.totalCount);
+  A.equal(requests, 4); A.equal((await store.read(Coverage.SOURCE_ID)).value.lastSuccessAt, context.fetchedAt);
   A.equal(store.diagnostics().successfulWrites, 1);
   const d = runtime.diagnostics(); A.equal(d.writerExecution, 0); A.equal(d.safetyWrites, 0);
-  A.equal(d.comparison.formalAudit.readwrite, 0); A.equal(d.comparison.sourceResults[0].canonicalRecords.length, 14);
-  A.equal(d.comparison.sourceResults[0].routeIdentity, Coverage.routeIdentity);
+  A.equal(d.comparison.formalAudit.readwrite, 0); A.equal(d.comparison.sourceResults[0].canonicalRecords.length, ShouldFixture.totalCount);
+  const old = await Coverage.create({ fetchImpl: async url => Fixture.response(url) }).acquire({sourceId:Coverage.SOURCE_ID,operation:Policy.OPERATION});
+  A.deepEqual(d.comparison.sourceResults[0].canonicalRecords.filter(x => !Object.hasOwn(x.logical,"bojPublicationIdentity"))
+    .map(x=>[x.eventKey,x.canonicalContentHash]), old.candidate.canonicalRecords.map(x=>[x.eventKey,x.canonicalContentHash]));
+  A.equal(d.comparison.sourceResults[0].routeIdentity, Coverage.shouldRouteIdentity);
   A.equal(d.comparison.writeAllowed, false); A.equal(d.comparison.absenceAuthority, "none");
   A.deepEqual(snapshot, { entries: [], revisions: [], evidence: [], observations: [], runs: [], cursors: [] });
   const skipped = await runtime.check({ trigger: "startup", sourceIds: [Coverage.SOURCE_ID] });
   A.equal(skipped.sources[0].reasonClass, "already_succeeded_today");
-  A.equal(requests, 3); A.equal(reads, 1); A.equal(store.diagnostics().successfulWrites, 1);
+  A.equal(requests, 4); A.equal(reads, 1); A.equal(store.diagnostics().successfulWrites, 1);
   A.doesNotMatch(JSON.stringify([r, await store.readAll(), d]), /parserInput|<tbody/);
 });
 test("isolated native BOJ fixed-document acquisition (public network forbidden)", () => {
