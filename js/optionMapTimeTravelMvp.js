@@ -39,6 +39,10 @@
     function observationView(record) {
         if (!record) return null;
         return Object.freeze({ savedAt: record.observedAt, savedTime: jstTime(record.observedAt),
+            marketDate: record.marketDate, tradingDate: record.qriReference?.tradingDate || null,
+            calendarDay: record.session?.calendarDay || null, contract: record.currentPrice?.contract || null,
+            priceReason: record.currentPrice?.reason || (record.currentPrice?.available === false ?
+                "current_price_unavailable（詳細理由は未保存）" : null),
             direction: direction(record.overallV2), confidence: record.overallV2?.confidence ?? null,
             coverage: record.overallV2?.coverage ?? null,
             price: record.currentPrice?.available ? record.currentPrice.value : null,
@@ -50,7 +54,7 @@
         return (values || []).map(item => ({ contract: item.contract,
             capturedAt: item.baseline.capturedAt, capturedTime: jstTime(item.baseline.capturedAt),
             direction: direction(item.baseline.overallV2),
-            price: item.baseline.currentPrice?.available ? item.baseline.currentPrice.value : null }));
+            price: number(item.baseline.currentPrice?.value) }));
     }
     function append(document, parent, tag, className, text) {
         const node = document.createElement(tag); node.className = className; node.textContent = text;
@@ -80,7 +84,7 @@
         const valid = (snapshots || []).filter(item => validDate(item?.marketDate) &&
             Number.isFinite(Date.parse(item?.observedAt)) && number(item?.price) !== null &&
             typeof item?.contract === "string" && item.contract.trim()).slice()
-            .sort((a, b) => a.observedAt.localeCompare(b.observedAt) ||
+            .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt) ||
                 String(a.snapshotId).localeCompare(String(b.snapshotId)));
         const finalSnapshot = finalObservationSnapshot(valid, latestObservation), grouped = new Map();
         valid.forEach(item => { if (!grouped.has(item.contract)) grouped.set(item.contract, []);
@@ -104,7 +108,9 @@
             container = panel.querySelector("#timeTravelPriceChartContainer"), canvas = panel.querySelector(
                 "#timeTravelPriceChartCanvas"), model = priceChartModel(result.priceSnapshots, result.latestObservation);
         summary.textContent = ""; range.textContent = ""; empty.textContent = ""; container.hidden = true;
-        if (!model.count) { empty.textContent = "この日の価格snapshotは保存されていません"; return { chart: null, model }; }
+        if (!model.count) { empty.textContent = result.sections?.priceSnapshots?.status === "unavailable" ?
+            "価格snapshot：unavailable（保存履歴を確認できません）" : "この日の価格snapshotは保存されていません";
+            return { chart: null, model }; }
         summary.textContent = `保存点数：${model.count}点 ／ 最初：${jstDateTime(model.firstObservedAt)} JST ／ ` +
             `最後：${jstDateTime(model.lastObservedAt)} JST`;
         range.textContent = `保存snapshotの価格範囲：${price(model.minimumPrice)}〜${price(model.maximumPrice)}`;
@@ -135,6 +141,10 @@
         panel.querySelector("#timeTravelSelectedDate").textContent = japaneseDate(result.calendarDate);
         const observation = panel.querySelector("#timeTravelObservation"), morning = panel.querySelector(
             "#timeTravelMorning"), qri = panel.querySelector("#timeTravelQriStatus");
+        const status = panel.querySelector("#timeTravelArchiveStatus");
+        if (status) status.textContent = result.status === "partial" ? "一部保存済み（partial）：category別の保存状況を確認してください" :
+            result.available ? "保存済みの履歴・現在値ではありません" :
+                result.status === "unavailable" ? "unavailable：保存履歴を確認できません" : "保存データなし";
         observation.replaceChildren(); morning.replaceChildren();
         if (result.status === "schema_mismatch") {
             append(panel.ownerDocument, observation, "p", "time-travel-empty", "保存データの形式が一致しません");
@@ -146,6 +156,10 @@
             else {
                 append(panel.ownerDocument, observation, "h3", "", "最終保存断面");
                 append(panel.ownerDocument, observation, "p", "optionmap-historical-saved-at", `保存時刻：${view.savedTime} JST`);
+                append(panel.ownerDocument, observation, "p", "optionmap-historical-note",
+                    `観測日：${view.calendarDay || result.calendarDate} ／ marketDate：${view.marketDate || "未保存"} ／ ` +
+                    `tradingDate：${view.tradingDate || "未保存"} ／ 価格限月：${view.contract || "未保存"}`);
+                if (view.priceReason) append(panel.ownerDocument, observation, "p", "time-travel-empty", view.priceReason);
                 const summary = append(panel.ownerDocument, observation, "div", "optionmap-historical-metrics", "");
                 metric(panel.ownerDocument, summary, "総合方向", view.direction, "optionmap-historical-direction");
                 metric(panel.ownerDocument, summary, "方向スコア", number(result.latestObservation?.overallV2?.direction) === null ?
@@ -167,13 +181,43 @@
             else baselines.forEach(value => append(panel.ownerDocument, morning, "p", "",
                 `${value.contract} ／ ${value.capturedTime} JST ／ 総合方向：${value.direction} ／ 保存価格：${price(value.price)}`));
         }
-        qri.textContent = result.qri.available ? `保存済み限月：${result.qri.contracts.join("、")}。下のQRI Time Travelに表示します。` :
-            "QRI Time Travel：この日の保存なし";
+        const labels = { saved: "保存済み", missing: "保存なし", unavailable: "unavailable" };
+        for (const [key, element] of [["observation", observation], ["morning", morning]]) {
+            const section = result.sections?.[key];
+            if (section) append(panel.ownerDocument, element, "p", "optionmap-historical-note",
+                `${labels[section.status]}${section.reason ? `：${section.reason}` : ""}`);
+        }
+        const timeline = panel.querySelector("#timeTravelTimeline");
+        if (timeline) {
+            timeline.replaceChildren(); append(panel.ownerDocument, timeline, "h3", "", "この日の観測timeline");
+            if (!result.observations?.length) append(panel.ownerDocument, timeline, "p", "time-travel-empty",
+                result.sections?.observation?.status === "unavailable" ? "unavailable" : "保存なし");
+            for (const record of result.observations || []) {
+                const row = observationView(record);
+                append(panel.ownerDocument, timeline, "p", "", `${row.savedTime} JST ／ ${price(row.price)} ／ ` +
+                    `${row.direction} ／ marketDate ${row.marketDate || "未保存"}`);
+            }
+        }
+        const calendar = panel.querySelector("#timeTravelCalendar");
+        if (calendar) {
+            calendar.replaceChildren(); append(panel.ownerDocument, calendar, "h3", "", "当時保存済みだった経済イベント");
+            append(panel.ownerDocument, calendar, "p", "optionmap-historical-note", "選択日のJST終了時点で既知だった履歴。後日追加された情報は含みません。");
+            const section = result.sections?.calendar;
+            if (section?.status !== "saved") append(panel.ownerDocument, calendar, "p", "time-travel-empty",
+                `${labels[section?.status] || "保存なし"}${section?.reason ? `：${section.reason}` : ""}`);
+            for (const event of result.calendarEvents || []) append(panel.ownerDocument, calendar, "p", "",
+                `${event.revision.title?.ja || event.revision.title?.en || event.revision.eventKey} ／ ` +
+                `${event.revision.lifecycleStatus} ／ 保存開始 ${jstDateTime(event.revision.validFrom)} JST`);
+        }
+        qri.textContent = result.qri.available ? `保存済み限月：${result.qri.contracts.join("、")}。` +
+            (result.qri.revisions || []).map(item => `${jstTime(item.revision.confirmedAt)} JST ／ ` +
+                `sourceDateKey ${item.sourceDateKey} ／ ${item.revision.versionKey}`).join("、") :
+            result.sections?.qri?.status === "unavailable" ? "QRI：unavailable" : "QRI：この日の保存なし";
         return renderPriceChart(panel, result, ChartConstructor);
     }
     function create({ document = globalThis.document, indexedDB = globalThis.indexedDB,
         localStorage = globalThis.localStorage, now = () => new Date(),
-        openQri = input => globalThis.openQriTimeTravel?.(input), read = readModel.read,
+        read = readModel.read,
         ChartConstructor = globalThis.Chart } = {}) {
         const action = document.getElementById("marketCalendarTimeTravelAction"),
             actionStatus = document.getElementById("marketCalendarTimeTravelStatus"),
@@ -186,32 +230,54 @@
         async function selected(event) {
             const date = event?.detail?.calendarDate;
             if (!validDate(date)) return;
-            selectedDate = date; const own = ++availabilityGeneration; action.hidden = date >= today();
+            clearHistorical(); selectedDate = date; const own = ++availabilityGeneration; action.hidden = date >= today();
             button.hidden = true; actionStatus.textContent = "";
             if (action.hidden) return;
             actionStatus.textContent = "保存履歴を確認中…";
-            const result = await read({ calendarDate: date, indexedDB, localStorage });
+            const result = await safeRead(date);
             if (own !== availabilityGeneration || selectedDate !== date) return;
             if (result.available) { button.hidden = false; actionStatus.textContent = ""; }
             else actionStatus.textContent = result.status === "schema_mismatch" ?
-                "保存データの形式が一致しません" : "この日のOptionMap保存データはありません";
+                "保存データの形式が一致しません" : result.status === "unavailable" ?
+                    "保存履歴を読み込めません（unavailable）" : "この日のOptionMap保存データはありません";
         }
         async function open() {
-            const date = selectedDate; if (!date) return;
+            const date = selectedDate; if (!date || date >= today() || button.hidden) return;
             const own = ++viewGeneration; button.disabled = true;
-            const result = await read({ calendarDate: date, indexedDB, localStorage });
+            const result = await safeRead(date);
             if (own !== viewGeneration || date !== selectedDate) return;
             button.disabled = false;
-            if (!result.available) { actionStatus.textContent = "この日のOptionMap保存データはありません"; return; }
+            if (!result.available) { actionStatus.textContent = result.status === "unavailable" ?
+                "保存履歴を読み込めません（unavailable）" : "この日のOptionMap保存データはありません"; return; }
             priceChart?.destroy?.(); priceChart = render(panel, result, ChartConstructor).chart;
             panel.hidden = false; panel.scrollIntoView?.({ block: "start" });
-            if (result.qri.available) openQri({ selectedTradingDate: date,
-                selectedContract: result.qri.selectedContract });
         }
-        function returnToday() { ++viewGeneration; priceChart?.destroy?.(); priceChart = null; panel.hidden = true;
+        async function safeRead(date) {
+            try { return await read({ calendarDate: date, indexedDB, localStorage }); }
+            catch (_error) { return { calendarDate: date, status: "unavailable", available: false }; }
+        }
+        function clearHistorical() {
+            ++viewGeneration; priceChart?.destroy?.(); priceChart = null; panel.hidden = true; button.disabled = false;
+            for (const id of ["timeTravelObservation", "timeTravelMorning", "timeTravelTimeline", "timeTravelCalendar"]) {
+                panel.querySelector(`#${id}`)?.replaceChildren();
+            }
+            for (const id of ["timeTravelSelectedDate", "timeTravelArchiveStatus", "timeTravelQriStatus",
+                "timeTravelPriceChartSummary", "timeTravelPriceChartRange", "timeTravelPriceChartEmpty"]) {
+                const element = panel.querySelector(`#${id}`); if (element) element.textContent = "";
+            }
+            const container = panel.querySelector("#timeTravelPriceChartContainer"); if (container) container.hidden = true;
+        }
+        function returnToday() { ++availabilityGeneration; selectedDate = null; clearHistorical();
+            button.hidden = true; action.hidden = true; actionStatus.textContent = "";
             document.getElementById("marketCalendarToday")?.click?.(); }
         document.addEventListener("optionmap:calendar-date-selected", selected);
         button.addEventListener("click", open); close.addEventListener("click", returnToday);
+        for (const id of ["marketCalendarPreviousMonth", "marketCalendarNextMonth", "marketCalendarToday"]) {
+            document.getElementById(id)?.addEventListener("click", () => {
+                ++availabilityGeneration; selectedDate = null; clearHistorical();
+                button.hidden = true; action.hidden = true; actionStatus.textContent = "";
+            });
+        }
         return Object.freeze({ selected, open, returnToday, get selectedDate() { return selectedDate; } });
     }
     if (typeof document !== "undefined") {

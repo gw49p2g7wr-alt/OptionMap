@@ -90,6 +90,7 @@
                 <span class="optionmap-historical-badge">過去データ表示中</span>
                 <h2 id="optionMapHistoricalTitle"><span id="timeTravelSelectedDate"></span>のOptionMap</h2>
                 <p>この日に実際に保存された情報だけを表示しています。現在値ではありません。</p>
+                <p id="timeTravelArchiveStatus" role="status"></p>
             </div>
             <button id="timeTravelReturnToday" type="button">今日に戻る</button>
         </header>
@@ -109,11 +110,13 @@
         </section>
         <div class="optionmap-historical-grid">
             <section id="timeTravelObservation" class="optionmap-historical-card"></section>
+            <section id="timeTravelTimeline" class="optionmap-historical-card"></section>
             <section id="timeTravelMorning" class="optionmap-historical-card"></section>
+            <section id="timeTravelCalendar" class="optionmap-historical-card"></section>
             <section class="optionmap-historical-card">
-                <h3>QRI Time Travel</h3>
+                <h3>保存時点のQRI情報</h3>
                 <p id="timeTravelQriStatus"></p>
-                <p class="optionmap-historical-note">保存済みCALL / PUT建玉、IV、前回保存日との差を既存のread-only表示で確認します。出来高とoption priceは表示しません。</p>
+                <p class="optionmap-historical-note">この日に確認・保存されたrevisionだけを参照します。別のQRI Time Travelの最新revisionへ自動移動しません。</p>
             </section>
         </div>
     </section>
@@ -1561,12 +1564,20 @@
 <script src="js/marketCalendar/marketEventSchedule.js"></script>
 <script src="js/marketCalendar/importancePolicy.js"></script>
 <script src="js/marketCalendar/marketEventPresentation.js"></script>
+<script src="js/marketCalendar/eventTaxonomy.js"></script>
+<script src="js/marketCalendar/sourceRegistry.js"></script>
+<script src="js/marketCalendar/marketEventIdentity.js"></script>
+<script src="js/marketCalendar/authorityPolicy.js"></script>
+<script src="js/marketCalendar/sourceContract.js"></script>
+<script src="js/marketCalendar/marketEventCanonicalizer.js"></script>
+<script src="js/marketCalendar/marketEventRevision.js"></script>
+<script src="js/marketCalendarHistory/historyContract.js"></script>
+<script src="js/marketCalendarHistory/historyIntegrity.js"></script>
 <script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
 <script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>
 <script src="js/optionMapTimeTravelMvp.js"></script>
 <script src="js/marketCalendarRuntime/calendarUpdatePresentation.js"></script>
-<script src="js/marketCalendar/sourceRegistry.js"></script>
 <script src="js/marketCalendarRuntime/sourceUpdateState.js"></script>
 <script src="js/storage/marketCalendarRuntimeStateStore.js"></script>
 <script src="js/marketCalendarRuntime/calendarRuntimeStateIntegration.js"></script>

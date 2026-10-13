@@ -26,8 +26,12 @@ async function createQriDb(factory, name, entries = []) {
             store.createIndex("bySourceDate", "sourceDateKey");
             open.result.createObjectStore("qriOptionsRevisions", { keyPath: "revisionKey" }); };
         open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
-    if (entries.length) { const transaction = db.transaction("qriOptionsEntries", "readwrite");
-        entries.forEach(value => transaction.objectStore("qriOptionsEntries").put(value)); await done(transaction); }
+    if (entries.length) { const transaction = db.transaction(["qriOptionsEntries", "qriOptionsRevisions"], "readwrite");
+        entries.forEach(({ revisions, ...entry }) => {
+            transaction.objectStore("qriOptionsEntries").put(entry);
+            for (const revision of revisions) transaction.objectStore("qriOptionsRevisions").put({
+                entryKey: entry.entryKey, revisionKey: `${entry.entryKey}|${revision.versionKey}`, ...revision });
+        }); await done(transaction); }
     db.close();
 }
 async function createPriceDb(factory, records = [], wrong = false) {
@@ -55,24 +59,27 @@ test("DB不存在はopen 0、schema mismatchを分離", async () => {
     let opens = 0; const absent = await Model.read({ calendarDate: "2026-09-18", indexedDB: {
         databases: async () => [], open: () => { opens++; throw new Error("must_not_open"); } },
     localStorage: { getItem: () => null } });
-    assert.equal(opens, 0); assert.equal(absent.available, false); assert.equal(absent.status, "available");
+    assert.equal(opens, 0); assert.equal(absent.available, false); assert.equal(absent.status, "empty");
     const factory = new IDBFactory(), observations = "optionMapMarketObservations";
     await createObservationDb(factory, observations, [], true);
     const mismatch = await Model.read({ calendarDate: "2026-09-18",
         indexedDB: factory, localStorage: { getItem: () => null } });
-    assert.equal(mismatch.status, "schema_mismatch");
+    assert.equal(mismatch.status, "unavailable");
+    assert.equal(mismatch.sections.observation.storageStatus, "schema_mismatch");
     const direct = await Model.observationsFor(factory, "2026-09-18");
     assert.equal(direct.status, "schema_mismatch");
 });
-test("同日複数Observationはlatest、QRIはexact dateだけ", async () => {
+test("同日複数Observationはlatest、QRIはexact confirmed dayだけ", async () => {
     const factory = new IDBFactory(), observationName = "optionMapMarketObservations",
         qriName = "optionMapQriOptionsHistory";
     await createObservationDb(factory, observationName, [observation("a", "2026-09-18T01:00:00.000Z"),
         observation("b", "2026-09-18T08:00:00.000Z")]);
     await createQriDb(factory, qriName, [{ entryKey: "2026-10|2026-09-18", contract: "2026-10",
-        sourceDateKey: "2026-09-18", activeVersionKey: "v1" },
+        sourceDateKey: "2026-09-18", activeVersionKey: "v1", revisions: [
+            { versionKey: "v1", confirmedAt: "2026-09-18T01:00:00.000Z" }] },
     { entryKey: "2026-11|2026-09-17", contract: "2026-11",
-        sourceDateKey: "2026-09-17", activeVersionKey: "v2" }]);
+        sourceDateKey: "2026-09-17", activeVersionKey: "v2", revisions: [
+            { versionKey: "v2", confirmedAt: "2026-09-17T01:00:00.000Z" }] }]);
     const result = await Model.read({ calendarDate: "2026-09-18", indexedDB: factory,
         localStorage: { getItem: () => null } });
     assert.equal(result.latestObservation.observationId, "b"); assert.equal(result.observationCount, 2);
@@ -94,7 +101,8 @@ test("readonly transactionと成功・失敗時connection close", async () => {
 });
 function node() { return { children: [], textContent: "", hidden: false, disabled: false,
     listeners: {}, ownerDocument: null, appendChild(value) { this.children.push(value); },
-    replaceChildren() { this.children = []; }, addEventListener(type, callback) { this.listeners[type] = callback; },
+    replaceChildren() { this.children = []; }, addEventListener(type, callback) {
+        const prior = this.listeners[type]; this.listeners[type] = (...args) => { prior?.(...args); callback(...args); }; },
     click() { this.listeners.click?.(); }, scrollIntoView() {} }; }
 function documentFixture() {
     const ids = ["marketCalendarTimeTravelAction", "marketCalendarTimeTravelStatus",
@@ -144,7 +152,7 @@ test("historical viewは保存断面・Morning・QRIを専用領域へ描画", a
     assert.doesNotMatch(observationText, /confidence|coverage|quality|warnings|option|weekly/);
     assert.equal(View.japaneseDate("2026-09-20"), "2026年9月20日");
     assert.match(nodes.timeTravelMorning.children.at(-1).textContent, /保存なし/);
-    assert.deepEqual(qriCalls, [{ selectedTradingDate: "2026-09-18", selectedContract: "2026-10" }]);
+    assert.deepEqual(qriCalls, []); // Archive cannot open a later active QRI revision.
 });
 test("Price Snapshotはexact JST観測日だけreadonly取得しconnectionをclose", async () => {
     const factory = new IDBFactory(); await createPriceDb(factory, [
