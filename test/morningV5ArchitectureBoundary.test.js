@@ -32,3 +32,9 @@ test("Morning v5 stays disconnected from v4 storage UI and Full Export", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.doesNotMatch(html, /id="[^"]*morningV5/i);
 });
+
+test("Formal Morning v5 contract stays isolated from v4 storage and production persistence", () => {
+    for (const name of ["morningV5FormalAuthority.js", "morningV5FormalObservation.js"]) {
+        assert.doesNotMatch(source(name), /optionMapMorningBaselinesV4|MorningBaselineV4|localStorage|indexedDB|ipcMain|ipcRenderer/);
+    }
+});
