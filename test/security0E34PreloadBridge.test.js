@@ -74,6 +74,12 @@ function loadPreload(invokeImplementation = async (channel, url) => ({ channel, 
   return { ...publication, calls };
 }
 
+function loadRendererBridgeVerifier() {
+  const match = html.match(/function hasExactOptionMapBridge\(bridge, expectedKeys\) \{[\s\S]*?\n\}/);
+  assert.ok(match, "renderer bridge verifier must remain a standalone pure function");
+  return vm.runInNewContext(`(${match[0]})`, { Object, Array, Set, JSON });
+}
+
 test("main window enables context isolation with Node OFF and an absolute root preload", () => {
   const main = mainWindowBlock();
   assert.match(main, /nodeIntegration:\s*false/);
@@ -155,10 +161,22 @@ test("renderer fail-fast validates exact bridge before XLSX and startup work", (
   const refresh = html.indexOf("refreshAllMarketData()", bridge);
   assert.ok(bridge >= 0 && failure > bridge && xlsx > failure);
   assert.ok(cache > xlsx && refresh > xlsx);
-  assert.match(html.slice(bridge, xlsx), /Object\.keys\(optionMapBridge\)\.sort\(\)/);
-  assert.match(html.slice(bridge, xlsx), /typeof optionMapBridge\[key\] !== "function"/);
+  assert.match(html.slice(bridge, xlsx), /hasExactOptionMapBridge\(optionMapBridge, OPTION_MAP_BRIDGE_KEYS\)/);
+  assert.match(html.slice(bridge, xlsx), /Object\.keys\(bridge\)/);
+  assert.match(html.slice(bridge, xlsx), /typeof bridge\[key\] === "function"/);
   assert.match(html.slice(bridge, xlsx), /"requestCalendarSource"/);
   assert.match(html.slice(bridge, xlsx), /"checkCalendarSources"/);
+});
+
+test("renderer bridge verification normalizes order but rejects missing extra and duplicate keys", () => {
+  const verify = loadRendererBridgeVerifier();
+  const bridge = Object.fromEntries([...expectedKeys].reverse().map(key => [key, () => {}]));
+  assert.equal(verify(bridge, expectedKeys), true);
+  assert.equal(verify(bridge, [...expectedKeys].reverse()), true);
+  assert.equal(verify(Object.fromEntries(Object.entries(bridge).slice(1)), expectedKeys), false);
+  assert.equal(verify({ ...bridge, unexpectedMethod() {} }, expectedKeys), false);
+  assert.equal(verify(bridge, [...expectedKeys.slice(0, -1), expectedKeys[0]]), false);
+  assert.equal(verify({ ...bridge, readMorningV5Formal: null }, expectedKeys), false);
 });
 
 test("all 20 renderer callsites use the narrow bridge with no raw Electron access", () => {

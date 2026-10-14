@@ -1625,10 +1625,15 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "readMorningV5Formal",
     "saveFullExportJson"
 ]);
-if (!optionMapBridge ||
-    JSON.stringify(Object.keys(optionMapBridge).sort()) !==
-        JSON.stringify(OPTION_MAP_BRIDGE_KEYS) ||
-    OPTION_MAP_BRIDGE_KEYS.some(key => typeof optionMapBridge[key] !== "function")) {
+function hasExactOptionMapBridge(bridge, expectedKeys) {
+    const actualKeys = bridge && typeof bridge === "object" ? Object.keys(bridge) : [];
+    const expected = Array.isArray(expectedKeys) ? [...expectedKeys] : [];
+    if (!bridge || actualKeys.length !== expected.length ||
+        new Set(expected).size !== expected.length) return false;
+    return JSON.stringify([...actualKeys].sort()) === JSON.stringify(expected.sort()) &&
+        expected.every(key => typeof bridge[key] === "function");
+}
+if (!hasExactOptionMapBridge(optionMapBridge, OPTION_MAP_BRIDGE_KEYS)) {
     throw new Error("OptionMap preload bridge unavailable");
 }
 const XLSX = window.XLSX;
