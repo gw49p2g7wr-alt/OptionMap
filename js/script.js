@@ -4650,11 +4650,15 @@ function renderOptionMapOverallJudgmentV2Internal() {
     const statusElement = document.getElementById("optionMapV2Status");
     const optionElement = document.getElementById("optionMapV2OptionComponent");
     const weeklyElement = document.getElementById("optionMapV2WeeklyComponent");
+    const contributorElement = document.getElementById(
+        "optionMapV2MainContributor"
+    );
     const warningsElement = document.getElementById("optionMapV2Warnings");
 
     if (
         !directionElement || !scoreElement || !confidenceElement ||
-        !statusElement || !optionElement || !weeklyElement || !warningsElement
+        !statusElement || !optionElement || !weeklyElement ||
+        !contributorElement || !warningsElement
     ) {
         return formalPublication;
     }
@@ -4683,6 +4687,10 @@ function renderOptionMapOverallJudgmentV2Internal() {
         result.components.weekly,
         "主要5社週次"
     );
+    const contributor = window.OptionMapOverallV2ContributorView?.derive(result);
+    contributorElement.textContent =
+        window.OptionMapOverallV2ContributorView?.format(contributor) ||
+        "主な寄与：不明";
 
     const warnings = [...result.metadata.warnings];
     const weeklyMetadata = result.components.weekly?.metadata;
