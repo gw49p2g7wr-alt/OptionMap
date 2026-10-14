@@ -37,6 +37,9 @@ async function bootstrap({ readFailure = false } = {}) {
         fetchImpl: options.fetchImpl, acquire: options.acquire }); return instance;
     } },
     "./js/security/networkUrlPolicy.js": {}, "./js/fullExportFileSave.js": { createSaveService: () => ({}) },
+    "./js/morningV5FormalStore.js": { createProductionStore() {
+      throw Error("morning_v5_store_must_remain_dormant"); } },
+    "./js/morningV5FormalWriter.js": { createMainOwnedWriter: () => ({ close() {} }) },
     "./js/security/weeklyListingAcquisitionDiagnostics.js": { createWeeklyListingAcquisitionDiagnostics: () => ({}) },
     dotenv: { config() {} }
   };

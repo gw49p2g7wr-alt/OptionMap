@@ -33,6 +33,8 @@ let calendarShadowRuntime = null;
 let calendarCanaryRuntime = null;
 let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
+const morningV5FormalStore = require("./js/morningV5FormalStore.js");
+const morningV5FormalWriterApi = require("./js/morningV5FormalWriter.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
 );
@@ -43,6 +45,7 @@ const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID }
 const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisitionService({
   fetchImpl: (url, options) => net.fetch(url, options)
 });
+let morningV5FormalWriter = null;
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
   invalid_url: "取得先URLが不正です",
@@ -649,6 +652,13 @@ function createWindow() {
 }
 
 app.whenReady().then(()=>{
+  const storeAuthority = Object.freeze({ getUserDataPath: () => app.getPath("userData") });
+  morningV5FormalWriter = morningV5FormalWriterApi.createMainOwnedWriter({
+    storeFactory: () => morningV5FormalStore.createProductionStore(storeAuthority),
+    // M5-2 intentionally exposes no renderer registration path. A future main-owned
+    // accepted-observation source must provide this binding before any production write.
+    getCurrentAuthorityBinding: () => null
+  });
   productionCanaryContext=process.versions?.electron
     ? require("./js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js").initializeProductionContext() : null;
   app.whenReady().then(createWindow);
@@ -658,6 +668,11 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  morningV5FormalWriter?.close();
+  morningV5FormalWriter = null;
 });
 }
 }
