@@ -17,6 +17,9 @@
     const LEVELS_FIELDS = Object.freeze(["upper", "lower", "contract", "sourceVersionKey",
         "generatedFromFormalOnly"]);
     const LEVEL_FIELDS = Object.freeze(["available", "price", "distance", "optionType"]);
+    const CONTRACT_CONTEXT_FIELDS = Object.freeze(["qriContract", "futuresContract", "relation",
+        "relationAuthority"]);
+    const RELATION_AUTHORITY = "verified_nikkei225_option_and_futures_identities";
 
     const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -195,6 +198,25 @@
             componentAvailability: clone(context.componentAvailability) };
     }
 
+    function contractContext(value, qriContract, futuresContract, { legacy = false } = {}) {
+        if (!object(value)) {
+            if (legacy && qriContract === futuresContract) return {
+                qriContract, futuresContract, relation: "same_contract",
+                relationAuthority: "legacy_v4_same_contract_invariant" };
+            if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(qriContract || "") ||
+                !/^20\d{2}-(03|06|09|12)$/.test(futuresContract || "")) return null;
+            return { qriContract, futuresContract, relation: qriContract === futuresContract
+                ? "same_contract" : "independent_cross_contract",
+            relationAuthority: RELATION_AUTHORITY };
+        }
+        if (!exact(value, CONTRACT_CONTEXT_FIELDS)) return null;
+        const expected = qriContract === futuresContract
+            ? "same_contract" : "independent_cross_contract";
+        return value.qriContract === qriContract && value.futuresContract === futuresContract &&
+            value.relation === expected && value.relationAuthority === RELATION_AUTHORITY
+            ? clone(value) : null;
+    }
+
     function contentOf(baseline) {
         return { baselineVersion: baseline.baselineVersion, schemaVersion: baseline.schemaVersion,
             marketContext: baseline.marketContext, overallV2: baseline.overallV2,
@@ -272,14 +294,16 @@
             object(quality.fallbackFlags) && Object.values(quality.fallbackFlags).every(value => value === false) &&
             object(quality.componentAvailability);
         const sessionVerified = market?.sessionMappingStatus === "verified";
+        const relation = contractContext(comparable?.contractContext, qri?.contract,
+            price?.contract, { legacy: !Object.hasOwn(comparable || {}, "contractContext") });
         const comparabilityValid = object(comparable) && comparable.formalLive === true &&
             comparable.sessionVerified === sessionVerified && comparable.currentPriceVerified === true &&
             comparable.qriVerified === true && comparable.weeklyVerified === true &&
             comparable.logicVersion === overall?.logicVersion && comparable.comparisonClass ===
-                (sessionVerified ? "formal_live_verified_session" : "formal_live_session_unresolved");
+                (sessionVerified ? "formal_live_verified_session" : "formal_live_session_unresolved") &&
+            Boolean(relation);
         return marketValid && overallValid && priceValid && qriValid && weeklyValid && levelsValid &&
-            qualityValid && comparabilityValid && price.contract === qri.contract &&
-            qri.tradingDate === market.formalTradingDate;
+            qualityValid && comparabilityValid && qri.tradingDate === market.formalTradingDate;
     }
 
     async function validateMorningBaselineV4(baseline) {
@@ -313,8 +337,14 @@
         if (qri.error) return failure(qri.error);
         const weekly = buildWeekly(input.weeklyContext);
         if (weekly.error) return failure(weekly.error);
-        if (price.value.contract !== qri.value.contract ||
-            qri.value.tradingDate !== market.formalTradingDate) return failure("contract_mismatch");
+        const relation = contractContext(market.contractContext, qri.value.contract,
+            price.value.contract);
+        if (!relation) return failure("unsupported_contract_relation");
+        if (qri.value.tradingDate !== market.formalTradingDate)
+            return failure("contract_mismatch");
+        if (relation.relation === "independent_cross_contract" &&
+            input.nearestLevelsContext !== null)
+            return failure("cross_contract_nearest_levels_unsupported");
         const levels = buildLevels(input.nearestLevelsContext, qri.value.contract,
             qri.value.canonicalVersionKey);
         if (levels.error) return failure(levels.error);
@@ -332,7 +362,7 @@
                 qriVerified: true, weeklyVerified: true,
                 logicVersion: overall.value.logicVersion,
                 comparisonClass: sessionVerified ? "formal_live_verified_session" :
-                    "formal_live_session_unresolved" },
+                    "formal_live_session_unresolved", contractContext: relation },
             signatureAlgorithm: SIGNATURE_ALGORITHM, contentSignature: "", signature: "", versionKey: "" };
         baseline.contentSignature = await sha256(contentOf(baseline));
         baseline.signature = await sha256(eventOf(baseline));

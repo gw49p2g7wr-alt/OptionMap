@@ -10,17 +10,17 @@ function fixture() {
     const requestId = "request-1";
     const qri = { sourceClass: "formal_live", sourceKind: "formal_live", origin: "live",
         usingFallback: false, referenceOnly: false, superseded: false, contract: "2026-09",
-        tradingDate: "2026-08-26", pageUpdatedAt: "2026-08-26T08:00:00+09:00",
+        tradingDate: "2026-08-26", pageUpdatedAt: "2026-08-26T09:00:00+09:00",
         canonicalSignature: "qri-signature", canonicalVersionKey: "qri-v1",
         historyEntryIdentity: "2026-09|2026-08-26", historyRevisionIdentity: "qri-v1",
-        persistenceStatus: "saved", requestId, fetchedAt: "2026-08-26T08:01:00+09:00",
+        persistenceStatus: "saved", requestId, fetchedAt: "2026-08-26T09:01:00+09:00",
         identityVerified: true, acquisitionVerified: true, generation: generation("qri", "qri-gen") };
     const price = { available: true, sourceKind: "live", origin: "live", mode: "automatic",
         value: 66000, contract: "2026-09", quoteDate: "2026-08-26",
-        quotedAtNormalized: "2026-08-26T07:59:00+09:00", quoteSignature: "price-signature",
+        quotedAtNormalized: "2026-08-26T09:00:00+09:00", quoteSignature: "price-signature",
         versionKey: "price-v1", wrapperSignature: "wrapper-signature", requestId,
-        fetchedAt: "2026-08-26T08:01:00+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
-        acquisitionIdentity: { requestId, fetchedAt: "2026-08-26T08:01:00+09:00",
+        fetchedAt: "2026-08-26T09:01:00+09:00", sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
+        acquisitionIdentity: { requestId, fetchedAt: "2026-08-26T09:01:00+09:00",
             sourceUrl: "https://svc.qri.jp/jpx/nkopm/", wrapperSignature: "wrapper-signature" },
         identityVerified: true, acquisitionVerified: true, currentRequestVerified: true,
         qriTradingDateMapping: { status: "verified", quoteDate: "2026-08-26",
@@ -70,7 +70,7 @@ function runtime(states = fixture(), options = {}) {
         getQri: () => states.qri, getWeekly: () => states.weekly,
         getOverall: () => states.overall,
         isRefreshInProgress: () => options.refresh === true,
-        now: () => "2026-08-26T08:03:00+09:00" });
+        now: () => "2026-08-26T09:03:00+09:00" });
 }
 const collect = async mutate => { const states = fixture(); mutate?.(states);
     return runtime(states).collect(); };
@@ -116,7 +116,23 @@ test("Overall option identity missing is an eligibility deficiency, not an excep
 test("Overall input mismatch", async () => assert.equal((await collect(x => { x.overall.envelope.optionSourceIdentity.canonicalVersionKey = "old"; })).ready, false));
 test("logicVersion missing", async () => assert.ok((await collect(x => { x.overall.envelope.logicVersion = null; })).reasons.includes("overall_identity_missing")));
 test("session unverified", async () => assert.ok((await collect(x => { x.currentPrice.fact.qriTradingDateMapping.mappingVerified = false; })).reasons.includes("session_unverified")));
-test("contract mismatch", async () => assert.ok((await collect(x => { x.currentPrice.fact.contract = "2026-12"; })).reasons.includes("contract_mismatch")));
+test("M2 independent QRI and futures contracts are ready", async () => {
+    const result = await collect(x => { x.qri.fact.contract = "2026-11";
+        x.qri.fact.historyEntryIdentity = "2026-11|2026-08-26";
+        x.currentPrice.fact.contract = "2026-12"; });
+    assert.equal(result.ready, true);
+    assert.equal(result.sessionScope.contractRelation, "independent_cross_contract");
+    assert.deepEqual(result.builderInput.marketContext.contractContext, {
+        qriContract: "2026-11", futuresContract: "2026-12",
+        relation: "independent_cross_contract",
+        relationAuthority: "verified_nikkei225_option_and_futures_identities" });
+});
+test("M3 stale futures quote is rejected", async () => {
+    const result = await collect(x => {
+        x.currentPrice.fact.quotedAtNormalized = "2026-08-25T06:00:00+09:00";
+    });
+    assert.ok(result.reasons.includes("current_price_stale_reference"));
+});
 test("tradingDate mismatch", async () => assert.equal((await collect(x => { x.currentPrice.fact.qriTradingDateMapping.qriTradingDate = "2026-08-27"; })).ready, false));
 test("fallback flag present", async () => assert.equal((await collect(x => { x.overall.envelope.diagnostics.fallbackUsed = true; })).ready, false));
 test("refresh in progress", async () => { const states = fixture(); assert.ok((await runtime(states, { refresh: true }).collect()).reasons.includes("refresh_in_progress")); });

@@ -15,13 +15,13 @@ test("Morning v4 authority and storage identities remain fixed", () => {
         V4Storage.STORAGE_VERSION], ["optionMapMorningBaselinesV4", 4, 1]);
 });
 
-test("Morning v4 remains strict same-contract throughout its authority path", () => {
-    assert.match(source("morningBaselineV4.js"),
-        /price\.value\.contract !== qri\.value\.contract/);
-    assert.match(source("morningV4FormalSessionScope.js"),
-        /qri\.contract === price\.contract/);
+test("Morning v4 keeps independent authority axes and series-local continuity", () => {
+    assert.match(source("morningBaselineV4.js"), /independent_cross_contract/);
+    assert.match(source("morningV4FormalSessionScope.js"), /independent_cross_contract/);
     assert.match(source("morningComparisonV4.js"),
         /baseline\.currentPrice\.contract === current\.currentPrice\.contract/);
+    assert.match(source("morningComparisonV4.js"),
+        /baseline\.qri\.contract === current\.qri\.contract/);
 });
 
 test("Morning v5 stays disconnected from v4 storage UI and Full Export", () => {

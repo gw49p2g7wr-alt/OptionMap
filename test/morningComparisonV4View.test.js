@@ -22,7 +22,11 @@ function runtime(overrides = {}) {
             optionComponent: { available: true, baselineDirection: -12.5,
                 currentDirection: 0, directionDelta: 12.5 },
             weeklyComponent: { available: true, baselineDirection: -67.6,
-                currentDirection: -67.6, directionDelta: 0 } }, ...overrides };
+                currentDirection: -67.6, directionDelta: 0 },
+            comparability: { contractContext: { qriContract: "2026-11",
+                futuresContract: "2026-12", relation: "independent_cross_contract",
+                relationAuthority: "verified_nikkei225_option_and_futures_identities" } } },
+        ...overrides };
 }
 
 test("formal runtime becomes a detached immutable user-facing model", () => {
@@ -42,6 +46,9 @@ test("identity binding retains diagnostics and fails closed on mismatch", () => 
     assert.equal(model.identity.selectedBaselineId, "mb4-formal");
     assert.equal(model.identity.comparisonBaselineId, "mb4-formal");
     assert.equal(model.identity.restoreBindingVerified, true);
+    assert.equal(model.identity.qriContract, "2026-11");
+    assert.equal(model.identity.futuresContract, "2026-12");
+    assert.equal(model.identity.contractRelation, "independent_cross_contract");
     assert.equal(View.createViewModel(runtime({ selectedBaselineId: "mb4-other" })).available, false);
 });
 test("unavailable runtime never exposes stale comparison values", () => {
@@ -88,6 +95,10 @@ test("formal binding uses only runtime getter and reference UI stays explicitly 
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.match(html, /朝基準からの正式比較/); assert.match(html, /前回観測比（参考）/);
     assert.match(html, /当日QRI建玉変化（参考）/);
+    assert.match(html, /id="morningComparisonV4Contracts"/);
+    assert.match(source, /dataset\.qriContract/);
+    assert.match(source, /dataset\.futuresContract/);
+    assert.match(source, /dataset\.contractRelation/);
     assert.ok(html.indexOf("morningComparisonV4Runtime.js") < html.indexOf("morningComparisonV4View.js"));
     assert.ok(html.indexOf("morningComparisonV4View.js") < html.indexOf("mobileSummaryPreview.js"));
 });

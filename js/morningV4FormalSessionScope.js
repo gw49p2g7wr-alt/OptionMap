@@ -7,6 +7,7 @@
 
     const SCOPE_VERSION = 1;
     const SOURCE = "formal_identity_binding";
+    const RELATION_AUTHORITY = "verified_nikkei225_option_and_futures_identities";
     const clone = value => value == null ? value : typeof structuredClone === "function"
         ? structuredClone(value) : JSON.parse(JSON.stringify(value));
     function deepFreeze(value) {
@@ -31,8 +32,22 @@
         return object(value) && value.current === true && Number.isSafeInteger(value.sequence) &&
             value.sequence >= 0 && text(value.fingerprint);
     }
-    function makeScopeId(contract, formalTradingDate) {
-        return `morning-v4-scope|${contract}|${formalTradingDate}|same_date_explicit`;
+    function normalizedContract(value) {
+        return /^20\d{2}-(0[1-9]|1[0-2])$/.test(value || "") ? value : null;
+    }
+    function classifyContractRelation(qriContract, futuresContract) {
+        const qri = normalizedContract(qriContract);
+        const futures = normalizedContract(futuresContract);
+        if (!qri || !futures || !["03", "06", "09", "12"].includes(futures.slice(5)))
+            return "unsupported";
+        return qri === futures ? "same_contract" : "independent_cross_contract";
+    }
+    function makeScopeId(contract, formalTradingDate, futuresContract = contract) {
+        const relation = classifyContractRelation(contract, futuresContract);
+        if (relation === "unsupported") return null;
+        return relation === "same_contract"
+            ? `morning-v4-scope|${contract}|${formalTradingDate}|same_date_explicit`
+            : `morning-v4-scope|${contract}|${futuresContract}|${formalTradingDate}|independent_contract_axes`;
     }
     function evaluateFormalSessionScope(input = {}) {
         const qri = unwrap(input.qriFormalIdentity, "fact");
@@ -52,7 +67,9 @@
             price.sourceKind === "live" && price.origin === "live" && price.mode === "automatic" &&
             price.identityVerified === true && price.acquisitionVerified === true &&
             price.currentRequestVerified === true && text(price.contract) && text(price.requestId);
-        const contractMatched = qriVerified && priceIdentityVerified && qri.contract === price.contract;
+        const contractRelation = qriVerified && priceIdentityVerified
+            ? classifyContractRelation(qri.contract, price.contract) : "unsupported";
+        const contractMatched = contractRelation === "same_contract";
         const priceMappingVerified = priceIdentityVerified && mapping?.mappingVerified === true &&
             mapping?.mappingSource === "same_date_explicit" && mapping?.qriTradingDate === qri?.tradingDate &&
             price.quoteDate === qri?.tradingDate;
@@ -84,8 +101,9 @@
         if (!qriVerified || !priceIdentityVerified || !weeklyIdentityVerified ||
             !overallIdentityVerified || !requestMatched || !generationStable) {
             reason = "identity_unverified";
-        } else if (!contractMatched) {
-            status = "mismatch"; reason = "contract_mismatch"; sessionClass = "contract_roll";
+        } else if (contractRelation === "unsupported") {
+            status = "mismatch"; reason = "unsupported_contract_relation";
+            sessionClass = "unsupported_contract_relation";
         } else if (!overallBindingVerified || !weeklyBindingVerified) {
             status = "mismatch"; reason = "source_binding_mismatch";
             sessionClass = "source_binding_mismatch";
@@ -95,7 +113,8 @@
             status = "verified"; reason = null; sessionClass = "same_date_verified";
         }
         const mappingVerified = status === "verified";
-        const scopeId = mappingVerified ? makeScopeId(qri.contract, qri.tradingDate) : null;
+        const scopeId = mappingVerified
+            ? makeScopeId(qri.contract, qri.tradingDate, price.contract) : null;
         const checks = { qriVerified, priceIdentityVerified, priceMappingVerified,
             contractMatched, overallBindingVerified, weeklyBindingVerified,
             requestMatched: Boolean(requestMatched), generationStable: Boolean(generationStable) };
@@ -107,7 +126,14 @@
         return deepFreeze({ scopeVersion: SCOPE_VERSION, available: mappingVerified, status, reason,
             scopeId, sessionScopeId: scopeId, sessionIdentity: scopeId,
             formalTradingDate: qriVerified ? qri.tradingDate : null,
-            contract: qriVerified ? qri.contract : null, captureCalendarDate: calendarDate,
+            contract: qriVerified ? qri.contract : null,
+            qriContract: qriVerified ? qri.contract : null,
+            futuresContract: priceIdentityVerified ? price.contract : null,
+            contractRelation, relationAuthority: RELATION_AUTHORITY,
+            contractContext: deepFreeze({ qriContract: qriVerified ? qri.contract : null,
+                futuresContract: priceIdentityVerified ? price.contract : null,
+                relation: contractRelation, relationAuthority: RELATION_AUTHORITY }),
+            captureCalendarDate: calendarDate,
             sessionClass, mappingStatus: status, sessionMappingStatus: status,
             mappingVerified, comparisonEligible: mappingVerified, source: SOURCE,
             generation: { source: "marketSession", sequence: 0,
@@ -124,6 +150,9 @@
     function compareFormalSessionScopes(baseline, current) {
         if (baseline?.contract && current?.contract && baseline.contract !== current.contract)
             return deepFreeze({ comparisonEligible: false, reason: "contract_roll" });
+        if (baseline?.futuresContract && current?.futuresContract &&
+            baseline.futuresContract !== current.futuresContract)
+            return deepFreeze({ comparisonEligible: false, reason: "futures_contract_roll" });
         if (baseline?.formalTradingDate && current?.formalTradingDate &&
             baseline.formalTradingDate !== current.formalTradingDate)
             return deepFreeze({ comparisonEligible: false, reason: "trading_date_changed" });
@@ -132,6 +161,6 @@
         return deepFreeze({ comparisonEligible: Boolean(eligible),
             reason: eligible ? null : "session_unverified", scopeId: eligible ? current.scopeId : null });
     }
-    return Object.freeze({ SCOPE_VERSION, SOURCE, makeScopeId,
+    return Object.freeze({ SCOPE_VERSION, SOURCE, RELATION_AUTHORITY, classifyContractRelation, makeScopeId,
         evaluateFormalSessionScope, compareFormalSessionScopes });
 });

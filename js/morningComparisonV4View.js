@@ -49,6 +49,9 @@
         fingerprint_mismatch: "正式入力fingerprintが一致しません",
         scope_mismatch: "正式scopeが一致しません", trading_date_mismatch: "取引日が一致しません",
         contract_mismatch: "限月が一致しません", logic_version_mismatch: "判定logicが一致しません",
+        unsupported_contract_relation: "QRIと先物の限月関係を検証できません",
+        current_price_stale_reference: "先物価格が現在sessionの価格ではありません",
+        current_price_freshness_unavailable: "先物価格の更新時刻を検証できません",
         comparison_unavailable: "正式比較を利用できません",
         identity_binding_failed: "正式朝基準のidentity bindingを確認できません" })[value] ||
         "正式比較を利用できません";
@@ -79,6 +82,7 @@
                 comparisonBaselineId: null, capturedAt: null,
                 publicationGeneration: value?.publicationGeneration || 0, scopeId: value?.scopeId || null,
                 formalTradingDate: value?.formalTradingDate || null, contract: value?.contract || null,
+                qriContract: null, futuresContract: null, contractRelation: null,
                 formalSnapshotInputFingerprint: value?.formalSnapshotInputFingerprint || null,
                 restoreBindingVerified: false }, capturedAt: "—", score: null, price: null,
             relation: "需給変化と価格変化：比較不可", dataQuality: null, components: [] });
@@ -101,6 +105,7 @@
         const overall = comparison.overallV2;
         const priceComparison = comparison.price;
         const dataQuality = comparison.dataQuality;
+        const contractContext = comparison.comparability?.contractContext || null;
         if (![overall?.baselineScore, overall?.currentScore, overall?.delta,
             priceComparison?.baselineValue, priceComparison?.currentValue, priceComparison?.delta,
             priceComparison?.percentDelta].every(finite) || !dataQuality) return unavailable({
@@ -110,6 +115,9 @@
                 capturedAt: runtimeState.baselineIdentity.capturedAt,
                 publicationGeneration: runtimeState.publicationGeneration, scopeId: runtimeState.scopeId,
                 formalTradingDate: runtimeState.formalTradingDate, contract: runtimeState.contract,
+                qriContract: contractContext?.qriContract || null,
+                futuresContract: contractContext?.futuresContract || null,
+                contractRelation: contractContext?.relation || null,
                 formalSnapshotInputFingerprint: runtimeState.formalSnapshotInputFingerprint,
                 restoreBindingVerified: true }, capturedAt: jst(runtimeState.baselineIdentity.capturedAt),
             score: { baseline: signed(overall.baselineScore), current: signed(overall.currentScore),

@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const Baseline = require("../js/morningBaselineV4.js");
 const Foundation = require("../js/morningBaselineV4Storage.js");
 const ReadOnly = require("../js/storage/morningBaselineV4ReadOnlyStore.js");
@@ -108,6 +109,27 @@ test("unverified scope is not a formal storage candidate", async () => { const v
 test("nearestLevels null is stored and restored", async () => { const restored =
     await Foundation.restoreMorningBaselineV4Storage(await serialized());
     assert.equal(restored.container.series[0].revisions[0].snapshot.nearestLevels, null); });
+test("M7 legacy V4 snapshot without contractContext remains readable without rewrite", async () => {
+    const legacy = structuredClone(await baseline());
+    delete legacy.comparability.contractContext;
+    const content = { baselineVersion: legacy.baselineVersion, schemaVersion: legacy.schemaVersion,
+        marketContext: legacy.marketContext, overallV2: legacy.overallV2,
+        currentPrice: legacy.currentPrice, qri: legacy.qri, weekly: legacy.weekly,
+        nearestLevels: legacy.nearestLevels, dataQuality: legacy.dataQuality,
+        comparability: legacy.comparability };
+    legacy.contentSignature = crypto.createHash("sha256")
+        .update(Baseline.canonicalize(content)).digest("hex");
+    legacy.versionKey = `morning-baseline-v4|sha256:${legacy.contentSignature}`;
+    legacy.signature = crypto.createHash("sha256").update(Baseline.canonicalize({
+        contentSignature: legacy.contentSignature, capturedAt: legacy.capturedAt })).digest("hex");
+    legacy.baselineId = `mb4-${legacy.signature.slice(0, 24)}`;
+    assert.equal(await Baseline.validateMorningBaselineV4(legacy), true);
+    const stored = await Foundation.buildMorningBaselineV4Storage({ baseline: legacy });
+    const before = Baseline.canonicalize(stored.container);
+    const restored = await Foundation.restoreMorningBaselineV4Storage(before);
+    assert.equal(restored.success, true);
+    assert.equal(Baseline.canonicalize(restored.container), before);
+});
 test("actual formal nearestLevels remain compatible", async () => { const restored =
     await Foundation.restoreMorningBaselineV4Storage(await serialized({ actualLevels: true }));
     assert.equal(restored.container.series[0].revisions[0].snapshot.nearestLevels.upper.price, 42500); });

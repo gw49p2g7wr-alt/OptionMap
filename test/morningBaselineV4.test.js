@@ -107,9 +107,23 @@ test("invalid CurrentPrice identity is rejected", async () => {
     assert.equal((await build({ currentPriceContext: { identityVerified: false } })).reason,
         "current_price_identity_invalid");
 });
-test("QRI contract mismatch is rejected", async () => {
-    const input = fixture(); input.qriContext.identity.contract = "2026-12";
-    assert.equal((await V4.buildMorningBaselineV4(input)).reason, "contract_mismatch");
+test("M2 QRI11 and Futures12 build with independent contract metadata", async () => {
+    const input = fixture(); input.qriContext.identity.contract = "2026-11";
+    input.qriContext.identity.historyEntryId = "2026-11|2026-08-26";
+    input.currentPriceContext.contract = "2026-12"; input.nearestLevelsContext = null;
+    const result = await V4.buildMorningBaselineV4(input);
+    assert.equal(result.success, true);
+    assert.deepEqual(result.baseline.comparability.contractContext, {
+        qriContract: "2026-11", futuresContract: "2026-12",
+        relation: "independent_cross_contract",
+        relationAuthority: "verified_nikkei225_option_and_futures_identities" });
+});
+test("M10 cross-contract nearest levels are not calculated", async () => {
+    const input = fixture(); input.qriContext.identity.contract = "2026-11";
+    input.qriContext.identity.historyEntryId = "2026-11|2026-08-26";
+    input.currentPriceContext.contract = "2026-12";
+    assert.equal((await V4.buildMorningBaselineV4(input)).reason,
+        "cross_contract_nearest_levels_unsupported");
 });
 test("invalid Weekly identity is rejected", async () => {
     assert.equal((await build({ weeklyContext: { identityVerified: false } })).reason,

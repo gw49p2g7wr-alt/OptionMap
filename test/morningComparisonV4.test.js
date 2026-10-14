@@ -14,7 +14,8 @@ const component = (name, direction, quality, weight) => ({ name, available: true
     notes: [], metadata: { scoreDifference: direction * 8 } });
 
 function input(options = {}) {
-    const contract = options.contract || "2026-09";
+    const qriContract = options.qriContract || options.contract || "2026-09";
+    const futuresContract = options.futuresContract || options.contract || "2026-09";
     const tradingDate = options.tradingDate || "2026-08-26";
     const qriVersion = options.qriVersion || "qri-v1";
     const weeklyVersion = options.weeklyVersion || "weekly-v1";
@@ -45,7 +46,7 @@ function input(options = {}) {
                     coverage: options.coverage ?? 100, warnings: [],
                     timeHorizon: { code: "multi_day", label: "1日～数日" } } } },
         currentPriceContext: { available: true, sourceKind: "live", origin: "live",
-            mode: "automatic", value: options.price ?? 66000, contract,
+            mode: "automatic", value: options.price ?? 66000, contract: futuresContract,
             quoteDate: options.quoteDate || tradingDate,
             quotedAtNormalized: `${options.quoteDate || tradingDate}T07:59:00+09:00`,
             quoteSignature: (options.priceSignature || "a").repeat(64),
@@ -64,10 +65,10 @@ function input(options = {}) {
         qriContext: { available: true, origin: "formal_live", sourceKind: "live",
             formalRevisionAvailable: true, referenceOnly: false, usingFallback: false,
             restored: false, superseded: false, openInterestStatus: "available",
-            identity: { verified: true, contract, tradingDate,
+            identity: { verified: true, contract: qriContract, tradingDate,
                 pageUpdatedAt: options.evaluatedAt || "2026-08-26T08:00:00+09:00",
                 canonicalSignature: "c".repeat(64), canonicalVersionKey: qriVersion,
-                historyEntryId: options.historyEntryId || `${contract}|${tradingDate}`,
+                historyEntryId: options.historyEntryId || `${qriContract}|${tradingDate}`,
                 historyRevisionId: qriVersion } },
         weeklyContext: { available: true, origin: "formal_history", formalApplied: true,
             usingFallback: false, superseded: false, sourceDate: options.weeklyDate || "2026-08-21",
@@ -76,12 +77,13 @@ function input(options = {}) {
             effectiveWeight: weekly.effectiveWeight,
             weightedContribution: weekly.weightedContribution,
             metadata: { previousVersionKey: "weekly-v0", currentVersionKey: weeklyVersion } },
-        nearestLevelsContext: options.nearestLevelsContext === undefined ? {
+        nearestLevelsContext: options.nearestLevelsContext === undefined &&
+            qriContract === futuresContract ? {
             generatedFromFormalOnly: true, referenceOnly: false,
-            usingFallback: false, contract, sourceVersionKey: qriVersion,
+            usingFallback: false, contract: qriContract, sourceVersionKey: qriVersion,
             upper: { available: true, price: 66500, distance: 500, optionType: "CALL" },
             lower: { available: true, price: 65500, distance: 500, optionType: "PUT" } }
-            : options.nearestLevelsContext,
+            : options.nearestLevelsContext ?? null,
         dataQualityContext: { status: options.qualityStatus || "complete",
             warnings: options.warnings || [],
             sourceAvailability: { overallV2: true, currentPrice: true, qri: true, weekly: true },
@@ -107,6 +109,13 @@ test("valid same-session comparison", async () => {
     const result = await compare();
     assert.deepEqual([result.available, result.status, result.reason], [true, "comparable", null]);
 });
+test("M2 QRI11 and Futures12 compare on independent stable axes", async () => {
+    const axes = { qriContract: "2026-11", futuresContract: "2026-12",
+        nearestLevelsContext: null, historyEntryId: "2026-11|2026-08-26" };
+    const result = await compare(axes, axes);
+    assert.equal(result.available, true);
+    assert.equal(result.comparability.contractContext.relation, "independent_cross_contract");
+});
 test("baseline invalid", async () => {
     assert.equal((await Comparison.buildMorningComparisonV4({ baseline: {},
         currentSnapshot: await snapshot() })).reason, "baseline_invalid");
@@ -123,6 +132,17 @@ test("contract mismatch is classified as contract roll", async () => {
 });
 test("contract roll never produces score deltas", async () => {
     assert.equal((await compare({ contract: "2026-12" })).overallV2, null);
+});
+test("M8 futures rollover makes price delta unavailable", async () => {
+    const result = await compare({ futuresContract: "2026-12", nearestLevelsContext: null });
+    assert.equal(result.reason, "contract_roll");
+    assert.equal(result.price, null);
+});
+test("M9 QRI rollover makes positioning delta unavailable", async () => {
+    const result = await compare({ qriContract: "2026-12",
+        historyEntryId: "2026-12|2026-08-26", nearestLevelsContext: null });
+    assert.equal(result.reason, "contract_roll");
+    assert.equal(result.optionComponent, null);
 });
 test("trading date mismatch", async () => {
     assert.equal((await compare({ tradingDate: "2026-08-27", quoteDate: "2026-08-27",

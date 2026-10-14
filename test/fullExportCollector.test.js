@@ -106,7 +106,10 @@ function dependencies(overrides = {}) {
             formalTradingDate: "2026-09-07", contract: "2026-09", selectedBaselineId: "baseline-1",
             comparison: { status: "comparable", available: true,
                 divergence: { priceDelta: 125, supplyDemandDelta: 8, relation: "same_direction" },
-                dataQuality: { transition: "unchanged" } } }),
+                dataQuality: { transition: "unchanged" }, comparability: { contractContext: {
+                    qriContract: "2026-11", futuresContract: "2026-12",
+                    relation: "independent_cross_contract",
+                    relationAuthority: "verified_nikkei225_option_and_futures_identities" } } } }),
         getQriFormalIdentity: () => ({ status: "available", fact: {
             sourceClass: "formal_live", origin: "live", identityVerified: true,
             acquisitionVerified: true, usingFallback: false, referenceOnly: false,
@@ -353,6 +356,14 @@ test("Morning incomparable時にdeltaを推測しない", async () => {
     assert.equal(result.sections.morning.status, "unavailable");
     assert.equal(result.sections.morning.summary, null);
     assert.equal(result.compactSummary.morningChange.status, "unavailable");
+});
+
+test("Morning exportはQRIと先物の独立限月とrelationを保持", async () => {
+    const result = await collect();
+    assert.equal(result.sections.morning.status, "available");
+    assert.equal(result.sections.morning.summary.qriContract, "2026-11");
+    assert.equal(result.sections.morning.summary.futuresContract, "2026-12");
+    assert.equal(result.sections.morning.summary.contractRelation, "independent_cross_contract");
 });
 
 test("Weekly Futures formal mismatchはunavailable", async () => {

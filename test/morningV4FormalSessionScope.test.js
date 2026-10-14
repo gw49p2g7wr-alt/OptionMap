@@ -45,13 +45,24 @@ test("cross-date is not promoted to night session", () => { const result = evalu
     x.currentPriceLiveIdentity.qriTradingDateMapping.mappingSource = null; });
     assert.deepEqual([result.mappingVerified, result.diagnostics.overnightInferred], [false, false]); });
 test("missing QRI tradingDate", () => assert.equal(evaluate(x => { x.qriFormalIdentity.tradingDate = null; }).reason, "identity_unverified"));
+test("M4 unknown QRI contract rejects", () => assert.equal(evaluate(x => {
+    x.qriFormalIdentity.contract = null;
+}).comparisonEligible, false));
+test("M5 unknown futures contract rejects", () => assert.equal(evaluate(x => {
+    x.currentPriceLiveIdentity.contract = null;
+}).comparisonEligible, false));
 test("QRI invalid", () => assert.equal(evaluate(x => { x.qriFormalIdentity.identityVerified = false; }).reason, "identity_unverified"));
 test("price mapping unresolved", () => assert.equal(evaluate(x => { x.currentPriceLiveIdentity.qriTradingDateMapping.mappingVerified = false; }).reason, "price_mapping_unresolved"));
-test("contract mismatch", () => assert.equal(evaluate(x => { x.currentPriceLiveIdentity.contract = "2026-12"; }).reason, "contract_mismatch"));
-test("separately verified futures and QRI option contracts remain ineligible for Morning", () => {
-    const result = evaluate(x => { x.currentPriceLiveIdentity.contract = "2026-12"; });
-    assert.deepEqual([result.status, result.reason, result.comparisonEligible],
-        ["mismatch", "contract_mismatch", false]);
+test("M2 separately verified QRI11 and futures12 contracts are eligible", () => {
+    const result = evaluate(x => { x.qriFormalIdentity.contract = "2026-11";
+        x.currentPriceLiveIdentity.contract = "2026-12"; });
+    assert.deepEqual([result.status, result.reason, result.comparisonEligible,
+        result.contractRelation], ["verified", null, true, "independent_cross_contract"]);
+});
+test("M6 non-quarterly large-futures relation is unsupported", () => {
+    const unsupported = evaluate(x => { x.currentPriceLiveIdentity.contract = "2026-11"; });
+    assert.deepEqual([unsupported.status, unsupported.reason, unsupported.comparisonEligible],
+        ["mismatch", "unsupported_contract_relation", false]);
 });
 test("contract roll comparison", () => { const before = evaluate(); const after = evaluate(x => { x.qriFormalIdentity.contract = "2026-12";
     x.currentPriceLiveIdentity.contract = "2026-12"; }); assert.equal(Scope.compareFormalSessionScopes(before, after).reason, "contract_roll"); });

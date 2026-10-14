@@ -127,8 +127,13 @@
     function priceComparable(snapshot) {
         const price = snapshot.currentPrice;
         const mapping = price?.dateMapping;
+        const context = snapshot.comparability?.contractContext;
+        const relationValid = context ? context.qriContract === snapshot.qri.contract &&
+            context.futuresContract === price?.contract && ["same_contract",
+                "independent_cross_contract"].includes(context.relation) :
+            price?.contract === snapshot.qri.contract;
         return object(price) && finite(price.value) && price.value > 0 &&
-            price.contract === snapshot.qri.contract && price.quoteDate === snapshot.marketContext.formalTradingDate &&
+            relationValid && price.quoteDate === snapshot.marketContext.formalTradingDate &&
             mapping?.mappingVerified === true && mapping?.qriTradingDate === snapshot.marketContext.formalTradingDate &&
             mapping?.mappingSource === "same_date_explicit";
     }
@@ -206,7 +211,12 @@
         return deepFreeze({ comparisonVersion: COMPARISON_VERSION, available: true,
             status: "comparable", reason: null, baselineIdentity: identity(baseline),
             currentIdentity: identity(current), comparability: { comparable: true,
-                class: "same_formal_session", reasons: [], checks: comparisonChecks },
+                class: "same_formal_session", reasons: [], checks: comparisonChecks,
+                contractContext: clone(current.comparability.contractContext || {
+                    qriContract: current.qri.contract,
+                    futuresContract: current.currentPrice.contract,
+                    relation: "same_contract",
+                    relationAuthority: "legacy_v4_same_contract_invariant" }) },
             overallV2, optionComponent, weeklyComponent, price, dataQuality, divergence,
             diagnostics: { baselineVersionKey: baseline.versionKey,
                 currentVersionKey: current.versionKey, baselineCapturedAt: baseline.capturedAt,
@@ -215,6 +225,8 @@
                 qriIdentities: { baseline: clone(baseline.qri), current: clone(current.qri) },
                 priceIdentities: { baseline: clone(baseline.currentPrice),
                     current: clone(current.currentPrice) },
+                contractContexts: { baseline: clone(baseline.comparability.contractContext || null),
+                    current: clone(current.comparability.contractContext || null) },
                 weeklyIdentities: { baseline: clone(baseline.weekly),
                     current: clone(current.weekly) } } });
     }

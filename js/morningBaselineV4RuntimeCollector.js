@@ -4,7 +4,9 @@
         root?.OptionMapMorningV4RuntimeFactContract;
     const sessionApi = commonJs ? require("./morningV4FormalSessionScope.js") :
         root?.OptionMapMorningV4FormalSessionScope;
-    const api = factory(contractApi, sessionApi);
+    const freshnessApi = commonJs ? require("./fullExportFreshness.js") :
+        root?.OptionMapFullExportFreshness;
+    const api = factory(contractApi, sessionApi, freshnessApi);
     if (commonJs) module.exports = api;
     if (root) {
         root.OptionMapMorningBaselineV4RuntimeCollector = api;
@@ -18,7 +20,8 @@
         root.collectMorningBaselineV4ReadOnly = runtime.collect;
         root.getMorningBaselineV4RuntimeCollectorState = runtime.getState;
     }
-})(typeof window !== "undefined" ? window : globalThis, function (contractApi, sessionApi) {
+})(typeof window !== "undefined" ? window : globalThis,
+function (contractApi, sessionApi, freshnessApi) {
     "use strict";
     const COLLECTOR_VERSION = 1;
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -77,6 +80,11 @@
             const price = currentPriceFormalFact(priceState); const qri = qriState?.fact;
             const weekly = weeklyState?.fact; const overall = overallState?.envelope;
             const requestId = qri?.requestId || null;
+            const priceFreshness = freshnessApi?.classifyCurrentPriceSessionFreshness?.({
+                fact: price, observedAt: collectedAt,
+                expectedTradingDate: qri?.tradingDate || null,
+                fetchState: { status: priceState?.status, fetchedAt: price?.fetchedAt || null } }) ||
+                { status: "unavailable", reason: "freshness_api_unavailable" };
             const sessionScope = sessionApi?.evaluateFormalSessionScope?.({ capturedAt: collectedAt,
                 qriFormalIdentity: qri, currentPriceLiveIdentity: price,
                 overallV2Envelope: overall, weeklyFormalIdentity: weekly,
@@ -123,8 +131,11 @@
             const refreshAtEnd = getters.isRefreshInProgress?.() === true;
             const generationChanged = startFingerprint !== endFingerprint;
             const reasons = [...contract.reasons];
-            if (qri?.contract && price?.contract && qri.contract !== price.contract &&
-                !reasons.includes("contract_mismatch")) reasons.push("contract_mismatch");
+            if (priceFreshness.status !== "fresh") {
+                const freshnessReason = priceFreshness.status === "stale"
+                    ? "current_price_stale_reference" : "current_price_freshness_unavailable";
+                if (!reasons.includes(freshnessReason)) reasons.push(freshnessReason);
+            }
             if (qri?.tradingDate && price?.qriTradingDateMapping?.qriTradingDate &&
                 qri.tradingDate !== price.qriTradingDateMapping.qriTradingDate &&
                 !reasons.includes("trading_date_mismatch")) reasons.push("trading_date_mismatch");
@@ -139,7 +150,8 @@
                 marketContext: { captureCalendarDate: sessionScope.captureCalendarDate,
                     formalTradingDate: sessionScope.formalTradingDate,
                     sessionIdentity: sessionScope.scopeId,
-                    sessionMappingStatus: sessionScope.sessionMappingStatus },
+                    sessionMappingStatus: sessionScope.sessionMappingStatus,
+                    contractContext: clone(sessionScope.contractContext) },
                 overallV2Context: { origin: "formal_live", formalApplied: true,
                     superseded: false, logicVersion: overall.logicVersion,
                     evaluatedAt: overall.evaluatedAt, result: clone(overallResult),
@@ -176,6 +188,7 @@
                     qriReady: qriState?.status === "available", weeklyReady: weeklyState?.status === "available",
                     overallReady: overallState?.status === "available", sessionReady: sessionScope?.available === true,
                     dataQualityReady: Boolean(dataQuality), nearestLevelsIncluded: false,
+                    currentPriceFreshness: clone(priceFreshness),
                     refreshInProgress: refreshAtStart || refreshAtEnd,
                     startFingerprint, endFingerprint, fingerprintMatched: !generationChanged,
                     mixedAcquisitionDetected: reasons.includes("mixed_acquisition"),

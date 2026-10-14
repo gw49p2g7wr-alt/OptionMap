@@ -13,12 +13,14 @@
         "overall_identity_missing", "overall_input_mismatch",
         "current_price_identity_missing", "qri_revision_identity_missing", "qri_not_formal",
         "weekly_identity_missing", "weekly_component_mismatch", "data_quality_missing",
-        "nearest_levels_invalid", "mixed_acquisition", "contract_mismatch",
+        "nearest_levels_invalid", "mixed_acquisition", "unsupported_contract_relation",
+        "contract_mismatch",
         "trading_date_mismatch", "fallback_present"]);
     const FACT_CLASSES = Object.freeze({ required: Object.freeze(["marketSession", "overallV2",
         "currentPrice", "qri", "weekly", "dataQuality"]),
     optional: Object.freeze(["nearestLevels"]) });
-    const INVARIANTS = deepFreeze({ formalTradingDateMatched: true, contractMatched: true,
+    const INVARIANTS = deepFreeze({ formalTradingDateMatched: true,
+        independentContractAxesRequired: true, seriesLocalContractContinuityRequired: true,
         currentRequestRequired: true, fallbackForbidden: true, savedReferenceManualRestoredForbidden: true,
         overallInputBindingRequired: true, qriPriceAcquisitionBindingRequired: true,
         weeklyComponentBindingRequired: true, collectionGenerationStable: true,
@@ -149,6 +151,7 @@
             overallInputFingerprint: facts.overallV2.inputFingerprint,
             currentPriceVersionKey: facts.currentPrice.versionKey,
             currentPriceRequestId: facts.currentPrice.requestId,
+            contractContext: facts.marketSession.contractContext,
             qriCanonicalVersionKey: facts.qri.canonicalVersionKey,
             qriHistoryRevisionIdentity: facts.qri.historyRevisionIdentity,
             weeklyCurrentVersionKey: facts.weekly.currentVersionKey,
@@ -205,8 +208,12 @@
                 context.marketRefreshRequestId !== facts.qri.requestId ||
                 facts.weekly.requestContext.marketRefreshRequestId !==
                     context.marketRefreshRequestId) add("mixed_acquisition");
-            if (facts.qri.contract !== facts.currentPrice.contract ||
-                facts.nearestLevels && facts.nearestLevels.contract !== facts.qri.contract)
+            if (!["same_contract", "independent_cross_contract"]
+                .includes(facts.marketSession.contractRelation) ||
+                facts.marketSession.qriContract !== facts.qri.contract ||
+                facts.marketSession.futuresContract !== facts.currentPrice.contract)
+                add("unsupported_contract_relation");
+            if (facts.nearestLevels && facts.nearestLevels.contract !== facts.qri.contract)
                 add("contract_mismatch");
             if (facts.qri.tradingDate !== facts.marketSession.formalTradingDate ||
                 facts.currentPrice.qriTradingDateMapping.qriTradingDate !==

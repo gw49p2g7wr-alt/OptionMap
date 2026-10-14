@@ -77,6 +77,9 @@
         container.dataset.scopeId = model.identity.scopeId || "";
         container.dataset.formalTradingDate = model.identity.formalTradingDate || "";
         container.dataset.contract = model.identity.contract || "";
+        container.dataset.qriContract = model.identity.qriContract || "";
+        container.dataset.futuresContract = model.identity.futuresContract || "";
+        container.dataset.contractRelation = model.identity.contractRelation || "";
         container.dataset.inputFingerprint = model.identity.formalSnapshotInputFingerprint || "";
         container.dataset.restoreBindingVerified = String(model.identity.restoreBindingVerified === true);
         text("morningComparisonV4Status", model.status);
@@ -85,6 +88,9 @@
         text("morningBaselineV4AutomaticWindowStatus", formalStatus?.automaticLabel ||
             "自動保存：状態確認待ち");
         text("morningComparisonV4CapturedAt", model.capturedAt);
+        text("morningComparisonV4Contracts", model.identity.qriContract &&
+            model.identity.futuresContract
+            ? `QRI ${model.identity.qriContract} / 先物 ${model.identity.futuresContract}` : "—");
         text("morningComparisonV4Score", model.score ?
             `朝 ${model.score.baselineLabel} ${model.score.baseline} → 現在 ${model.score.currentLabel} ${model.score.current}` : "—");
         text("morningComparisonV4ScoreDelta", model.score ?

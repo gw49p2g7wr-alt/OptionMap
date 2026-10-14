@@ -13,6 +13,10 @@ async function fixture() {
         marketSession: { formalTradingDate: "2026-08-26",
             captureCalendarDate: "2026-08-26", sessionScopeId: "qri-session-2026-08-26-2026-09",
             sessionMappingStatus: "verified", mappingVerified: true,
+            qriContract: "2026-09", futuresContract: "2026-09",
+            contractRelation: "same_contract", contractContext: { qriContract: "2026-09",
+                futuresContract: "2026-09", relation: "same_contract",
+                relationAuthority: "verified_nikkei225_option_and_futures_identities" },
             source: "formal_session_scope_policy", generation: generation("marketSession") },
         overallV2: { sourceClass: "formal_live", formalApplied: true, referenceOnly: false,
             result: { status: "complete", direction: 45 }, logicVersion: "overall-v2-weights-55-45",
@@ -127,7 +131,8 @@ test("DataQuality source identity mismatch", async () => {
 });
 test("nearestLevels is optional", async () => {
     const result = await evaluate(x => { delete x.facts.nearestLevels; });
-    assert.equal(result.ready, true);
+    assert.equal(result.reasons.includes("unsupported_contract_relation"), false);
+    assert.equal(result.reasons.includes("contract_mismatch"), false);
     assert.equal(result.facts.nearestLevels, null);
 });
 test("provided invalid nearestLevels is rejected", async () => {
@@ -138,9 +143,21 @@ test("mixed QRI and CurrentPrice acquisition", async () => {
     assert.ok((await evaluate(x => { x.facts.currentPrice.requestId = "request-b"; }))
         .reasons.includes("mixed_acquisition"));
 });
-test("contract mismatch", async () => {
-    assert.ok((await evaluate(x => { x.facts.currentPrice.contract = "2026-12"; }))
-        .reasons.includes("contract_mismatch"));
+test("independent verified contract axes are accepted", async () => {
+    const result = await evaluate(x => {
+        x.facts.currentPrice.contract = "2026-12";
+        Object.assign(x.facts.marketSession, { futuresContract: "2026-12",
+            contractRelation: "independent_cross_contract",
+            contractContext: { qriContract: "2026-09", futuresContract: "2026-12",
+                relation: "independent_cross_contract",
+                relationAuthority: "verified_nikkei225_option_and_futures_identities" } });
+    });
+    assert.equal(result.reasons.includes("unsupported_contract_relation"), false);
+    assert.equal(result.reasons.includes("contract_mismatch"), false);
+});
+test("unsupported relation is rejected", async () => {
+    assert.ok((await evaluate(x => { x.facts.marketSession.contractRelation = "unsupported"; }))
+        .reasons.includes("unsupported_contract_relation"));
 });
 test("tradingDate mismatch", async () => {
     assert.ok((await evaluate(x => {
