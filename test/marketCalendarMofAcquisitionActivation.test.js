@@ -40,6 +40,8 @@ async function bootstrap({ readFailure = false } = {}) {
     "./js/morningV5FormalStore.js": { createProductionStore() {
       throw Error("morning_v5_store_must_remain_dormant"); } },
     "./js/morningV5FormalWriter.js": { createMainOwnedWriter: () => ({ close() {} }) },
+    "./js/morningV5MainAuthorityBinding.js": { createMainAuthorityBinding: () => ({
+      evaluate: async () => ({ writeCandidate: false }), currentAuthorityBinding: async () => null }) },
     "./js/security/weeklyListingAcquisitionDiagnostics.js": { createWeeklyListingAcquisitionDiagnostics: () => ({}) },
     dotenv: { config() {} }
   };
@@ -140,7 +142,7 @@ test("P13 BOJ remains writer-ineligible without coverage or identity expansion",
   assert.equal(Registry.getSource("jp-boj-calendar").parserVersion, 1);
 });
 test("narrow preload APIs stay fixed; exact13 input supported, override/14/source spoof rejected", async () => {
-  const f = await bootstrap(); assert.equal(Object.keys(f.bridge).length, 9);
+  const f = await bootstrap(); assert.equal(Object.keys(f.bridge).length, 10);
   const r = await f.bridge.checkCalendarSources({ sourceIds: expected }); assert.equal(r.successfulSourceCount, 13);
   for (const input of [{ sourceIds: [...expected, "unknown-source"] }, { sourceIds: [MOF], runtimeStateOwner: "main" },
     { sourceIds: [MOF], acquisitionEnabled: true }]) assert.equal((await f.bridge.checkCalendarSources(input)).errorCode, "invalid_argument");

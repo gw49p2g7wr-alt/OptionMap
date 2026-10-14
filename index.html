@@ -1624,6 +1624,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "fetchOpenInterestListing",
     "fetchParticipantListing",
     "fetchQriOptionPage",
+    "evaluateMorningV5Formal",
     "requestCalendarSource",
     "readMorningV5Formal",
     "saveFullExportJson"
@@ -6755,8 +6756,13 @@ function refreshAllMarketData() {
         initializeQriReferenceAcquisitionRuntime().completeFormalRender(requestId);
         initializeQriMajorSqAcquisitionRuntime().completeFormalRender(requestId);
     });
-
-    return marketRefreshPromise;
+    const completedRefresh = marketRefreshPromise;
+    return completedRefresh.then(async result => {
+        const formal = await optionMapBridge.evaluateMorningV5Formal();
+        if (["committed", "unchanged"].includes(formal?.status))
+            await window.OptionMapMorningV5FormalReadSurfaces?.initialize?.();
+        return result;
+    });
 }
 
 window.refreshAllMarketData = refreshAllMarketData;

@@ -134,7 +134,9 @@ test("index has no Session Scope or Morning evidence wiring", () => { const html
         "beginFormalOptionAvailabilityEvidencePublication"), html.indexOf("if (payload.canonicalV2?.openInterestStatus"));
     const withoutComparisonLifecycle = block
         .replaceAll("invalidateMorningComparisonV4Runtime", "")
-        .replaceAll("publishMorningComparisonV4Runtime", "");
+        .replaceAll("publishMorningComparisonV4Runtime", "")
+        .replaceAll("evaluateMorningV5Formal", "")
+        .replaceAll("OptionMapMorningV5FormalReadSurfaces", "");
     assert.doesNotMatch(withoutComparisonLifecycle, /SessionScope|Morning|DataQuality/); });
 test("index loads foundations before runtime", () => { const html = fs.readFileSync(path.join(
     __dirname, "../index.html"), "utf8"); assert.ok(html.indexOf("formalOptionAvailabilityEvidence.js") <

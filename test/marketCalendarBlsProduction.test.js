@@ -154,7 +154,7 @@ test("existing renderer integration does not overwrite main-managed v2 Bls or CP
   await runtime.startup(); assert.equal(f.seed.diagnostics().successfulWrites, before);
   assert.equal((await f.store.read()).value.reevaluation.status, "completed");
 });
-test("Bls production dependency graph has no Formal writer/reader and browser capabilities remain nine", () => {
+test("Bls production dependency graph has no Calendar Formal writer/reader and browser capabilities remain ten", () => {
   const visited = new Set(); function visit(file) {
     if (visited.has(file)) return; visited.add(file);
     if (file.includes("/marketCalendarHistory/"))
@@ -166,6 +166,6 @@ test("Bls production dependency graph has no Formal writer/reader and browser ca
   visit(path.join(__dirname, "../js/marketCalendarRuntime/blsProductionCheck.js"));
   visit(path.join(__dirname, "../js/marketCalendarRuntime/blsRuntimeStateElectron.js"));
   const source = fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8");
-  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 9);
+  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 10);
   assert.doesNotMatch(source, /blsRuntimeStateElectron|routeReevaluationPolicy/);
 });

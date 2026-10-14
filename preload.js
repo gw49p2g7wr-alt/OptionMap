@@ -56,6 +56,11 @@ function invokeMorningV5Read(args) {
       scope: "calendar_day", calendarDate: request.calendarDate }));
 }
 
+function invokeMorningV5Evaluation(args) {
+  if (args.length !== 0) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("evaluate-formal-morning-v5");
+}
+
 function invokeCalendarSource(args) {
   const request = args[0];
   if (args.length !== 1 || !request || typeof request !== "object" ||
@@ -110,6 +115,7 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
     invokeUrlChannel("download-daytrading-excel", args),
   checkCalendarSources: (...args) => invokeCalendarCheck(args),
   requestCalendarSource: (...args) => invokeCalendarSource(args),
+  evaluateMorningV5Formal: (...args) => invokeMorningV5Evaluation(args),
   readMorningV5Formal: (...args) => invokeMorningV5Read(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)
 }));

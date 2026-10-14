@@ -35,6 +35,7 @@ let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const morningV5FormalStore = require("./js/morningV5FormalStore.js");
 const morningV5FormalWriterApi = require("./js/morningV5FormalWriter.js");
+const morningV5MainAuthorityBindingApi = require("./js/morningV5MainAuthorityBinding.js");
 const { createWeeklyListingAcquisitionDiagnostics } = require(
   "./js/security/weeklyListingAcquisitionDiagnostics.js"
 );
@@ -46,6 +47,7 @@ const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisition
   fetchImpl: (url, options) => net.fetch(url, options)
 });
 let morningV5FormalWriter = null;
+let morningV5MainAuthorityBinding = null;
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
   invalid_url: "取得先URLが不正です",
@@ -284,6 +286,22 @@ ipcMain.handle("read-formal-morning-v5", async (event, request) => {
     return { status: "unavailable", reason: "formal_morning_v5_read_failed",
       scope: current ? "current" : "calendar_day",
       calendarDate: day ? request.calendarDate : null, records: [], baselines: [] };
+  }
+});
+
+ipcMain.handle("evaluate-formal-morning-v5", async event => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow || !morningV5MainAuthorityBinding ||
+      !morningV5FormalWriter) return { status: "unavailable", reason: "invalid_sender" };
+  try {
+    const accepted = await morningV5MainAuthorityBinding.evaluate();
+    if (!accepted.writeCandidate) return accepted;
+    const ticket = await morningV5FormalWriter.registerMainAcceptedObservation({
+      observation: accepted.observation, generationBinding: accepted.generationBinding
+    });
+    return morningV5FormalWriter.commitAcceptedObservation(ticket);
+  } catch (error) {
+    return { status: "unavailable", reason: error?.message || "formal_morning_v5_failed" };
   }
 });
 
@@ -689,11 +707,26 @@ function createWindow() {
 
 app.whenReady().then(()=>{
   const storeAuthority = Object.freeze({ getUserDataPath: () => app.getPath("userData") });
+  const storeFactory = () => morningV5FormalStore.createProductionStore(storeAuthority);
+  const getFreshSnapshot = async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    return mainWindow.webContents.executeJavaScript(`(() => ({
+      qri: window.getQriFormalIdentityFact?.() || null,
+      weekly: window.getWeeklyFormalIdentityFact?.() || null,
+      weeklyCandidate: window.getWeeklyCandidateState?.() || null,
+      overall: window.getOverallV2FormalEnvelope?.() || null,
+      reference: window.getMorningV5ReferencePriceFact?.() || null
+    }))()`);
+  };
+  morningV5MainAuthorityBinding = morningV5MainAuthorityBindingApi.createMainAuthorityBinding({
+    getFreshSnapshot,
+    getCalendarContext: observedAt => ({ asKnownAt: observedAt,
+      value: { diagnostics: calendarShadowRuntime?.diagnostics?.() || {} } }),
+    storeFactory
+  });
   morningV5FormalWriter = morningV5FormalWriterApi.createMainOwnedWriter({
-    storeFactory: () => morningV5FormalStore.createProductionStore(storeAuthority),
-    // M5-2 intentionally exposes no renderer registration path. A future main-owned
-    // accepted-observation source must provide this binding before any production write.
-    getCurrentAuthorityBinding: () => null
+    storeFactory,
+    getCurrentAuthorityBinding: () => morningV5MainAuthorityBinding.currentAuthorityBinding()
   });
   productionCanaryContext=process.versions?.electron
     ? require("./js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js").initializeProductionContext() : null;
@@ -709,6 +742,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   morningV5FormalWriter?.close();
   morningV5FormalWriter = null;
+  morningV5MainAuthorityBinding = null;
 });
 }
 }

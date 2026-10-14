@@ -12,6 +12,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), 
 const expectedKeys = [
   "checkCalendarSources",
   "downloadJpxExcel",
+  "evaluateMorningV5Formal",
   "fetchJpxPage",
   "fetchOpenInterestListing",
   "fetchParticipantListing",
@@ -20,7 +21,7 @@ const expectedKeys = [
   "requestCalendarSource",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "readMorningV5Formal", "requestCalendarSource",
+const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "readMorningV5Formal", "requestCalendarSource",
   "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
@@ -89,7 +90,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact nine-method narrow bridge", () => {
+test("preload publishes only the exact ten-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -151,6 +152,11 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
     { scope: "current", calendarDate: "2026-10-15" }])
     assert.equal((await api.readMorningV5Formal(value)).errorCode, "invalid_argument");
   assert.equal(calls.length, readCount);
+  await api.evaluateMorningV5Formal();
+  assert.deepEqual(calls.at(-1), ["evaluate-formal-morning-v5", undefined]);
+  const evaluationCount = calls.length;
+  assert.equal((await api.evaluateMorningV5Formal({ fake: true })).errorCode, "invalid_argument");
+  assert.equal(calls.length, evaluationCount);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {
