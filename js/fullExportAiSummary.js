@@ -14,7 +14,7 @@
     const SECTION_ORDER = Object.freeze([
         "marketSnapshot", "overallV2", "qriOptions", "qriOptionsNextContract",
         "qriOptionsMajorSqNextContract", "qriOptionIv", "qriHistoryComparison", "weeklyFutures",
-        "weeklyOptions", "participants", "morning", "importantLevels", "intelligence"
+        "weeklyOptions", "participants", "morning", "morningV5Formal", "importantLevels", "intelligence"
     ]);
     const READING_PURPOSES = Object.freeze({
         marketSnapshot: "current_market_snapshot",
@@ -28,6 +28,7 @@
         weeklyOptions: "formal_weekly_options_details",
         participants: "participant_data_details",
         morning: "formal_morning_comparison",
+        morningV5Formal: "saved_formal_morning_v5_observation",
         importantLevels: "existing_important_levels_projection",
         intelligence: "existing_intelligence_summary"
     });
@@ -146,6 +147,15 @@
             baselineIdentity: identity(section?.details?.baselineIdentity),
             currentIdentity: identity(section?.details?.currentIdentity) };
     }
+    function morningV5(sections) {
+        const name = "morningV5Formal", section = sectionAt(sections, name);
+        const summary = object(section?.summary) ? section.summary : null;
+        return { ...sourceBase(section, name), observationId: field(summary, "observationId"),
+            observedAt: field(summary, "observedAt"), qriContract: field(summary, "qriContract"),
+            futuresContract: field(summary, "futuresContract"),
+            contractRelation: field(summary, "contractRelation"),
+            aggregateComparison: field(summary, "aggregateComparison") };
+    }
 
     function issueKey(issue) {
         return [issue.section, issue.issueType, issue.status, issue.reason]
@@ -242,7 +252,8 @@
                 options: datedSource(source.sections, "weeklyOptions"),
                 participants: datedSource(source.sections, "participants")
             },
-            morning: morning(source.sections), dataQuality: dataQuality(source),
+            morning: morning(source.sections), morningV5Formal: morningV5(source.sections),
+            dataQuality: dataQuality(source),
             readingOrder: SECTION_ORDER.filter(name => sectionAt(source.sections, name))
                 .map(name => ({ section: name,
                 pointer: pointer(name), purpose: READING_PURPOSES[name] }))

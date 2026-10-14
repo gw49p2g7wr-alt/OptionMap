@@ -141,11 +141,15 @@
         panel.querySelector("#timeTravelSelectedDate").textContent = japaneseDate(result.calendarDate);
         const observation = panel.querySelector("#timeTravelObservation"), morning = panel.querySelector(
             "#timeTravelMorning"), qri = panel.querySelector("#timeTravelQriStatus");
+        const morningV5 = panel.querySelector("#timeTravelMorningV5");
         const status = panel.querySelector("#timeTravelArchiveStatus");
         if (status) status.textContent = result.status === "partial" ? "一部保存済み（partial）：category別の保存状況を確認してください" :
             result.available ? "保存済みの履歴・現在値ではありません" :
                 result.status === "unavailable" ? "unavailable：保存履歴を確認できません" : "保存データなし";
         observation.replaceChildren(); morning.replaceChildren();
+        if (morningV5) globalThis.OptionMapMorningV5FormalReadSurfaces?.render?.(morningV5,
+            globalThis.OptionMapMorningV5FormalReadSurfaces.project(result.morningV5Formal,
+                "calendar_day"), { historical: true });
         if (result.status === "schema_mismatch") {
             append(panel.ownerDocument, observation, "p", "time-travel-empty", "保存データの形式が一致しません");
         } else if (result.status === "unavailable") {
@@ -258,7 +262,7 @@
         }
         function clearHistorical() {
             ++viewGeneration; priceChart?.destroy?.(); priceChart = null; panel.hidden = true; button.disabled = false;
-            for (const id of ["timeTravelObservation", "timeTravelMorning", "timeTravelTimeline", "timeTravelCalendar"]) {
+            for (const id of ["timeTravelObservation", "timeTravelMorning", "timeTravelMorningV5", "timeTravelTimeline", "timeTravelCalendar"]) {
                 panel.querySelector(`#${id}`)?.replaceChildren();
             }
             for (const id of ["timeTravelSelectedDate", "timeTravelArchiveStatus", "timeTravelQriStatus",

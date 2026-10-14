@@ -172,7 +172,7 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     const result = await collect();
     assert.equal(fullExport.validateFullExport(result).valid, true);
     assert.deepEqual(Object.keys(result.sections),
-        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "qriOptionIv"]);
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "morningV5Formal", "qriOptionIv"]);
     assert.equal(result.sections.participants.status, "partial");
     assert.equal(result.sections.aiSummary.status, "available");
     assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
@@ -444,7 +444,9 @@ test("freshness statusをそのまま保持", async () => {
         { section: "qriOptionsNextContract", status: "unavailable",
             reason: "section_unavailable" },
         { section: "qriOptionsMajorSqNextContract", status: "unavailable",
-            reason: "section_unavailable" }]);
+            reason: "section_unavailable" },
+        { section: "morningV5Formal", status: "unavailable",
+            reason: "formal_observation_not_saved" }]);
 });
 
 test("unavailable sectionは提供freshnessがfreshでも昇格させない", async () => {
@@ -514,6 +516,6 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     assert.equal(result.sections.participants.status, "unavailable");
     assert.equal(result.sections.participants.reason, "participant_read_failed");
     assert.deepEqual(Object.keys(result.sections),
-        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "qriOptionIv"]);
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "morningV5Formal", "qriOptionIv"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

@@ -141,17 +141,28 @@
                 { status: "unavailable", reason: projected.status, value: null };
         } catch (_error) { return { status: "unavailable", reason: "historical_projection_failed", value: null }; }
     }
+    async function morningV5For(reader, calendarDate) {
+        if (typeof reader !== "function") return { status: "absent", value: null };
+        try {
+            const value = await reader({ scope: "calendar_day", calendarDate });
+            return value?.status === "available" ? { status: "available", value } :
+                value?.status === "missing" ? { status: "absent", value } :
+                    { status: "unavailable", value: null };
+        } catch (_error) { return { status: "unavailable", value: null }; }
+    }
     function section(part, count) {
         return { status: part.status !== "available" && part.status !== "absent" ? "unavailable" :
             count ? "saved" : "missing", storageStatus: part.status, count,
         reason: part.reason || (part.status === "schema_mismatch" ? "schema_mismatch" : null) };
     }
     async function read({ calendarDate, indexedDB = root?.indexedDB,
-        localStorage = root?.localStorage } = {}) {
+        localStorage = root?.localStorage,
+        readMorningV5 = root?.optionMapBridge?.readMorningV5Formal } = {}) {
         if (!validDate(calendarDate)) return Object.freeze({ status: "invalid", calendarDate,
             available: false });
-        const [observations, morning, qri, prices, calendar] = await Promise.all([
+        const [observations, morning, morningV5, qri, prices, calendar] = await Promise.all([
             observationsFor(indexedDB, calendarDate), morningFor(localStorage, calendarDate),
+            morningV5For(readMorningV5, calendarDate),
             qriFor(indexedDB, calendarDate), priceSnapshotsFor(indexedDB, calendarDate),
             calendarFor(indexedDB, calendarDate)
         ]);
@@ -160,7 +171,9 @@
             calendarEvents = calendar.value || [], latestObservation = observationList.at(-1) || null,
             contracts = [...new Set(qriEntries.map(item => item.contract))].sort();
         const sections = { observation: section(observations, observationList.length),
-            morning: section(morning, morningList.length), qri: section(qri, qriEntries.length),
+            morning: section(morning, morningList.length),
+            morningV5Formal: section(morningV5, morningV5.value?.records?.length || 0),
+            qri: section(qri, qriEntries.length),
             priceSnapshots: section(prices, priceSnapshots.length), calendar: section(calendar, calendarEvents.length) };
         const available = Object.values(sections).some(item => item.status === "saved"),
             incomplete = Object.values(sections).some(item => item.status !== "saved");
@@ -170,13 +183,16 @@
             observations: clone(observationList), latestPriceSnapshot: clone(priceSnapshots.at(-1) || null),
             latestObservation: clone(latestObservation), observationCount: observationList.length,
             morningBaselines: clone(morningList), priceSnapshots: clone(priceSnapshots), calendarEvents: clone(calendarEvents),
+            morningV5Formal: clone(morningV5.value || { status: "missing", reason: null,
+                scope: "calendar_day", calendarDate, records: [] }),
             qri: Object.freeze({ available: contracts.length > 0,
                 contracts, selectedContract: contracts[0] || null, revisions: clone(qriEntries) }),
             availability: Object.freeze({ observation: observations.status, morning: morning.status,
                 qri: qri.status, priceSnapshots: prices.status, calendar: calendar.status,
+                morningV5Formal: morningV5.status,
                 weeklyOptions: "not_queried", weeklyFutures: "not_queried",
                 participant: "not_queried", jpxSnapshot: "not_queried" }) });
     }
     return Object.freeze({ DATABASES, read, observationsFor, priceSnapshotsFor, qriFor, morningFor,
-        calendarFor, observedOn, knowledgeAtFor });
+        calendarFor, morningV5For, observedOn, knowledgeAtFor });
 });

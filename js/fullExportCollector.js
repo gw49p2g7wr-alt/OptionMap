@@ -11,13 +11,15 @@
         root?.OptionMapFullExportAiSummary;
     const qriOptionIvApi = commonJs ? require("./fullExportQriOptionIv.js") :
         root?.OptionMapFullExportQriOptionIv;
+    const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
+        root?.OptionMapMorningV5FormalReadSurfaces;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
-        aiSummaryApi, qriOptionIvApi);
+        aiSummaryApi, qriOptionIvApi, morningV5Api);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
-    qriOptionIvApi) {
+    qriOptionIvApi, morningV5Api) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -628,12 +630,17 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             const weeklyOptions = await createWeeklyOptionsSection(configuration);
             const participants = await createParticipantSection(configuration);
             const intelligence = await createIntelligenceSection(configuration);
+            let morningV5Response;
+            try { morningV5Response = await configuration.readMorningV5Formal?.({ scope: "current" }); }
+            catch (_error) { morningV5Response = { status: "unavailable", records: [] }; }
+            const morningV5Formal = morningV5Api?.exportSection?.(morningV5Response) ||
+                unavailable("formal_morning_v5_reader_unavailable", "formal-morning-v5");
             const coreSections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,
                 qriOptionsNextContract,
                 qriOptionsMajorSqNextContract,
                 qriHistoryComparison: qri.qriHistoryComparison,
-                weeklyFutures, weeklyOptions, participants, intelligence };
+                weeklyFutures, weeklyOptions, participants, intelligence, morningV5Formal };
             const freshnessIssues = Object.entries(coreSections)
                 .filter(([, section]) => section.freshness?.status !== "fresh")
                 .map(([section, value]) => ({ section, status: value.freshness?.status || null,

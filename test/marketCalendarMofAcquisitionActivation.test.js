@@ -139,8 +139,8 @@ test("P13 BOJ remains writer-ineligible without coverage or identity expansion",
   assert.equal(E.policyFor(3).permissions.entries.find(p => p.sourceId === "jp-boj-calendar").permission, "writer_ineligible");
   assert.equal(Registry.getSource("jp-boj-calendar").parserVersion, 1);
 });
-test("eight preload APIs unchanged; exact13 input supported, override/14/source spoof rejected", async () => {
-  const f = await bootstrap(); assert.equal(Object.keys(f.bridge).length, 8);
+test("narrow preload APIs stay fixed; exact13 input supported, override/14/source spoof rejected", async () => {
+  const f = await bootstrap(); assert.equal(Object.keys(f.bridge).length, 9);
   const r = await f.bridge.checkCalendarSources({ sourceIds: expected }); assert.equal(r.successfulSourceCount, 13);
   for (const input of [{ sourceIds: [...expected, "unknown-source"] }, { sourceIds: [MOF], runtimeStateOwner: "main" },
     { sourceIds: [MOF], acquisitionEnabled: true }]) assert.equal((await f.bridge.checkCalendarSources(input)).errorCode, "invalid_argument");

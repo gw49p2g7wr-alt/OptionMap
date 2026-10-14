@@ -16,10 +16,11 @@ const expectedKeys = [
   "fetchOpenInterestListing",
   "fetchParticipantListing",
   "fetchQriOptionPage",
+  "readMorningV5Formal",
   "requestCalendarSource",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "requestCalendarSource",
+const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "readMorningV5Formal", "requestCalendarSource",
   "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
@@ -82,7 +83,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact eight-method narrow bridge", () => {
+test("preload publishes only the exact nine-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -135,6 +136,15 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
   for (const value of [null, [], { sourceIds: [] }, { sourceIds: ["bad id"] }, { extra: true }])
     assert.equal((await api.checkCalendarSources(value)).errorCode, "invalid_argument");
   assert.equal(calls.length, before);
+  await api.readMorningV5Formal({ scope: "current" });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),
+    ["read-formal-morning-v5", { scope: "current" }]);
+  const readCount = calls.length;
+  for (const value of [null, {}, { scope: "other" },
+    { scope: "calendar_day", calendarDate: "2026-99-99" },
+    { scope: "current", calendarDate: "2026-10-15" }])
+    assert.equal((await api.readMorningV5Formal(value)).errorCode, "invalid_argument");
+  assert.equal(calls.length, readCount);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {

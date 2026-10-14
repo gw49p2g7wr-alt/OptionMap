@@ -24,13 +24,14 @@ test("Morning v4 keeps independent authority axes and series-local continuity", 
         /baseline\.qri\.contract === current\.qri\.contract/);
 });
 
-test("Morning v5 stays disconnected from v4 storage UI and Full Export", () => {
+test("Morning v5 read integration stays disconnected from v4 storage", () => {
     for (const name of ["morningBaselineV4.js", "morningBaselineV4Storage.js",
-        "morningComparisonV4.js", "fullExportCollector.js"]) {
+        "morningComparisonV4.js"]) {
         assert.doesNotMatch(source(name), /MorningV5|morningV5|morning-v5/);
     }
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    assert.doesNotMatch(html, /id="[^"]*morningV5/i);
+    assert.match(html, /id="morningV5FormalCurrent"/);
+    assert.match(source("fullExportCollector.js"), /morningV5Formal/);
 });
 
 test("Formal Morning v5 contract stays isolated from v4 storage and production persistence", () => {

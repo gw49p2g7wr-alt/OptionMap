@@ -251,6 +251,42 @@ ipcMain.handle("save-full-export-json", (event, request) => {
   return fullExportSaveService.save(owner, request);
 });
 
+ipcMain.handle("read-formal-morning-v5", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { status: "unavailable", reason: "invalid_sender",
+    scope: null, calendarDate: null, records: [], baselines: [] };
+  const current = request && typeof request === "object" && !Array.isArray(request) &&
+    Object.keys(request).length === 1 && request.scope === "current";
+  const day = request && typeof request === "object" && !Array.isArray(request) &&
+    Object.keys(request).sort().join("|") === "calendarDate|scope" &&
+    request.scope === "calendar_day" && typeof request.calendarDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(request.calendarDate) &&
+    Number.isFinite(Date.parse(`${request.calendarDate}T00:00:00.000Z`)) &&
+    new Date(`${request.calendarDate}T00:00:00.000Z`).toISOString().slice(0, 10) === request.calendarDate;
+  if (!current && !day) return { status: "unavailable", reason: "invalid_argument",
+    scope: null, calendarDate: null, records: [], baselines: [] };
+  try {
+    const store = morningV5FormalStore.createProductionStore(Object.freeze({
+      getUserDataPath: () => app.getPath("userData")
+    }));
+    const all = (await store.load()).observations;
+    const records = day ? all.filter(record =>
+      record.observation.calendarDay === request.calendarDate) : all;
+    const baselineIds = new Set(records.map(record =>
+      record.observation.baselineSelection.baselineObservationId).filter(Boolean));
+    const baselines = all.filter(record => baselineIds.has(record.observationId)).map(record => ({
+      observationId: record.observationId, observedAt: record.observation.observedAt
+    }));
+    return { status: records.length ? "available" : "missing", reason: null,
+      scope: current ? "current" : "calendar_day",
+      calendarDate: day ? request.calendarDate : null, records, baselines };
+  } catch (_error) {
+    return { status: "unavailable", reason: "formal_morning_v5_read_failed",
+      scope: current ? "current" : "calendar_day",
+      calendarDate: day ? request.calendarDate : null, records: [], baselines: [] };
+  }
+});
+
 ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
   try {
     const requestedUrl = requireAllowedUrl(

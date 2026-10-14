@@ -96,6 +96,9 @@ test("V7 first observation commits once and fresh readers resolve all supported 
     assert.equal((await reader.latestAcceptedObservation()).observationId, first.observationId);
     assert.deepEqual((await reader.observationSlotHistory(first.observationSlotId))
         .map(item => item.observationId), [first.observationId]);
+    assert.deepEqual((await reader.calendarDayHistory("2026-10-14"))
+        .map(item => item.observationId), [first.observationId]);
+    assert.deepEqual(await reader.calendarDayHistory("2026-10-15"), []);
 });
 
 test("V7 exact and transport-only semantic duplicates both perform write0", async t => {
@@ -219,8 +222,10 @@ test("V9 V4 and Calendar boundaries remain byte-identical and no write surface i
     const sources = ["js/morningV5FormalStore.js", "js/morningV5FormalWriter.js"]
         .map(name => fs.readFileSync(path.join(root, name), "utf8")).join("\n");
     assert.doesNotMatch(sources, /optionMapMorningBaselinesV4|ipcMain|ipcRenderer|\bfetch\s*\(|https?:|marketCalendar.*Writer/i);
-    assert.doesNotMatch(fs.readFileSync(path.join(root, "preload.js"), "utf8"),
-        /morningV5Formal|optionMapMorningV5Formal/i);
+    const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+    assert.match(preload, /readMorningV5Formal/);
+    assert.doesNotMatch(preload,
+        /commitAcceptedObservation|registerMainAcceptedObservation|saveMorningV5|arbitrary/i);
     assert.deepEqual(protectedFiles.map(name => crypto.createHash("sha256")
         .update(fs.readFileSync(path.join(root, name))).digest("hex")), hashes);
 });

@@ -156,7 +156,7 @@ test("H9 arbitrary request fields and renderer startup cannot enable a source", 
   });
   for (const request of [{enabledSourceIds:[MOF]}, {acquisitionEnabled:true}, {sourceSetVersion:2}, {authorityVersion:3}])
     assert.equal((await bridge.checkCalendarSources(request)).errorCode, "invalid_argument");
-  assert.equal(calls, 0); assert.equal(Object.keys(bridge).length, 8);
+  assert.equal(calls, 0); assert.equal(Object.keys(bridge).length, 9);
 });
 test("H10 pure selector chooses only explicitly enabled registered entries", () => {
   assert.deepEqual(Registry.selectRegisteredEnabledSourceIds([...ORDER, MOF], [ORDER[1], ORDER[0]]), ORDER.slice(0, 2));

@@ -101,6 +101,12 @@ function createStore({ root, targetEnvironment, crashAt = null } = {}) {
         const value = await load(); return freeze(clone(value.observations.filter(record =>
             record.observationSlotId === observationSlotId)));
     }
+    async function calendarDayHistory(calendarDay) {
+        if (typeof calendarDay !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(calendarDay))
+            fail("calendar_day_invalid");
+        const value = await load(); return freeze(clone(value.observations.filter(record =>
+            record.observation.calendarDay === calendarDay)));
+    }
     async function commit(observation) {
         if (!await Observation.validateFormalObservation(observation)) fail("observation_invalid");
         const before = await load();
@@ -157,7 +163,8 @@ function createStore({ root, targetEnvironment, crashAt = null } = {}) {
             record: freeze(clone(record)) });
     }
     return freeze({ storeId: STORE_ID, storeVersion: STORE_VERSION, file,
-        load, commit, readByObservationId, latestAcceptedObservation, observationSlotHistory });
+        load, commit, readByObservationId, latestAcceptedObservation, observationSlotHistory,
+        calendarDayHistory });
 }
 
 function createIsolatedStore(options = {}) {

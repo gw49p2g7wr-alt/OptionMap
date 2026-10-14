@@ -27,7 +27,7 @@
         if (!["sourcePointer", "pointer", "authoritativeRoot"].includes(String(key))) return false;
         if (!path.startsWith("$.sections.aiSummary.") &&
             !path.startsWith("$.summary.") && !path.startsWith("$.details.")) return false;
-        return value === "/sections" || /^\/sections\/(?:marketSnapshot|overallV2|qriOptions|qriOptionsNextContract|qriOptionsMajorSqNextContract|qriOptionIv|qriHistoryComparison|weeklyFutures|weeklyOptions|participants|morning|importantLevels|intelligence)(?:\/freshness)?$/.test(value) ||
+        return value === "/sections" || /^\/sections\/(?:marketSnapshot|overallV2|qriOptions|qriOptionsNextContract|qriOptionsMajorSqNextContract|qriOptionIv|qriHistoryComparison|weeklyFutures|weeklyOptions|participants|morning|morningV5Formal|importantLevels|intelligence)(?:\/freshness)?$/.test(value) ||
             /^\/(?:warnings|compactSummary\/freshnessIssues)\/\d+$/.test(value);
     };
     const plainObject = value => {

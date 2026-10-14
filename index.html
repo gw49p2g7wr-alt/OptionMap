@@ -112,6 +112,7 @@
             <section id="timeTravelObservation" class="optionmap-historical-card"></section>
             <section id="timeTravelTimeline" class="optionmap-historical-card"></section>
             <section id="timeTravelMorning" class="optionmap-historical-card"></section>
+            <section id="timeTravelMorningV5" class="optionmap-historical-card"></section>
             <section id="timeTravelCalendar" class="optionmap-historical-card"></section>
             <section class="optionmap-historical-card">
                 <h3>保存時点のQRI情報</h3>
@@ -667,6 +668,11 @@
                         <details id="morningComparisonV4Details"><summary>正式比較の内訳を見る</summary>
                             <div id="morningComparisonV4Components" class="morning-v4-components"></div>
                         </details>
+                    </section>
+                    <section id="morningV5FormalCurrent" class="morning-v4-formal is-unavailable"
+                        aria-label="Formal Morning V5">
+                        <h5>Formal Morning V5</h5>
+                        <p>Formal Morning V5：利用不可（保存なし）</p>
                     </section>
                     <h5 class="morning-v4-reference-title">参考情報</h5>
                     <p class="morning-v4-reference-note">以下は正式Morning v4比較とは別系統の観測情報です。</p>
@@ -1508,6 +1514,7 @@
 <script src="js/morningV5ShadowCollector.js"></script>
 <script src="js/morningV5ShadowRuntime.js"></script>
 <script src="js/morningV5ShadowDiagnostics.js"></script>
+<script src="js/morningV5FormalReadSurfaces.js"></script>
 <script src="js/weeklyFormalIdentityRuntime.js"></script>
 <script src="js/overallV2FormalEnvelopeRuntime.js"></script>
 <script src="js/morningV4RuntimeFactContract.js"></script>
@@ -1615,6 +1622,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "fetchParticipantListing",
     "fetchQriOptionPage",
     "requestCalendarSource",
+    "readMorningV5Formal",
     "saveFullExportJson"
 ]);
 if (!optionMapBridge ||
@@ -1880,6 +1888,7 @@ window.OptionMapFullExportUi.configure({
                 await window.OptionMapParticipantData.validateParticipantCache(activeParticipantCache)),
             readIntelligenceSnapshots: () => JSON.parse(
                 localStorage.getItem("optionMapJpxSnapshots") || "[]"),
+            readMorningV5Formal: request => optionMapBridge.readMorningV5Formal(request),
             getSectionFreshness: freshnessAdapter.getSectionFreshness
         });
         return collector.collect({ market: "Nikkei 225 derivatives" });

@@ -142,7 +142,7 @@ test("Calendar pending never blocks market bootstrap; pending market never block
   const source = fs.readFileSync(path.join(__dirname, "../js/startupBootstrap.js"), "utf8");
   assert.doesNotMatch(source, /calendarStartupRuntime|calendarRuntimeStateIntegration/);
 });
-test("browser Node-off modules compose without Node globals; 8 API input contract remains narrow", async () => {
+test("browser Node-off modules compose without Node globals; 9 API input contract remains narrow", async () => {
   const context = vm.createContext({ console, document: {}, indexedDB: new IDBFactory(),
     structuredClone, setTimeout, clearTimeout, URL }); context.window = context;
   for (const file of ["marketCalendar/sourceRegistry.js", "marketCalendarRuntime/sourceUpdateState.js",
@@ -156,7 +156,7 @@ test("browser Node-off modules compose without Node globals; 8 API input contrac
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8"), {
     require: () => ({ contextBridge: { exposeInMainWorld: (_, value) => { api = value; } },
       ipcRenderer: { invoke: async () => { calls++; return {}; } } }) });
-  assert.equal(Object.keys(api).length, 8);
+  assert.equal(Object.keys(api).length, 9);
   for (const request of [{ trigger: "scheduler" }, { databaseName: "other" }, { runtimeStates: [] },
     { sessionStates: null }, { trigger: "startup", url: "https://bad.invalid" }])
     assert.equal((await api.checkCalendarSources(request)).errorCode, "invalid_argument");
