@@ -27,6 +27,8 @@
       "scripts/marketCalendarReadOnlyProbeBoot.js",
       "scripts/marketCalendarReadOnlyAuditReportPreload.js",
       "scripts/marketCalendarReadOnlySchema.js",
+      "scripts/marketCalendarG14bFilesystemGuard.js",
+      "scripts/marketCalendarD2d4ReadOnlyProbe.html",
       "!js/script2026807.js",
       "!js/script_v0.92.js",
       "!.env",
