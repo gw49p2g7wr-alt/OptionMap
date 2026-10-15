@@ -1624,6 +1624,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "fetchOpenInterestListing",
     "fetchParticipantListing",
     "fetchQriOptionPage",
+    "getRuntimeMetadata",
     "evaluateMorningV5Formal",
     "requestCalendarSource",
     "readMorningV5Formal",
@@ -1828,7 +1829,14 @@ let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
 
 window.OptionMapFullExportUi.configure({
-    collect: () => {
+    collect: async () => {
+        const runtimeMetadata = await optionMapBridge.getRuntimeMetadata();
+        if (!runtimeMetadata || runtimeMetadata.success !== true ||
+            typeof runtimeMetadata.appVersion !== "string" ||
+            !runtimeMetadata.appVersion.trim() ||
+            Object.keys(runtimeMetadata).sort().join("|") !== "appVersion|success") {
+            throw new Error("runtime_metadata_unavailable");
+        }
         const mobile = window.OptionMapMobileSummaryPreview?.getLatestSummary?.() || null;
         const collectorState = window.getMorningBaselineV4RuntimeCollectorState?.() || null;
         const session = collectorState?.facts?.marketSession || null;
@@ -1900,7 +1908,8 @@ window.OptionMapFullExportUi.configure({
             readMorningV5Formal: request => optionMapBridge.readMorningV5Formal(request),
             getSectionFreshness: freshnessAdapter.getSectionFreshness
         });
-        return collector.collect({ market: "Nikkei 225 derivatives" });
+        return collector.collect({ appVersion: runtimeMetadata.appVersion,
+            market: "Nikkei 225 derivatives" });
     },
     collectV2: async v1Export => {
         const sourceFaithfulCanonical = await window.OptionMapFullExportSourceFaithfulCanonical

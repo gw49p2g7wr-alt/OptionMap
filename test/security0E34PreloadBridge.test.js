@@ -17,11 +17,12 @@ const expectedKeys = [
   "fetchOpenInterestListing",
   "fetchParticipantListing",
   "fetchQriOptionPage",
+  "getRuntimeMetadata",
   "readMorningV5Formal",
   "requestCalendarSource",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "readMorningV5Formal", "requestCalendarSource",
+const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "getRuntimeMetadata", "readMorningV5Formal", "requestCalendarSource",
   "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
@@ -90,7 +91,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact ten-method narrow bridge", () => {
+test("preload publishes only the exact eleven-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -157,6 +158,11 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
   const evaluationCount = calls.length;
   assert.equal((await api.evaluateMorningV5Formal({ fake: true })).errorCode, "invalid_argument");
   assert.equal(calls.length, evaluationCount);
+  await api.getRuntimeMetadata();
+  assert.deepEqual(calls.at(-1), ["get-runtime-metadata", undefined]);
+  const metadataCount = calls.length;
+  assert.equal((await api.getRuntimeMetadata({ fake: true })).errorCode, "invalid_argument");
+  assert.equal(calls.length, metadataCount);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {

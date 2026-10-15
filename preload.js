@@ -61,6 +61,11 @@ function invokeMorningV5Evaluation(args) {
   return ipcRenderer.invoke("evaluate-formal-morning-v5");
 }
 
+function invokeRuntimeMetadata(args) {
+  if (args.length !== 0) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("get-runtime-metadata");
+}
+
 function invokeCalendarSource(args) {
   const request = args[0];
   if (args.length !== 1 || !request || typeof request !== "object" ||
@@ -113,6 +118,7 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
     invokeUrlChannel("fetch-jpx-participant-json", args),
   downloadJpxExcel: (...args) =>
     invokeUrlChannel("download-daytrading-excel", args),
+  getRuntimeMetadata: (...args) => invokeRuntimeMetadata(args),
   checkCalendarSources: (...args) => invokeCalendarCheck(args),
   requestCalendarSource: (...args) => invokeCalendarSource(args),
   evaluateMorningV5Formal: (...args) => invokeMorningV5Evaluation(args),

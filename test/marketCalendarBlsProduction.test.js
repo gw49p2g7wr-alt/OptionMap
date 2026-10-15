@@ -166,6 +166,6 @@ test("Bls production dependency graph has no Calendar Formal writer/reader and b
   visit(path.join(__dirname, "../js/marketCalendarRuntime/blsProductionCheck.js"));
   visit(path.join(__dirname, "../js/marketCalendarRuntime/blsRuntimeStateElectron.js"));
   const source = fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8");
-  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 10);
+  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 11);
   assert.doesNotMatch(source, /blsRuntimeStateElectron|routeReevaluationPolicy/);
 });

@@ -144,6 +144,19 @@ test("UI wiringは専用buttonとPhase 1A/1Bを読み込む", () => {
         assert.match(html, new RegExp(`js/${file.replace(".", "\\.")}`));
 });
 
+test("Full Export runtime versionはmain-owned Electron metadataから取得", () => {
+    const main = fs.readFileSync(path.join(__dirname, "../main.js"), "utf8");
+    const preload = fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8");
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.match(main, /ipcMain\.handle\("get-runtime-metadata"[\s\S]*?BrowserWindow\.fromWebContents\(event\.sender\)[\s\S]*?app\.getVersion\(\)/);
+    assert.match(preload, /getRuntimeMetadata:\s*\(\.\.\.args\)\s*=>\s*invokeRuntimeMetadata\(args\)/);
+    const wiring = html.slice(html.indexOf("window.OptionMapFullExportUi.configure"),
+        html.indexOf("const qriOptionsHistoryPersistence"));
+    assert.match(wiring, /await optionMapBridge\.getRuntimeMetadata\(\)/);
+    assert.match(wiring, /appVersion:\s*runtimeMetadata\.appVersion/);
+    assert.doesNotMatch(wiring, /appVersion:\s*["'][^"']+["']/);
+});
+
 test("UI export pathにfetch/write/publishやtrade計算を持たない", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/fullExportUi.js"), "utf8");
     assert.doesNotMatch(source, /\bfetch\s*\(|localStorage|indexedDB|\.publish\s*\(|\.put\s*\(|\.add\s*\(|\.delete\s*\(|calculateOverall/);

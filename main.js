@@ -289,6 +289,12 @@ ipcMain.handle("read-formal-morning-v5", async (event, request) => {
   }
 });
 
+ipcMain.handle("get-runtime-metadata", event => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { success: false, reason: "invalid_sender" };
+  return Object.freeze({ success: true, appVersion: app.getVersion() });
+});
+
 ipcMain.handle("evaluate-formal-morning-v5", async event => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   if (!owner || owner !== mainWindow || !morningV5MainAuthorityBinding ||

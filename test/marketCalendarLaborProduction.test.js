@@ -136,6 +136,6 @@ test("Labor production dependency graph has no Calendar Formal writer/reader and
   visit(path.join(__dirname, "../js/marketCalendarRuntime/laborProductionCheck.js"));
   visit(path.join(__dirname, "../js/marketCalendarRuntime/laborRuntimeStateElectron.js"));
   const source = fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8");
-  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 10);
+  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 11);
   assert.doesNotMatch(source, /laborRuntimeStateElectron|routeReevaluationPolicy/);
 });
