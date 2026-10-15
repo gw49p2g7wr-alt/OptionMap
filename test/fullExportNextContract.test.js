@@ -62,7 +62,7 @@ async function fixture(options = {}) {
     return { acquisition, history, revision, versionKey };
 }
 
-async function collect(source, overrides = {}) {
+async function collect(source, overrides = {}, qriReferenceReadiness = null) {
     const freshnessAdapter = createFullExportFreshnessAdapter({
         getMarketSession: () => ({ formalTradingDate: TRADING_DATE })
     });
@@ -74,7 +74,8 @@ async function collect(source, overrides = {}) {
         validateQriHistory: history => qriHistoryValidation(history),
         getSectionFreshness: freshnessAdapter.getSectionFreshness,
         ...overrides };
-    return createFullExportCollector(configuration).collect({ market: "Nikkei" });
+    return createFullExportCollector(configuration).collect({ market: "Nikkei",
+        qriReferenceReadiness });
 }
 
 async function qriHistoryValidation(history) {
@@ -173,4 +174,19 @@ test("schema/security/deterministic serializationと既存section非依存を維
     assert.equal(first.sections.overallV2.status, "unavailable");
     assert.equal(first.sections.morning.status, "unavailable");
     assert.equal(fullExport.serializeFullExport(first), fullExport.serializeFullExport(second));
+});
+
+test("readiness bindingのgeneration変更中はmixed Full Exportを生成しない", async () => {
+    const source = await fixture();
+    const expected = { next: { generation: 1, activeRequestId: "market-1", status: "saved" },
+        majorSq: { generation: 1, activeRequestId: "market-1", status: "saved" } };
+    let current = structuredClone(expected);
+    const stable = await collect(source, {
+        getQriReferenceReadinessBinding: () => structuredClone(current)
+    }, expected);
+    assert.equal(stable.sections.qriOptionsNextContract.status, "available");
+    current.next.generation = 2;
+    await assert.rejects(() => collect(source, {
+        getQriReferenceReadinessBinding: () => structuredClone(current)
+    }, expected), /qri_reference_generation_changed/);
 });

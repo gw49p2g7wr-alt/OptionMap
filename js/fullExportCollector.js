@@ -379,9 +379,15 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
 
     async function createQriMajorSqNextContractSection(configuration) {
         const locator = clone(configuration.getQriMajorSqFormalHistoryLocator?.() || null);
-        if (!object(locator)) return unavailable("major_sq_locator_unavailable",
-            "qri-nikkei225-options", freshnessFor(configuration,
-                "qriOptionsMajorSqNextContract", null, { locator: null, revision: null }));
+        if (!object(locator)) {
+            const state = clone(configuration.getQriMajorSqAcquisitionState?.() || null);
+            const acquisition = object(state?.acquisition) ? state.acquisition : state;
+            const status = text(acquisition?.status);
+            return unavailable(status ? `major_sq_acquisition_${status}` :
+                "major_sq_locator_unavailable", "qri-nikkei225-options",
+            freshnessFor(configuration, "qriOptionsMajorSqNextContract", null,
+                { locator: null, acquisition, revision: null }));
+        }
         if (!["saved", "unchanged"].includes(locator.status)) {
             return unavailable(`major_sq_acquisition_${text(locator.status) || "unavailable"}`,
                 "qri-nikkei225-options", freshnessFor(configuration,
@@ -614,6 +620,13 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
 
     function createFullExportCollector(configuration = {}) {
         async function collect(options = {}) {
+            const referenceBinding = clone(options.qriReferenceReadiness || null);
+            const bindingIdentity = value => JSON.stringify(value ?? null);
+            if (referenceBinding && bindingIdentity(
+                configuration.getQriReferenceReadinessBinding?.()) !==
+                bindingIdentity(referenceBinding)) {
+                throw new Error("qri_reference_generation_changed");
+            }
             const generatedAt = configuration.now?.() || new Date().toISOString();
             const mobile = clone(configuration.getMobileSummary?.() || null);
             const marketSession = clone(configuration.getMarketSession?.() || null);
@@ -674,10 +687,11 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
                 getReferenceSessionState: configuration.getQriOptionIvReferenceSessionState,
                 getPersistenceState: configuration.getQriOptionIvHistoryPersistenceState,
                 getFormalIdentityState: configuration.getQriFormalIdentity,
-                evaluateLiveFreshness: (role, source) => freshnessFor(configuration,
-                    role === "active" ? "qriOptions" : role === "next"
-                        ? "qriOptionsNextContract" : "qriOptionsMajorSqNextContract",
-                    source?.canonical?.pageUpdatedAt, { role, ivSource: source })
+                evaluateLiveFreshness: (role, source) => role === "active"
+                    ? freshnessFor(configuration, "qriOptions",
+                        source?.canonical?.pageUpdatedAt, { role, ivSource: source })
+                    : clone((role === "next" ? qriOptionsNextContract :
+                        qriOptionsMajorSqNextContract).freshness)
             }) || unavailable("formal_iv_revision_unavailable", "qri-nikkei225-option-iv");
             const sections = { ...coreSections, qriOptionIv };
             const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
@@ -687,6 +701,11 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             }) || unavailable("ai_summary_builder_unavailable", "optionmap-full-export",
                 { status: "not_applicable", reason: "index_only" });
             sections.aiSummary = aiSummary;
+            if (referenceBinding && bindingIdentity(
+                configuration.getQriReferenceReadinessBinding?.()) !==
+                bindingIdentity(referenceBinding)) {
+                throw new Error("qri_reference_generation_changed");
+            }
             return fullExportApi.buildFullExport({ exportMeta: { generatedAt,
                 timeZone: "Asia/Tokyo", profile: "full",
                 appVersion: options.appVersion || null, readOnly: true },

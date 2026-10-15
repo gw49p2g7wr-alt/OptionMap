@@ -5,6 +5,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";
 
+    const PENDING_STATUSES = new Set(["pending_formal_completion", "scheduled"]);
     const clone = value => value == null ? value : typeof structuredClone === "function"
         ? structuredClone(value) : JSON.parse(JSON.stringify(value));
     function freeze(value) {
@@ -14,7 +15,8 @@
     }
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
 
-    function createRuntime({ orchestrator, buildFormalContext, now = () => new Date().toISOString() } = {}) {
+    function createRuntime({ orchestrator, buildFormalContext,
+        now = () => new Date().toISOString() } = {}) {
         if (!orchestrator || typeof orchestrator.run !== "function" ||
             typeof orchestrator.invalidate !== "function" ||
             typeof orchestrator.dispose !== "function" ||
@@ -24,11 +26,13 @@
         let activeRequestId = null;
         let formalCompletedRequestId = null;
         let disposed = false;
+        const settleListeners = new Set();
         let runtimeState = freeze({ status: "idle", reason: null, generation: 0,
             activeRequestId: null, formalCompletedRequestId: null, startedAt: null,
             completedAt: null, errorCode: null });
         const publish = patch => {
             runtimeState = freeze({ ...runtimeState, ...clone(patch) });
+            for (const listener of [...settleListeners]) listener();
             return getState();
         };
         const getState = () => freeze({ runtime: clone(runtimeState),
@@ -75,6 +79,23 @@
             return getState();
         }
 
+        async function waitForCurrentSettle() {
+            while (true) {
+                const captured = getState();
+                if (!PENDING_STATUSES.has(captured.runtime.status)) return freeze({
+                    status: "settled", reason: null, generation: captured.runtime.generation,
+                    activeRequestId: captured.runtime.activeRequestId, state: captured
+                });
+                await new Promise(resolve => {
+                    const onChange = () => {
+                        settleListeners.delete(onChange);
+                        resolve();
+                    };
+                    settleListeners.add(onChange);
+                });
+            }
+        }
+
         function dispose() {
             if (!disposed) {
                 disposed = true; generation += 1; orchestrator.dispose();
@@ -83,8 +104,8 @@
             }
             return getState();
         }
-        return Object.freeze({ beginMarketRefresh, completeFormalRender, dispose,
-            getState, getLifecycleState });
+        return Object.freeze({ beginMarketRefresh, completeFormalRender, waitForCurrentSettle,
+            dispose, getState, getLifecycleState });
     }
 
     return Object.freeze({ createRuntime });

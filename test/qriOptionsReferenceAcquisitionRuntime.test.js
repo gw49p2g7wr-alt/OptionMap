@@ -63,6 +63,47 @@ test("reference work is fire-and-forget and does not block formal result", async
     assert.equal(runtime.getState().runtime.status, "saved");
 });
 
+test("Full Export readiness waits for the current generation to settle", async () => {
+    const reference = deferred();
+    const runtime = Runtime.createRuntime({
+        orchestrator: fakeOrchestrator({ run: () => reference.promise }),
+        buildFormalContext: input => input
+    });
+    runtime.beginMarketRefresh("market-1");
+    runtime.completeFormalRender("market-1");
+    let settled = false;
+    const waiting = runtime.waitForCurrentSettle().then(value => (settled = true, value));
+    await tick();
+    assert.equal(settled, false);
+    reference.resolve({ status: "saved" });
+    const result = await waiting;
+    assert.deepEqual([result.status, result.generation, result.activeRequestId],
+        ["settled", 1, "market-1"]);
+    assert.equal(result.state.runtime.status, "saved");
+});
+
+test("readiness follows a superseding generation and never promotes the old result", async () => {
+    const first = deferred(); const second = deferred(); let runCount = 0;
+    const runtime = Runtime.createRuntime({ orchestrator: fakeOrchestrator({
+        run: () => ++runCount === 1 ? first.promise : second.promise
+    }), buildFormalContext: input => input });
+    runtime.beginMarketRefresh("market-1"); runtime.completeFormalRender("market-1");
+    const waiting = runtime.waitForCurrentSettle();
+    runtime.beginMarketRefresh("market-2"); runtime.completeFormalRender("market-2");
+    first.resolve({ status: "stale" }); await tick();
+    second.resolve({ status: "unchanged" });
+    const result = await waiting;
+    assert.deepEqual([result.status, result.generation, result.activeRequestId],
+        ["settled", 2, "market-2"]);
+    assert.equal(result.state.runtime.status, "unchanged");
+});
+
+test("readiness is immediate when the current generation is already settled", async () => {
+    const runtime = Runtime.createRuntime({ orchestrator: fakeOrchestrator(),
+        buildFormalContext: input => input });
+    assert.equal((await runtime.waitForCurrentSettle()).status, "settled");
+});
+
 test("new refresh invalidates an old fetch without changing formal state", async () => {
     const old = deferred();
     const orchestrator = fakeOrchestrator({ run: () => old.promise });

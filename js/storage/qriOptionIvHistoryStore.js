@@ -58,6 +58,7 @@
         const databaseName = configuration.databaseName || DATABASE_NAME;
         let database = null;
         let opening = null;
+        let mutationTail = Promise.resolve();
 
         function openDatabase() {
             if (database) return Promise.resolve(database);
@@ -173,7 +174,7 @@
                 return output({ saved: false, outcome: failureReason(error), error: error.message });
             }
         }
-        async function persistCandidate(candidate, options = {}) {
+        async function persistCandidateNow(candidate, options = {}) {
             const loaded = await loadHistory();
             if (!new Set(["empty", "ready"]).has(loaded.status)) return output({ saved: false,
                 outcome: loaded.status === "corrupted" ? "corrupted_existing_history" : loaded.reason });
@@ -183,6 +184,11 @@
                 outcome: "quota_failure", error: "QuotaExceededError" });
             const committed = await commitHistory(merged.history, options);
             return committed.saved ? output({ saved: true, outcome: merged.outcome }) : committed;
+        }
+        function persistCandidate(candidate, options = {}) {
+            const operation = mutationTail.then(() => persistCandidateNow(candidate, options));
+            mutationTail = operation.catch(() => undefined);
+            return operation;
         }
         async function getEntryByKey(entryKey) {
             const loaded = await loadHistory();

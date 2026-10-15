@@ -1472,6 +1472,7 @@
 <script src="js/qriOptionsReferenceAcquisition.js"></script>
 <script src="js/qriOptionsMajorSqAcquisition.js"></script>
 <script src="js/qriOptionsReferenceAcquisitionRuntime.js"></script>
+<script src="js/qriReferenceReadinessBarrier.js"></script>
 <script src="js/qriFormalIdentityRuntime.js"></script>
 <script src="js/qriOptionsHistoryComparison.js"></script>
 <script src="js/qriOptionsHistoryComparisonView.js"></script>
@@ -1829,8 +1830,28 @@ let weeklyFuturesBackfillCancelled = false;
 let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
 
+function getQriReferenceReadinessBinding() {
+    const next = initializeQriReferenceAcquisitionRuntime().getState().runtime;
+    const majorSq = initializeQriMajorSqAcquisitionRuntime().getState().runtime;
+    return Object.freeze({
+        next: Object.freeze({ generation: next.generation,
+            activeRequestId: next.activeRequestId, status: next.status }),
+        majorSq: Object.freeze({ generation: majorSq.generation,
+            activeRequestId: majorSq.activeRequestId, status: majorSq.status })
+    });
+}
+
+async function waitForQriReferenceReadiness() {
+    return window.OptionMapQriReferenceReadinessBarrier.createBarrier({
+        getNextRuntime: () => initializeQriReferenceAcquisitionRuntime(),
+        getMajorSqRuntime: () => initializeQriMajorSqAcquisitionRuntime(),
+        getBinding: () => getQriReferenceReadinessBinding()
+    }).wait();
+}
+
 window.OptionMapFullExportUi.configure({
     collect: async () => {
+        const qriReferenceReadiness = await waitForQriReferenceReadiness();
         const runtimeMetadata = await optionMapBridge.getRuntimeMetadata();
         if (!runtimeMetadata || runtimeMetadata.success !== true ||
             typeof runtimeMetadata.appVersion !== "string" ||
@@ -1885,6 +1906,9 @@ window.OptionMapFullExportUi.configure({
                 window.getQriReferenceAcquisitionState?.() || null,
             getQriMajorSqFormalHistoryLocator: () =>
                 window.getQriMajorSqFormalHistoryLocator?.() || null,
+            getQriMajorSqAcquisitionState: () =>
+                window.getQriMajorSqAcquisitionState?.() || null,
+            getQriReferenceReadinessBinding: () => getQriReferenceReadinessBinding(),
             readQriHistory: () => window.OptionMapQriOptionsHistoryStore.loadHistory(),
             readWeeklyFuturesActiveVersions: () => window.OptionMapWeeklyFuturesHistory
                 .getActiveVersions(weeklyFuturesHistory),
@@ -1918,6 +1942,7 @@ window.OptionMapFullExportUi.configure({
             getSectionFreshness: freshnessAdapter.getSectionFreshness
         });
         return collector.collect({ appVersion: runtimeMetadata.appVersion,
+            qriReferenceReadiness,
             market: "Nikkei 225 derivatives" });
     },
     collectV2: async v1Export => {
@@ -5621,6 +5646,12 @@ window.getQriContractSelectionState = () => JSON.parse(JSON.stringify({
 }));
 
 let formalBaselineRetryScheduler = null;
+function isQriReferenceAcquisitionPending() {
+    const pending = new Set(["pending_formal_completion", "scheduled"]);
+    return [qriReferenceAcquisitionRuntime, qriMajorSqAcquisitionRuntime]
+        .some(runtime => pending.has(runtime?.getState?.().runtime?.status));
+}
+
 function initializeFormalBaselineRetryScheduler() {
     if (formalBaselineRetryScheduler) return formalBaselineRetryScheduler;
     const targeted = window.OptionMapMorningBaselineV4TargetedRefresh.createCoordinator({
@@ -5638,7 +5669,8 @@ function initializeFormalBaselineRetryScheduler() {
                     ? weekly.fact.requestContext?.requestId : null
             };
         },
-        isUserRefreshActive: () => marketRefreshPromise !== null
+        isUserRefreshActive: () => marketRefreshPromise !== null ||
+            isQriReferenceAcquisitionPending()
     });
     formalBaselineRetryScheduler = window.OptionMapMorningBaselineV4Scheduler.createScheduler({
         getRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
@@ -5646,7 +5678,8 @@ function initializeFormalBaselineRetryScheduler() {
         captureAutomatic: context => window.OptionMapMorningBaselineV4CaptureRuntime
             ?.captureAutomatic(context),
         targetedRefresh: (input, guard) => targeted.run(input, guard),
-        isUserRefreshActive: () => marketRefreshPromise !== null,
+        isUserRefreshActive: () => marketRefreshPromise !== null ||
+            isQriReferenceAcquisitionPending(),
         createRequestId: sequence => window.createFetchRequestId(`morningV4Retry-${sequence}`),
         onStateChange: () => window.OptionMapMobileSummaryPreview?.renderFormalComparisonV4?.()
     });

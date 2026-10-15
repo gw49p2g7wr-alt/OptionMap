@@ -78,6 +78,23 @@ test("revision and confirmation persistence dedupe atomically", async () => {
     assert.equal(entry.activeVersionKey, revision.versionKey);
 });
 
+test("concurrent same-revision roles retain both confirmations", async () => {
+    const store = makeStore();
+    const next = await candidate("2026-12", "2026-10-16", 40,
+        { acquisitionRole: "next", requestId: "next-request" });
+    const majorSq = await History.createHistoryCandidate(next.canonical, {
+        ...next.confirmations[0], acquisitionRole: "major_sq", requestId: "major-request",
+        confirmedAt: "2026-10-15T21:00:21Z", fetchedAt: next.fetchedAt,
+        formalStatus: "unchanged", origin: "formal_live" });
+    const results = await Promise.all([
+        store.persistCandidate(next), store.persistCandidate(majorSq.candidate)
+    ]);
+    assert.deepEqual(results.map(item => item.outcome), ["added", "confirmation_added"]);
+    const entry = (await store.getEntry("2026-12", "2026-10-16")).entry;
+    assert.deepEqual(entry.revisions[0].confirmations.map(item => item.acquisitionRole).sort(),
+        ["major_sq", "next"]);
+});
+
 test("failed transaction and quota failure preserve previous history", async () => {
     const store = makeStore(); await store.persistCandidate(await candidate());
     const before = (await store.loadHistory()).history;

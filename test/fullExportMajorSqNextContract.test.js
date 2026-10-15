@@ -95,6 +95,18 @@ test("null or non-success locator never searches old Major-SQ history", async ()
     }
 });
 
+test("settled Major-SQ failure is reported instead of transient missing locator", async () => {
+    const value = await source();
+    const section = (await collect(value, {
+        getQriMajorSqFormalHistoryLocator: () => null,
+        getQriMajorSqAcquisitionState: () => ({ acquisition: {
+            status: "failed", reason: "fetch_failed", targetContract: CONTRACT
+        } })
+    })).sections.qriOptionsMajorSqNextContract;
+    assert.equal(section.status, "unavailable");
+    assert.equal(section.reason, "major_sq_acquisition_failed");
+});
+
 test("every locator/entry/active revision identity mismatch is unavailable", async () => {
     const mutations = [
         value => { value.locator.targetContract = "2027-03"; },
