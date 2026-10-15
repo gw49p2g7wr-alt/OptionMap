@@ -1587,6 +1587,7 @@
 <script src="js/marketCalendarHistory/historyIntegrity.js"></script>
 <script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
+<script src="js/fullExportFormalTradingDateAuthority.js"></script>
 <script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>
 <script src="js/optionMapTimeTravelMvp.js"></script>
 <script src="js/marketCalendarRuntime/calendarUpdatePresentation.js"></script>
@@ -1840,10 +1841,18 @@ window.OptionMapFullExportUi.configure({
         const mobile = window.OptionMapMobileSummaryPreview?.getLatestSummary?.() || null;
         const collectorState = window.getMorningBaselineV4RuntimeCollectorState?.() || null;
         const session = collectorState?.facts?.marketSession || null;
+        const observedAt = new Date().toISOString();
+        const formalDateAuthority = await window.OptionMapFullExportFormalTradingDateAuthority
+            .resolve({ observedAt, indexedDB, keyRange: IDBKeyRange });
+        const freshnessSession = formalDateAuthority?.status === "available" ? {
+            formalTradingDate: formalDateAuthority.formalTradingDate,
+            calendarDate: formalDateAuthority.calendarDate,
+            authority: formalDateAuthority.authority
+        } : null;
         const freshnessAdapter = window.OptionMapFullExportFreshness
             .createFullExportFreshnessAdapter({
-                now: () => new Date().toISOString(),
-                getMarketSession: () => session,
+                now: () => observedAt,
+                getMarketSession: () => freshnessSession,
                 getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
                 getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
                 getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
