@@ -5,6 +5,7 @@
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"), cp = require("node:child_process");
 const assert = require("node:assert/strict"), { createHash } = require("node:crypto"), { pathToFileURL } = require("node:url");
 const Entry = require("./marketCalendarE4fFreshDayCanaryEntry.js");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 function isolated(root) {
   assert.equal(fs.realpathSync(root), root); assert.equal(fs.lstatSync(root).isSymbolicLink(), false);
@@ -50,7 +51,7 @@ async function runWorker(root) {
       const tmp = path.join(root, "formal-copy-read.complete.tmp"), target = path.join(root, "formal-copy-read.complete.json");
       const mfd = fs.openSync(tmp, "wx", 0o600);
       try { fs.writeFileSync(mfd, JSON.stringify(completion) + "\n"); fs.fsyncSync(mfd); } finally { fs.closeSync(mfd); }
-      fs.renameSync(tmp, target); const dfd = fs.openSync(root, "r"); try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); }
+      fs.renameSync(tmp, target); Filesystem.syncDirectory(root);
     } else throw Error("isolated_mode_invalid");
     assert.equal(network, 0);
   } finally {

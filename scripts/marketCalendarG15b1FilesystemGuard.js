@@ -12,29 +12,32 @@ const Atomic = require("../js/marketCalendarHistory/writerSafetyAtomicCore.js");
 const template = Base.createProductionPolicy();
 function deny() { const e = Error("controlled_guard_access_denied"); e.code = "EACCES"; throw e; }
 function bindResolvedProfile(root, selection = null, record = null) {
-  if (typeof root !== "string" || !path.isAbsolute(root) || path.normalize(root) !== root || path.basename(root) !== "OptionMap")
+  const pathApi = /^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? path.win32 : path;
+  const child = (parent, target) => target.startsWith(parent + pathApi.sep);
+  if (typeof root !== "string" || !pathApi.isAbsolute(root) || pathApi.normalize(root) !== root || pathApi.basename(root) !== "OptionMap")
     throw Error("controlled_guard_profile_invalid");
   if (selection && (!A.exact(selection, ["schemaVersion", "generation", "sequence", "stateChecksum", "checksum"]) ||
     selection.schemaVersion !== 1 || !A.integer(selection.sequence) || !A.isHash(selection.stateChecksum) ||
     File.seal(selection).checksum !== selection.checksum || !(["baseline", "extended"].includes(selection.generation) ||
       Generation.controlledGeneration(selection.generation, selection.sequence)))) throw Error("safety_selection_invalid");
   if (record && (record.schemaVersion !== 3 || !E.validate(record).valid)) throw Error("controlled_guard_state_invalid");
-  const support = path.dirname(root), library = path.dirname(support), parents = [library, support];
-  const sourceSet = path.join(root, Generation.DIRECTORY), names = Object.values(Atomic.NAMES);
+  const support = pathApi.dirname(root), library = pathApi.dirname(support), parents = [library, support];
+  const sourceSet = pathApi.join(root, Generation.DIRECTORY), names = Object.values(Atomic.NAMES);
   const frames = new Set(selection && Generation.controlledGeneration(selection.generation, selection.sequence) ? [selection.generation] : []);
   if (record) for (let i = 1; i <= 5; i++) frames.add(`controlled-${record.sourceSetAudit[0].nextSequence + i}`);
-  const directories = new Set([...frames].flatMap(g => [path.join(sourceSet, g), path.join(sourceSet, g, Atomic.DIRECTORY)]));
-  const files = new Set([...frames].flatMap(g => names.map(n => path.join(sourceSet, g, Atomic.DIRECTORY, n))));
-  const latch = path.join(sourceSet, "controlled.lock"), temp = path.join(sourceSet, "controlled-selection.tmp"), pointer = path.join(sourceSet, "selection.json");
+  const directories = new Set([...frames].flatMap(g => [pathApi.join(sourceSet, g), pathApi.join(sourceSet, g, Atomic.DIRECTORY)]));
+  const files = new Set([...frames].flatMap(g => names.map(n => pathApi.join(sourceSet, g, Atomic.DIRECTORY, n))));
+  const latch = pathApi.join(sourceSet, "controlled.lock"), temp = pathApi.join(sourceSet, "controlled-selection.tmp"), pointer = pathApi.join(sourceSet, "selection.json");
+  const translate = p => path.posix.join(template.profile, ...pathApi.relative(root, p).split(pathApi.sep));
   const map = p => p === parents[0] ? template.parents[0] : p === parents[1] ? template.parents[1] :
-    p === root || p.startsWith(root + "/") ? template.profile + p.slice(root.length) : null;
+    p === root ? template.profile : child(root, p) ? translate(p) : null;
   function permits(p, operation, writing = false) {
-    if (typeof p !== "string" || !path.isAbsolute(p) || path.normalize(p) !== p || p.includes("\0")) return false;
+    if (typeof p !== "string" || !pathApi.isAbsolute(p) || pathApi.normalize(p) !== p || p.includes("\0")) return false;
     if (parents.includes(p)) return !writing && Base.PARENT_METADATA.includes(operation);
     // Read-only generation dispatch may test the exact additive namespace.
     // No contents, enumeration or mutation: a present new version stops this
     // historical controlled adapter rather than granting it new authority.
-    if(p===path.join(root,"market-calendar-mof-startup-canary"))return !writing&&operation==="lstatSync";
+    if(p===pathApi.join(root,"market-calendar-mof-startup-canary"))return !writing&&operation==="lstatSync";
     const translated = map(p);
     if (!writing && translated && template.permits(translated, operation, false)) return true;
     if (directories.has(p)) return !writing && ["lstatSync", "statSync", "realpathSync", "existsSync", "openDirectoryForSync"].includes(operation) ||
@@ -42,11 +45,11 @@ function bindResolvedProfile(root, selection = null, record = null) {
     if (![latch, temp].includes(p) && !files.has(p) && !(writing && p === pointer)) return false;
     if (!writing) return ["lstatSync", "statSync", "realpathSync", "existsSync", "openSync", "readFileSync"].includes(operation);
     if (!record) return false;
-    if (operation === "unlinkSync") return p === latch || [Atomic.NAMES.lock, Atomic.NAMES.intent].includes(path.basename(p));
+    if (operation === "unlinkSync") return p === latch || [Atomic.NAMES.lock, Atomic.NAMES.intent].includes(pathApi.basename(p));
     if (operation === "renameSync") return p === temp || p === pointer || [Atomic.NAMES.temp, Atomic.NAMES.checkpointTemp,
-      Atomic.NAMES.state, Atomic.NAMES.checkpoint].includes(path.basename(p));
+      Atomic.NAMES.state, Atomic.NAMES.checkpoint].includes(pathApi.basename(p));
     return ["openSync", "writeFileSync"].includes(operation) && (p === latch || p === temp ||
-      [Atomic.NAMES.lock, Atomic.NAMES.intent, Atomic.NAMES.temp, Atomic.NAMES.checkpointTemp].includes(path.basename(p)));
+      [Atomic.NAMES.lock, Atomic.NAMES.intent, Atomic.NAMES.temp, Atomic.NAMES.checkpointTemp].includes(pathApi.basename(p)));
   }
   return Object.freeze({ profile: root, parents: Object.freeze(parents), parentOperations: Base.PARENT_METADATA,
     generations: Object.freeze([...frames]), permits, assertAccess: (p, op, writing = false) => { if (!permits(p, op, writing)) deny(); } });

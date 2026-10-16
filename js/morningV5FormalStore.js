@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const Observation = require("./morningV5FormalObservation.js");
+const Filesystem = require("./marketCalendarHistory/crossPlatformFilesystemSafety.js");
 
 const STORE_ID = "optionMapMorningV5Formal";
 const STORE_VERSION = 1;
@@ -150,8 +151,7 @@ function createStore({ root, targetEnvironment, crashAt = null } = {}) {
             point("before_rename", { classification: priorSlot ? "revision" : "new",
                 supersedesObservationId: record.supersedesObservationId });
             fs.renameSync(temporary, file); renamed = true;
-            const directoryDescriptor = fs.openSync(directory, fs.constants.O_RDONLY);
-            try { fs.fsyncSync(directoryDescriptor); } finally { fs.closeSync(directoryDescriptor); }
+            Filesystem.syncDirectory(directory);
             point("after_rename", { classification: priorSlot ? "revision" : "new",
                 supersedesObservationId: record.supersedesObservationId });
         } catch (error) {

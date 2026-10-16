@@ -48,8 +48,8 @@ function create(directory, { crashAt = null } = {}) {
   function acquire({ provision = false } = {}) {
     if (!audit.healthy) throw Error("safety_io_interrupted");
     if (provision && !fs.existsSync(directory)) { fs.mkdirSync(directory, { mode: 0o700 });
-      const fd = fs.openSync(path.dirname(directory), fs.constants.O_RDONLY); audit.fileHandles++;
-      try { fs.fsyncSync(fd); audit.directorySyncs++; } finally { fs.closeSync(fd); audit.fileHandles--; } }
+      const result = Filesystem.syncDirectory(path.dirname(directory));
+      if (result.synced) audit.directorySyncs++; }
     checkDirectory();
     if (!owned) {
       try { writeNew("lock", owner); owned = true; syncDirectory(); audit.lockAcquires++; }

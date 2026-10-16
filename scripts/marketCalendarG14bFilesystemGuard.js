@@ -11,14 +11,16 @@ const PARENT_METADATA = Object.freeze(["lstatSync"]);
 const FILE_NAMES = Object.freeze(["safety.json", "sequence.json", "ownership.lock", "update.intent", "safety.tmp", "sequence.tmp"]);
 const fail = reason => { const e = Error(reason); e.code = "EACCES"; throw e; };
 function build(profile, parents, isolated) {
-  const legacy = profile + "/market-calendar-writer-safety", generations = profile + "/market-calendar-source-set-safety";
+  const windowsProfile = /^(?:[a-z]:[\\/]|\\\\)/i.test(profile), pathApi = windowsProfile ? path.win32 : path;
+  const join = (...parts) => pathApi.join(...parts), child = (root, target) => target.startsWith(root + pathApi.sep);
+  const legacy = join(profile, "market-calendar-writer-safety"), generations = join(profile, "market-calendar-source-set-safety");
   const directories = [profile, legacy, generations, ...["baseline", "extended"].flatMap(g =>
-    [generations + "/" + g, generations + "/" + g + "/market-calendar-writer-safety"])];
-  const files = [...FILE_NAMES.map(n => legacy + "/" + n), ...["migration.lock", "selection.json", "selection.tmp"].map(n => generations + "/" + n),
-    ...["baseline", "extended"].flatMap(g => FILE_NAMES.map(n => generations + "/" + g + "/market-calendar-writer-safety/" + n))];
-  const writes = [legacy + "/ownership.lock", ...files.filter(p => p.startsWith(generations + "/"))];
+    [join(generations, g), join(generations, g, "market-calendar-writer-safety")])];
+  const files = [...FILE_NAMES.map(n => join(legacy, n)), ...["migration.lock", "selection.json", "selection.tmp"].map(n => join(generations, n)),
+    ...["baseline", "extended"].flatMap(g => FILE_NAMES.map(n => join(generations, g, "market-calendar-writer-safety", n)))];
+  const writes = [join(legacy, "ownership.lock"), ...files.filter(p => child(generations, p))];
   function classify(p) {
-    if (typeof p !== "string" || !path.isAbsolute(p) || p.includes("\0") || path.normalize(p) !== p) return "invalid";
+    if (typeof p !== "string" || !pathApi.isAbsolute(p) || p.includes("\0") || pathApi.normalize(p) !== p) return "invalid";
     if (parents.includes(p)) return "parent_metadata";
     if (directories.includes(p)) return "safety_directory";
     if (files.includes(p)) return "safety_file";
@@ -46,11 +48,11 @@ function build(profile, parents, isolated) {
       // Realpath already needs these fixed ancestor metadata checks. Inspect
       // their link type first, rather than following an alias into another tree.
       const ancestors = [];
-      let ancestor = path.parse(parents[0]).root;
-      for (const part of parents[0].slice(ancestor.length).split(path.sep).filter(Boolean)) {
-        ancestor = path.join(ancestor, part); ancestors.push(ancestor);
+      let ancestor = pathApi.parse(parents[0]).root;
+      for (const part of parents[0].slice(ancestor.length).split(pathApi.sep).filter(Boolean)) {
+        ancestor = pathApi.join(ancestor, part); ancestors.push(ancestor);
       }
-      const checks = [...ancestors, ...parents, ...directories.filter(d => p === d || p.startsWith(d + "/")), ...(files.includes(p) ? [p] : [])];
+      const checks = [...ancestors, ...parents, ...directories.filter(d => p === d || child(d, p)), ...(files.includes(p) ? [p] : [])];
       for (const part of [...new Set(checks)]) {
         try { const s = raw.lstatSync(part); touches.push({ path: part, operation: "lstatSync", validation: true });
           if (s.isSymbolicLink()) fail("migration_guard_symlink_rejected"); }
@@ -79,7 +81,7 @@ function build(profile, parents, isolated) {
       `(deny file-read-metadata (require-all (subpath ${JSON.stringify(library)})\n${except(metadataPaths)}))`,
       `(deny file-write* (require-all (subpath ${JSON.stringify(library)})\n${except([...directories, ...writes])}))`,
       `(deny file-write* ${literal(support)})`, `(deny file-write* ${literal(library)})`,
-      `(deny file-write* ${literal(legacy + "/safety.json")})`, `(deny file-write* ${literal(legacy + "/sequence.json")})`];
+      `(deny file-write* ${literal(join(legacy, "safety.json"))})`, `(deny file-write* ${literal(join(legacy, "sequence.json"))})`];
     if (isolated) out.push(`(deny file-read* (subpath ${JSON.stringify(PRODUCTION_PROFILE)}))`,
       `(deny file-write* (subpath ${JSON.stringify(PRODUCTION_PROFILE)}))`);
     return out.join("\n") + "\n";

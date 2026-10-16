@@ -3,6 +3,7 @@ const test = require("node:test"), assert = require("node:assert/strict"), fs = 
 const Safety = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const Profile = require("../js/marketCalendarHistory/writerSafetyInitialProvisioning.js");
 const G14b = require("../scripts/marketCalendarG14bFilesystemGuard.js");
+const G15b1 = require("../scripts/marketCalendarG15b1FilesystemGuard.js");
 
 test("platform path identity is case-sensitive on POSIX and Windows-normalized on win32", () => {
   assert.equal(Safety.samePath("/A/file", "/a/file", "darwin"), false);
@@ -25,7 +26,7 @@ test("canonical identity rejects aliases and directory sync has explicit platfor
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-fs-policy-"));
   try {
     assert.equal(Safety.canonical(root), root);
-    const posix = Safety.syncDirectory(root, fs, process.platform);
+    const posix = Safety.syncDirectory(root, fs, "darwin");
     assert.equal(posix.strategy, "directory_fsync"); assert.equal(posix.synced, true);
     let opened = 0, synced = 0;
     const windowsFs = { openSync() { opened++; }, fsyncSync() { synced++; }, closeSync() {} };
@@ -59,4 +60,14 @@ test("G14b Windows authority derives the same canonical main-owned profile witho
   assert.throws(() => G14b.windowsMainAuthority({ getPath: name => name === "appData" ?
     "C:\\Users\\Natsu\\AppData\\Roaming" : "D:\\OptionMap" }), /migration_guard_windows_profile_invalid/);
   assert.throws(() => G14b.createWindowsMainPolicy(), /migration_guard_windows_main_required/);
+});
+
+test("G15b1 fixture applies the shared canonical Windows path contract without package authority", () => {
+  const root = "C:\\Users\\Natsu\\AppData\\Roaming\\OptionMap";
+  const policy = G15b1.bindResolvedProfile(root);
+  assert.equal(policy.profile, root);
+  assert.deepEqual(policy.parents, ["C:\\Users\\Natsu\\AppData", "C:\\Users\\Natsu\\AppData\\Roaming"]);
+  assert.equal(policy.permits(`${root}\\market-calendar-writer-safety\\safety.json`, "readFileSync"), true);
+  assert.equal(policy.permits(`${root}\\market-calendar-mof-startup-canary`, "lstatSync"), true);
+  assert.equal(policy.permits(`${root}\\..\\OtherApp`, "lstatSync"), false);
 });

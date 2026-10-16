@@ -48,7 +48,7 @@ function createGenerationStore(root, crashAt = null) {
   function acquire(provision = false) {
     if (closed || interrupted) fail("safety_store_unavailable");
     if (provision && !fs.existsSync(directory)) { fs.mkdirSync(directory, { mode: 0o700 });
-      const fd = fs.openSync(root, fs.constants.O_RDONLY); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+      const result = Filesystem.syncDirectory(root); if (result.synced) counts.directorySyncs++; }
     checkDirectory();
     if (!owned) {
       handle("migration.lock", fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, fd => {
