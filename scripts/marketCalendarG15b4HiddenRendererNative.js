@@ -5,6 +5,7 @@
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
 const assert = require("node:assert/strict"), crypto = require("node:crypto");
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
+const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT = path.resolve(__dirname, ".."), sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 function installSentinel(root) {
   const audit = { forbiddenAttempts: 0, networkAttempts: 0 };
@@ -86,11 +87,12 @@ async function worker() {
     result.guard = guard; result.tokenChecks = tokenChecks; result.mainTokenAttempts = mainTokenAttempts; result.security = security;
     assert.equal(mainTokenAttempts, 0); await assert.rejects(controller.start(), /native_attempt_replayed/);
   }
-  assert.equal(BrowserWindow.getAllWindows().length, 0); await session.defaultSession.closeAllConnections();
+  assert.equal(BrowserWindow.getAllWindows().length, 0);
   const bytes = Buffer.from(JSON.stringify(result)), output = path.join(packageRoot, "result.json");
   fs.writeFileSync(output + ".temp", bytes, { mode: 0o600 }); fs.renameSync(output + ".temp", output);
   fs.writeFileSync(output + ".complete", JSON.stringify({ length: bytes.length, sha256: sha(bytes) }), { mode: 0o600 });
-  process.stdout.write(JSON.stringify({ mode: config.mode, status: result.status || "read", bytes: bytes.length }) + "\n"); app.exit(0);
+  process.stdout.write(JSON.stringify({ mode: config.mode, status: result.status || "read", bytes: bytes.length }) + "\n");
+  await Lifecycle.shutdown(app, session, 0);
 }
 function launch(fixtureRoot, profile, mode = "execute", fault = null) {
   const packageRoot = path.join(fixtureRoot, "package"); fs.mkdirSync(packageRoot, { recursive: true });
@@ -137,7 +139,11 @@ async function nativeCase(fault = null) {
     return { fault, executed, reload: fresh.output, cleanup: { profileDeleted: true, windows: 0, children: 0 } };
   });
 }
-if (process.type === "browser") worker().catch(e => { console.error(e.stack); require("electron").app.exit(1); });
+if (process.type === "browser") worker().catch(async e => {
+  console.error(e.stack);
+  const electron = require("electron");
+  await Lifecycle.shutdown(electron.app, electron.session, 1);
+});
 else if (require.main === module) nativeCase(process.argv[2] || null).then(r => process.stdout.write(JSON.stringify({ fault: r.fault,
   code: r.executed.code, status: r.executed.output?.status, reason: r.executed.output?.reason,
   phases: r.executed.output?.phases?.map(p => ({ sequence: p.sequence, phase: p.phase })),

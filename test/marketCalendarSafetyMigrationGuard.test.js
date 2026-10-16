@@ -87,9 +87,10 @@ test("G14 profile symlink escape rejects", () => fixture(p => {
   assert.throws(() => mockedAdapter(p, () => assert.fail()), /migration_guard_symlink_rejected/);
 }));
 test("G15 safety child symlink rejects before content read", () => fixture(p => {
-  const d = p.profile + "/market-calendar-writer-safety"; fs.mkdirSync(d, { mode: 0o700 });
-  fs.symlinkSync(p.parents[1] + "/unrelated.json", d + "/safety.json");
-  assert.throws(() => p.scopedMetadataFs().statSync(d + "/safety.json"), /migration_guard_symlink_rejected/);
+  const d = path.join(p.profile, "market-calendar-writer-safety"); fs.mkdirSync(d, { mode: 0o700 });
+  const safety = path.join(d, "safety.json");
+  fs.symlinkSync(path.join(p.parents[1], "unrelated.json"), safety);
+  assert.throws(() => p.scopedMetadataFs().statSync(safety), /migration_guard_symlink_rejected/);
 }));
 test("G16 fake resolved target mismatch rejects", () => fixture(p => {
   const facade = p.scopedMetadataFs({ lstatSync: fs.lstatSync, statSync: fs.statSync, realpathSync: () => p.parents[1] + "/SiblingApp" });

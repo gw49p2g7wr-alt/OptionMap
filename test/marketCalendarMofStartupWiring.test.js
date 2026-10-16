@@ -31,7 +31,7 @@ test("R3 production factory rejects path/source/patch input before production ac
 });
 test("historical guard permits only exact namespace lstat, no contents/enumeration/write",()=>{
   const G=require("../scripts/marketCalendarG15b1FilesystemGuard.js"),root="/isolated/Library/Application Support/OptionMap",p=path.join(root,Store.DIRECTORY),policy=G.bindResolvedProfile(root);
-  assert.equal(policy.permits(p,"lstatSync",false),true);
+  assert.equal(policy.permits(path.posix.join(root,Store.DIRECTORY),"lstatSync",false),true);
   for(const op of ["readFileSync","openSync","readdirSync","mkdirSync","statSync","realpathSync"])assert.equal(policy.permits(p,op,false),false);
   assert.equal(policy.permits(p,"lstatSync",true),false);assert.equal(policy.permits(path.join(p,"selection.json"),"openSync",false),false);
 });

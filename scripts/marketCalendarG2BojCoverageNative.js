@@ -5,6 +5,7 @@
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"),
   cp = require("node:child_process"), assert = require("node:assert/strict");
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
+const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT = path.resolve(__dirname, "..");
 function sentinel(root) {
   const audit = { forbiddenAttempts: 0, repositoryWrites: 0 };
@@ -92,7 +93,7 @@ async function worker() {
     session.defaultSession.webRequest.onBeforeSendHeaders(null);
     const destination = path.join(config.root, "receipt.json"), temp = destination + ".tmp";
     fs.writeFileSync(temp, JSON.stringify(report)); fs.renameSync(temp, destination);
-    app.exit(report.status === "PASS" ? 0 : 1);
+    await Lifecycle.shutdown(app, session, report.status === "PASS" ? 0 : 1);
   }
 }
 function run(mode = "isolated") {
@@ -102,7 +103,7 @@ function run(mode = "isolated") {
     const pack = path.join(root, "package"); fs.mkdirSync(pack);
     const identity = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     fs.writeFileSync(path.join(pack, "package.json"), JSON.stringify({ name: identity.name, version: identity.version, main: "entry.cjs" }));
-    fs.writeFileSync(path.join(pack, "entry.cjs"), `require(${JSON.stringify(__filename)}).worker().catch(e=>{console.error(e.message);require('electron').app.exit(1)});`);
+    fs.writeFileSync(path.join(pack, "entry.cjs"), `require(${JSON.stringify(__filename)}).worker().catch(async e=>{console.error(e.message);const electron=require('electron');await require(${JSON.stringify(require.resolve("../test/fixtures/nativeElectronFixtureLifecycle.js"))}).shutdown(electron.app,electron.session,1)});`);
     fs.writeFileSync(path.join(pack, "fixture.json"), JSON.stringify({ root, mode }));
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
     const child = cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],

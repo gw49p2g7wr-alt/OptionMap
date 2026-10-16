@@ -4,7 +4,7 @@ const A = require("../js/marketCalendarHistory/formalWriterAuthorityV2.js"), S =
 const F = require("./fixtures/marketCalendar/mofControlledFixture.js"), AF = require("./fixtures/marketCalendar/automaticShadowFixture.js");
 const Core = require("../js/marketCalendarHistory/formalControlledWriterCore.js"), C = require("../js/marketCalendarRuntime/mofControlledGrantController.js");
 const W = require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"), Native = require("../scripts/marketCalendarG15b4HiddenRendererNative.js");
-const hashFile = p => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+const hashFile = p => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 let successful;
 test("X1/X7/X9/X11 exact native renderer: local token, one real transaction, fresh process readback", async () => {
   successful = await Native.nativeCase(); const r = successful.executed.output;

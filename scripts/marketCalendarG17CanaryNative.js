@@ -2,6 +2,7 @@
 
 // Disposable package/profile only. No production reader, issuer or activation.
 const fs=require("node:fs"),path=require("node:path"),os=require("node:os"),cp=require("node:child_process"),crypto=require("node:crypto"),assert=require("node:assert/strict");
+const Lifecycle=require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT=path.resolve(__dirname,".."),sha=b=>crypto.createHash("sha256").update(b).digest("hex");
 function sentinel(){const audit={productionAttempts:0,networkAttempts:0};
   const check=p=>{if(typeof p!=="string"&&!Buffer.isBuffer(p))return;const v=path.resolve(String(p));
@@ -28,7 +29,7 @@ async function worker(){
   assert.equal(pack,path.join(config.root,"package"));app.setPath("appData",policy.parents[1]);app.setPath("userData",policy.profile);app.setPath("sessionData",policy.profile);
   app.setPath("crashDumps",path.join(config.root,"crashes"));app.commandLine.appendSwitch("disable-background-networking");app.disableHardwareAcceleration();
   const guard=sentinel();app.on("window-all-closed",()=>{});
-  let stage="modules";const watchdog=setTimeout(()=>{console.error("isolated_watchdog: "+stage);app.exit(3);},40000);
+  let stage="modules";const watchdog=setTimeout(async()=>{console.error("isolated_watchdog: "+stage);await Lifecycle.shutdown(app,session,3);},40000);
   const corePath=require.resolve("../js/marketCalendarHistory/formalControlledWriterCore.js"),core=require(corePath);let mainTokenAttempts=0;
   require.cache[corePath].exports=Object.freeze({...core,prepareExecution(){mainTokenAttempts++;throw Error("isolated_main_token_forbidden");}});
   const E=require("../js/marketCalendarHistory/mofStartupCanaryEnvelope.js"),P=require("../js/marketCalendarHistory/mofStartupCanaryPlan.js"),Store=require("../js/marketCalendarHistory/mofStartupCanaryStore.js");
@@ -71,7 +72,8 @@ async function worker(){
   const bytes=Buffer.from(JSON.stringify(result)),file=path.join(pack,"result.json");
   fs.writeFileSync(file+".tmp",bytes,{flag:"wx",mode:0o600});fs.renameSync(file+".tmp",file);
   fs.writeFileSync(file+".complete",JSON.stringify({bytes:bytes.length,sha256:sha(bytes)}),{flag:"wx",mode:0o600});
-  console.log(JSON.stringify({mode:config.mode,status:result.status,bytes:bytes.length}));app.exit(0);
+  console.log(JSON.stringify({mode:config.mode,status:result.status,bytes:bytes.length}));
+  clearTimeout(watchdog);await Lifecycle.shutdown(app,session,0);
 }
 function launch(root,profile,fixture,mode,fault,wiring=false){
   const pack=path.join(root,"package");fs.mkdirSync(pack,{recursive:true});
@@ -163,7 +165,7 @@ async function atomicCase(crashAt){
     assert.equal(result.loaded.retryAllowed,false);assert.deepEqual(result.guard,{productionAttempts:0,networkAttempts:0});return result;
   }finally{fs.rmSync(root,{recursive:true});}
 }
-if(process.type==="browser")worker().catch(e=>{console.error(e.stack);require("electron").app.exit(1);});
+if(process.type==="browser")worker().catch(async e=>{console.error(e.stack);const electron=require("electron");await Lifecycle.shutdown(electron.app,electron.session,1);});
 else if(require.main===module&&process.argv[2]?.startsWith("--atomic-")){
   const mode=process.argv[2].slice(9),root=process.argv[3],fault=process.argv[4]==="none"?null:process.argv[4];
   (mode==="activate"?(async()=>{sentinel();const f=await require("../test/fixtures/marketCalendar/mofStartupCanaryFixture.js").setup();
