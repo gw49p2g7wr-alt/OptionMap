@@ -12,7 +12,7 @@ const Atomic = require("../js/marketCalendarHistory/writerSafetyAtomicCore.js");
 const template = Base.createProductionPolicy();
 function deny() { const e = Error("controlled_guard_access_denied"); e.code = "EACCES"; throw e; }
 function bindResolvedProfile(root, selection = null, record = null) {
-  const pathApi = /^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? path.win32 : path;
+  const pathApi = /^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? path.win32 : path.posix;
   const child = (parent, target) => target.startsWith(parent + pathApi.sep);
   if (typeof root !== "string" || !pathApi.isAbsolute(root) || pathApi.normalize(root) !== root || pathApi.basename(root) !== "OptionMap")
     throw Error("controlled_guard_profile_invalid");

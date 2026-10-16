@@ -14,7 +14,7 @@ const CRASH_POINTS = Object.freeze(["after_authorization", "before_completion_pe
     ...Atomic.CRASH_POINTS.map(a => `${p}:${a}`)]), ...Atomic.CRASH_POINTS.map(p => `completion_${p}`)]);
 function createBoundStore(root, { crashAt = null } = {}) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
-  if (typeof root !== "string" || !path.isAbsolute(root) || fs.realpathSync(root) !== root ||
+  if (typeof root !== "string" || !path.isAbsolute(root) || !Filesystem.samePath(fs.realpathSync(root), root) ||
     crashAt !== null && !CRASH_POINTS.includes(crashAt)) throw Error("controlled_bound_store_invalid");
   const userData = root;
   const directory = path.join(userData, Generation.DIRECTORY); Generation.secureDirectory(directory);
@@ -33,7 +33,7 @@ function createBoundStore(root, { crashAt = null } = {}) {
   function checkDirectories() {
     const r = fs.lstatSync(userData), d = fs.lstatSync(directory);
     if (r.dev !== rootStat.dev || r.ino !== rootStat.ino || d.dev !== directoryStat.dev || d.ino !== directoryStat.ino ||
-      r.isSymbolicLink() || d.isSymbolicLink() || fs.realpathSync(directory) !== directory) throw Error("controlled_path_changed");
+      r.isSymbolicLink() || d.isSymbolicLink() || !Filesystem.samePath(fs.realpathSync(directory), directory)) throw Error("controlled_path_changed");
   }
   function checkOwned() {
     checkDirectories();

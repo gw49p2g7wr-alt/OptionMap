@@ -4,6 +4,7 @@
 // is disposable. No production profile resolver, IndexedDB, safety or writer.
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"),
   cp = require("node:child_process"), assert = require("node:assert/strict");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const ROOT = path.resolve(__dirname, "..");
 function sentinel(root) {
   const audit = { forbiddenAttempts: 0, repositoryWrites: 0 };
@@ -40,7 +41,7 @@ function sentinel(root) {
 async function worker() {
   const { app, net, session } = require("electron"), pack = app.getAppPath();
   const config = JSON.parse(fs.readFileSync(path.join(pack, "fixture.json"), "utf8"));
-  if (path.dirname(config.root) !== fs.realpathSync(os.tmpdir()) || !path.basename(config.root).startsWith("optionmap-g2-boj-") ||
+  if (!Filesystem.samePath(path.dirname(config.root), fs.realpathSync(os.tmpdir())) || !path.basename(config.root).startsWith("optionmap-g2-boj-") ||
       pack !== path.join(config.root, "package") || !["isolated", "live-readonly"].includes(config.mode)) throw Error("g2_fixture_scope_invalid");
   const profile = path.join(config.root, "profile"), appData = path.join(config.root, "appData");
   fs.mkdirSync(profile, { recursive: true }); fs.mkdirSync(appData, { recursive: true });

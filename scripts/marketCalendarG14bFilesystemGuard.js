@@ -11,7 +11,7 @@ const PARENT_METADATA = Object.freeze(["lstatSync"]);
 const FILE_NAMES = Object.freeze(["safety.json", "sequence.json", "ownership.lock", "update.intent", "safety.tmp", "sequence.tmp"]);
 const fail = reason => { const e = Error(reason); e.code = "EACCES"; throw e; };
 function build(profile, parents, isolated) {
-  const windowsProfile = /^(?:[a-z]:[\\/]|\\\\)/i.test(profile), pathApi = windowsProfile ? path.win32 : path;
+  const windowsProfile = /^(?:[a-z]:[\\/]|\\\\)/i.test(profile), pathApi = windowsProfile ? path.win32 : path.posix;
   const join = (...parts) => pathApi.join(...parts), child = (root, target) => target.startsWith(root + pathApi.sep);
   const legacy = join(profile, "market-calendar-writer-safety"), generations = join(profile, "market-calendar-source-set-safety");
   const directories = [profile, legacy, generations, ...["baseline", "extended"].flatMap(g =>
@@ -112,7 +112,8 @@ function createIsolatedPolicy(options) {
     fail("migration_guard_fixture_invalid");
   const root = options.fixtureRoot;
   if (typeof root !== "string" || !path.isAbsolute(root) || !path.basename(root).startsWith("optionmap-g14bg-fixture-") ||
-    path.dirname(root) !== fs.realpathSync(os.tmpdir()) || fs.lstatSync(root).isSymbolicLink() || fs.realpathSync(root) !== root)
+    !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) || fs.lstatSync(root).isSymbolicLink() ||
+    !Filesystem.samePath(fs.realpathSync(root), root))
     fail("migration_guard_fixture_invalid");
   const library = root + "/Users/natsu/Library", support = library + "/Application Support";
   return build(support + "/OptionMap", [library, support], true);

@@ -18,7 +18,7 @@ const CORE_POINTS = Object.freeze({ after_temp_write: "after_temp_write", before
 const fail = reason => { throw Error(reason); };
 function createGenerationStore(root, crashAt = null) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) fail("main_side_only");
-  if (root !== fs.realpathSync(root) || fs.lstatSync(root).isSymbolicLink() ||
+  if (!Filesystem.samePath(root, fs.realpathSync(root)) || fs.lstatSync(root).isSymbolicLink() ||
       crashAt !== null && !CRASH_POINTS.includes(crashAt)) fail("source_set_store_invalid");
   const rootStat = fs.lstatSync(root), directory = path.join(root, DIRECTORY), owner = randomUUID(), ios = [];
   let closed = false, busy = false, owned = false, interrupted = false, highWater = -1;
@@ -60,7 +60,7 @@ function createGenerationStore(root, crashAt = null) {
   function generationIO(generation, crashAt = null) {
     if (!["baseline", "extended"].includes(generation)) fail("safety_generation_invalid");
     const parent = path.join(directory, generation), stat = fs.lstatSync(parent);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(parent) !== parent ||
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !Filesystem.samePath(fs.realpathSync(parent), parent) ||
       process.platform !== "win32" && (stat.mode & 0o077)) fail("safety_generation_invalid");
     const io = Core.create(path.join(parent, Core.DIRECTORY), { crashAt }); ios.push(io); return io;
   }

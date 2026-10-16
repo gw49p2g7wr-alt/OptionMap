@@ -26,7 +26,10 @@ function fresh(root, command = "read", crashAt = null, cycle = 1) {
 test("P1/P2 explicit disabled provisioning + native fsync/atomic replacement", () => fixture(async (s, root) => {
   assert.equal(s.load().available, true); assert.equal(s.load().safety.sequence, 0);
   assert.equal(A.PRODUCTION_POLICY.global.state, "disabled"); assert.equal(record(root).transitionAudit[0].reasonCode, "provision_disabled");
-  assert.ok(s.audit().syncs >= 4); assert.ok(s.audit().directorySyncs >= 5); assert.equal(s.audit().replaces, 2);
+  assert.ok(s.audit().syncs >= 4);
+  if (process.platform === "win32") assert.equal(s.audit().directorySyncs, 0);
+  else assert.ok(s.audit().directorySyncs >= 5);
+  assert.equal(s.audit().replaces, 2);
   assert.equal((await s.provisionDisabled()).saved, false);
 }));
 test("P3 missing file load never provisions; no directory/file mutation", () => fixture((s, root) => {

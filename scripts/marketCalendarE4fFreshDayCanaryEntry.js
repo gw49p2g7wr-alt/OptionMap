@@ -18,8 +18,8 @@ function mainOnly() {
 }
 function receiptRoot(root) {
   mainOnly();
-  if (typeof root !== "string" || fs.realpathSync(root) !== root ||
-      path.dirname(root) !== fs.realpathSync(os.tmpdir()) || !path.basename(root).startsWith("optionmap-writer-safety-") ||
+  if (typeof root !== "string" || !Filesystem.samePath(fs.realpathSync(root), root) ||
+      !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) || !path.basename(root).startsWith("optionmap-writer-safety-") ||
       !Filesystem.secureDirectoryStat(fs.lstatSync(root))) throw Error("receipt_root_invalid");
 }
 function messageShape(message) {
@@ -32,7 +32,7 @@ function messageShape(message) {
 }
 function readBounded(root, name, limit) {
   const target = path.join(root, name);
-  if (fs.realpathSync(target) !== target) throw Error("receipt_file_invalid");
+  if (!Filesystem.samePath(fs.realpathSync(target), target)) throw Error("receipt_file_invalid");
   const fd = fs.openSync(target, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
   try {
     const stat = fs.fstatSync(fd);
@@ -140,7 +140,7 @@ function isDedicatedPackageEntry() {
   try {
     const root = require("electron").app.getAppPath();
     const metadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-    return typeof metadata.main === "string" && fs.realpathSync(path.resolve(root, metadata.main)) === __filename;
+    return typeof metadata.main === "string" && Filesystem.samePath(fs.realpathSync(path.resolve(root, metadata.main)), __filename);
   } catch (_) { return false; }
 }
 if (isDedicatedPackageEntry() && !Object.hasOwn(globalThis, LATCH)) {

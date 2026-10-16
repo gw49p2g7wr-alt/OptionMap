@@ -5,6 +5,7 @@
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"), cp = require("node:child_process"),
   A = require("node:assert/strict"), crypto = require("node:crypto");
 const ROOT = path.resolve(__dirname, ".."), sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const MODES = ["isolated", "live-readonly", "production-readonly"];
 function guard(root, production) {
   const profile = "/Users/natsu/Library/Application Support/OptionMap", inside = (p,b) => p===b || p.startsWith(b+path.sep);
@@ -34,8 +35,8 @@ function guard(root, production) {
 }
 async function worker() {
   const {app,net,session,BrowserWindow}=require("electron"),pack=app.getAppPath(),config=JSON.parse(fs.readFileSync(path.join(pack,"guard.json"),"utf8"));
-  if(path.dirname(config.root)!==fs.realpathSync(os.tmpdir())||!path.basename(config.root).startsWith("optionmap-g4-boj-")||
-    pack!==path.join(config.root,"package")||!MODES.includes(config.mode))throw Error("g4_self_contained_guard_invalid");
+  if(!Filesystem.samePath(path.dirname(config.root),fs.realpathSync(os.tmpdir()))||!path.basename(config.root).startsWith("optionmap-g4-boj-")||
+    !Filesystem.samePath(pack,path.join(config.root,"package"))||!MODES.includes(config.mode))throw Error("g4_self_contained_guard_invalid");
   const production=config.mode==="production-readonly",profile=production?require("./marketCalendarG14bFilesystemGuard.js").createProductionPolicy().profile:path.join(config.root,"profile");
   if(!production){fs.mkdirSync(profile,{recursive:true});app.setPath("appData",path.join(config.root,"appData"));}
   app.setPath("userData",profile);app.setPath("sessionData",profile);app.setPath("crashDumps",path.join(config.root,"crashes"));

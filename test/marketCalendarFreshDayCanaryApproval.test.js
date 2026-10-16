@@ -1,6 +1,7 @@
 "use strict";
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs");
 const os = require("node:os"), path = require("node:path"), cp = require("node:child_process"), vm = require("node:vm");
+const { createRequire } = require("node:module");
 const { createHash } = require("node:crypto");
 const V = require("../js/marketCalendarRuntime/freshDayCanaryApproval.js");
 const P = require("../js/marketCalendarRuntime/freshDayCanaryPreflight.js");
@@ -23,7 +24,7 @@ function evidence(mutate = null) {
 function changeText(e, text) { e.manifestText = text; e.currentManifest = Buffer.from(text); e.workingManifest = Buffer.from(text); return e; }
 function isolatedGit(fn, patch = null) {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-canary-approval-"));
-  const git = args => cp.execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args],
+  const git = args => cp.execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", ...args],
     { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env,
       GIT_AUTHOR_NAME: "Isolated fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid",
       GIT_COMMITTER_NAME: "Isolated fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
@@ -170,8 +171,9 @@ test("P15 production execution is mocked only; invalid gates invoke zero callbac
   assert.deepEqual(Object.keys(require("../scripts/marketCalendarE4fFreshDayCanary.js")), ["createIsolatedController", "runProductionAcceptance"]);
 });
 test("renderer cannot invoke repository verifier; arbitrary manifest path not an API", () => {
-  const source = fs.readFileSync(require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js"), "utf8"), module = { exports: {} };
-  vm.runInNewContext(source, { module, require, Buffer, process: { type: "renderer" } });
+  const filename = require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js");
+  const source = fs.readFileSync(filename, "utf8"), module = { exports: {} };
+  vm.runInNewContext(source, { module, require: createRequire(filename), Buffer, process: { type: "renderer" } });
   assert.equal(module.exports.verifyRepository(repo).reason, "main_side_only");
   assert.equal(Object.isFrozen(V.CRITICAL_ARTIFACTS), true);
   assert.equal(V.parseManifest(changeText(evidence(), '{"path":"elsewhere"}').manifestText).valid, false);

@@ -7,6 +7,7 @@ const A = require("./formalWriterAuthorityV2.js");
 const Envelope = require("./writerSafetySourceSetEnvelope.js"), Core = require("./writerSafetySourceSetAtomicCore.js");
 const Profile = require("./writerSafetyInitialProvisioning.js");
 const Reader = require("../marketCalendarRuntime/writerSafetyReadOnly.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const reason = e => /^[a-z_]+$/.test(e.message) ? e.message : "source_set_migration_failed";
 function build(root, crashAt) {
   const reader = Reader.createReader(root);
@@ -59,9 +60,9 @@ function createIsolatedAdapter(options) {
   // Reject non-temp inputs lexically before probing any caller-supplied path.
   if (typeof options.userData !== "string" || !path.isAbsolute(options.userData) ||
       !path.basename(options.userData).startsWith("optionmap-writer-safety-") ||
-      path.dirname(options.userData) !== fs.realpathSync(os.tmpdir())) throw Error("isolated_store_path_invalid");
+      !Filesystem.samePath(path.dirname(options.userData), fs.realpathSync(os.tmpdir()))) throw Error("isolated_store_path_invalid");
   const root = fs.realpathSync(options.userData);
-  if (root !== options.userData) throw Error("isolated_store_path_invalid");
+  if (!Filesystem.samePath(root, options.userData)) throw Error("isolated_store_path_invalid");
   return build(root, options.crashAt);
 }
 module.exports = Object.freeze({ createProductionAdapter, createIsolatedAdapter });

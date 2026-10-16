@@ -54,7 +54,7 @@ test("M7/M8 arbitrary executable/config files remain runtime overrides", () => f
 }));
 function approvedGit(fn) {
   return fixture(({ root, write }) => {
-    const git = (...args) => cp.execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args],
+    const git = (...args) => cp.execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", ...args],
       { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env,
         GIT_AUTHOR_NAME: "Isolated fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid",
         GIT_COMMITTER_NAME: "Isolated fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
@@ -94,7 +94,8 @@ test("metadata does not exempt tracked modifications or expand approval scope", 
   assert.equal(V.verifyRepository(root).reason, "uncommitted_implementation");
 }));
 test("metadata/approval scope remains the committed seventeen-artifact contract", () => {
-  const old = cp.execFileSync("git", ["show", "HEAD:js/marketCalendarRuntime/freshDayCanaryApproval.js"], { cwd: repo, encoding: "utf8" });
+  const filtered = p => cp.execFileSync("git", ["cat-file", "--filters", `--path=${p}`, `HEAD:${p}`], { cwd: repo });
+  const old = filtered("js/marketCalendarRuntime/freshDayCanaryApproval.js").toString("utf8");
   const module = { exports: {} };
   require("node:vm").runInNewContext(old, { module, require, Buffer, process });
   for (const key of ["MANIFEST_PATH", "GATE_ID", "OPERATION", "SOURCE"])
@@ -104,7 +105,7 @@ test("metadata/approval scope remains the committed seventeen-artifact contract"
     JSON.stringify(module.exports.CRITICAL_ARTIFACTS));
   for (const p of ["js/marketCalendarRuntime/freshDayCanaryPreflight.js",
     "js/marketCalendarRuntime/freshDayCanaryReceipt.js", "js/marketCalendarHistory/formalControlledWriterCore.js"])
-    assert.deepEqual(fs.readFileSync(path.join(repo, p)), cp.execFileSync("git", ["show", "HEAD:" + p], { cwd: repo }));
+    assert.deepEqual(fs.readFileSync(path.join(repo, p)), filtered(p));
   for (const p of ["main.js", "preload.js"])
     assert.deepEqual(fs.readFileSync(path.join(repo, p)), integrationBytes[p]);
 });

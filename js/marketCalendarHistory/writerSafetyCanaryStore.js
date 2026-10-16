@@ -5,6 +5,7 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
 const A = require("./formalWriterAuthorityV2.js"), Auth = require("./formalWriterAuthorizationV2.js");
 const E = require("./writerSafetyVersionedEnvelope.js"), Legacy = require("./writerSafetyFileSchema.js");
 const Atomic = require("./writerSafetyAtomicCore.js"), Profile = require("./writerSafetyInitialProvisioning.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const GATE = A.hash({ phase: "E4f-1R", head: "e765852dcc927d14be32fb3eed4e40ec2bbc6182",
   source: E.SOURCE, operation: "startup", authorityVersion: 3, mutationCounts: E.COUNTS });
 const same = (a, b) => A.hash(a) === A.hash(b);
@@ -111,7 +112,7 @@ function build(root) {
 function createProductionStore() { return build(Profile.resolveProductionProfile()); }
 function createIsolatedStore(root) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
-  if (root !== fs.realpathSync(root) || path.dirname(root) !== fs.realpathSync(os.tmpdir()) ||
+  if (!Filesystem.samePath(root, fs.realpathSync(root)) || !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) ||
     !path.basename(root).startsWith("optionmap-writer-safety-")) throw Error("isolated_profile_invalid");
   return build(root);
 }

@@ -4,9 +4,10 @@
 // Production parity mode performs only fixed-path safety/IndexedDB reads.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
 const assert = require("node:assert/strict"), crypto = require("node:crypto");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const ROOT = path.resolve(__dirname, ".."), sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 async function worker(root, mode) {
-  if (path.dirname(root) !== fs.realpathSync(require("node:os").tmpdir()) ||
+  if (!Filesystem.samePath(path.dirname(root), fs.realpathSync(require("node:os").tmpdir())) ||
       !path.basename(root).startsWith("optionmap-g14bg-fixture-g16a-") || !["isolated", "parity"].includes(mode) ||
       fs.readFileSync(path.join(root, "guard.json"), "utf8") !== JSON.stringify({ gate: "G1.6a", mode })) throw Error("self_contained_guard_invalid");
   const { app, BrowserWindow, session } = require("electron");

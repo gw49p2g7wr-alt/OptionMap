@@ -26,9 +26,13 @@ test("canonical identity rejects aliases and directory sync has explicit platfor
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-fs-policy-"));
   try {
     assert.equal(Safety.canonical(root), root);
-    const posix = Safety.syncDirectory(root, fs, "darwin");
+    let opened = 0, synced = 0, closed = 0;
+    const posixFs = { openSync(target, flags) { assert.equal(target, "/safe"); assert.ok(flags >= 0); opened++; return 7; },
+      fsyncSync(fd) { assert.equal(fd, 7); synced++; }, closeSync(fd) { assert.equal(fd, 7); closed++; } };
+    const posix = Safety.syncDirectory("/safe", posixFs, "darwin");
     assert.equal(posix.strategy, "directory_fsync"); assert.equal(posix.synced, true);
-    let opened = 0, synced = 0;
+    assert.deepEqual({ opened, synced, closed }, { opened: 1, synced: 1, closed: 1 });
+    opened = 0; synced = 0;
     const windowsFs = { openSync() { opened++; }, fsyncSync() { synced++; }, closeSync() {} };
     assert.deepEqual(Safety.syncDirectory("C:\\safe", windowsFs, "win32"),
       { strategy: "file_sync_publish_readback", synced: false });

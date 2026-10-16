@@ -17,7 +17,10 @@ function create(directory, { crashAt = null } = {}) {
   const owner = randomUUID(); let owned = false;
   const file = name => path.join(directory, NAMES[name]);
   function handle(name, flags, action) {
-    const fd = fs.openSync(file(name), flags | Filesystem.noFollowFlag(), 0o600); audit.fileHandles++; audit.opens++;
+    const target = file(name);
+    try { if (fs.lstatSync(target).isSymbolicLink()) throw Error("safety_file_type_invalid"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    const fd = fs.openSync(target, flags | Filesystem.noFollowFlag(), 0o600); audit.fileHandles++; audit.opens++;
     if (name === "lock") audit.lockHandles++;
     try { const stat = fs.fstatSync(fd); if (!stat.isFile() || stat.nlink !== 1) throw Error("safety_file_type_invalid");
       return action(fd, stat); } finally { fs.closeSync(fd); audit.fileHandles--; if (name === "lock") audit.lockHandles--; }

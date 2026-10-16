@@ -10,13 +10,14 @@ const Historical = require("./marketCalendarE4fStartupCanary.js");
 const Schema = require("../js/marketCalendarHistory/productionSchemaV1.js");
 const Bootstrap = require("../js/marketCalendarHistory/bootstrapSchemaV1.js");
 const State = require("../js/storage/marketCalendarRuntimeStateStore.js");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const REPO = path.resolve(__dirname, ".."), owners = new WeakMap();
 function mainOnly() {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
 }
 function isolatedRoot(root) {
-  if (typeof root !== "string" || root !== fs.realpathSync(root) || fs.lstatSync(root).isSymbolicLink() ||
-      path.dirname(root) !== fs.realpathSync(os.tmpdir()) || !path.basename(root).startsWith("optionmap-writer-safety-"))
+  if (typeof root !== "string" || !Filesystem.samePath(root, fs.realpathSync(root)) || fs.lstatSync(root).isSymbolicLink() ||
+      !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) || !path.basename(root).startsWith("optionmap-writer-safety-"))
     throw Error("isolated_profile_invalid");
 }
 async function instrument(wc, installed) {
@@ -128,7 +129,7 @@ async function runProductionAcceptance(...args) {
   const appRoot = require("electron").app.getAppPath();
   const metadata = JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8"));
   const entry = path.join(__dirname, "marketCalendarE4fFreshDayCanaryEntry.js");
-  if (typeof metadata.main !== "string" || fs.realpathSync(path.resolve(appRoot, metadata.main)) !== entry)
+  if (typeof metadata.main !== "string" || !Filesystem.samePath(fs.realpathSync(path.resolve(appRoot, metadata.main)), entry))
     throw Error("dedicated_package_entry_required");
   // Latch before the first asynchronous boundary; failure never permits a retry.
   if (!productionAttempt) productionAttempt = productionEntry();

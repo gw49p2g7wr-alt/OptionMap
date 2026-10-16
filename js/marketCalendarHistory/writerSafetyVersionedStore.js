@@ -5,6 +5,7 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
 const A = require("./formalWriterAuthorityV2.js"), Auth = require("./formalWriterAuthorizationV2.js");
 const Legacy = require("./writerSafetyFileSchema.js"), Atomic = require("./writerSafetyAtomicFile.js");
 const E = require("./writerSafetyVersionedEnvelope.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const same = (a, b) => A.hash(a) === A.hash(b);
 const fail = reason => { throw Error(reason); };
 function createIsolatedStore(options) {
@@ -12,7 +13,8 @@ function createIsolatedStore(options) {
   if (!A.exact(options, ["targetEnvironment", "userData", "crashAt"]) || options.targetEnvironment !== "isolated_test" ||
     options.crashAt !== null && !Atomic.CRASH_POINTS.includes(options.crashAt)) fail("isolated_envelope_store_invalid");
   const root = fs.realpathSync(options.userData);
-  if (root !== options.userData || fs.lstatSync(root).isSymbolicLink() || path.dirname(root) !== fs.realpathSync(os.tmpdir()) ||
+  if (!Filesystem.samePath(root, options.userData) || fs.lstatSync(root).isSymbolicLink() ||
+    !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) ||
     !path.basename(root).startsWith("optionmap-writer-safety-")) fail("isolated_store_path_invalid");
   const io = Atomic.create(path.join(root, Atomic.DIRECTORY), { crashAt: options.crashAt });
   let closed = false, busy = false, highWater = -1;

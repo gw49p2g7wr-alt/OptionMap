@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const Authorization = require("../js/marketCalendarHistory/planAuthorization.js");
 const Canon = require("../js/marketCalendar/marketEventCanonicalizer.js");
 const Delivery = require("../js/marketCalendarHistory/approvalArtifactDelivery.js");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 
 const HASH = "a".repeat(64), TIME = "2026-09-16T22:24:26.053Z";
 const plan = () => ({ sourceId: "source", runId: "run-1", acceptedAt: TIME,
@@ -101,8 +102,13 @@ test("stagingは0700 directory・0600 file・small descriptor・Unicode/newline�
     const descriptor = await Delivery.stage({ artifactBytes: bytes, expected,
         operationId: operationId(), tempRoot: os.tmpdir() });
     assert.equal(fs.readFileSync(descriptor.artifactPath).equals(bytes), true);
-    assert.equal(fs.statSync(path.dirname(descriptor.artifactPath)).mode & 0o777, 0o700);
-    assert.equal(fs.statSync(descriptor.artifactPath).mode & 0o777, 0o600);
+    const directoryStat = fs.lstatSync(path.dirname(descriptor.artifactPath)), fileStat = fs.lstatSync(descriptor.artifactPath);
+    assert.equal(Filesystem.secureDirectoryStat(directoryStat), true);
+    assert.equal(Filesystem.secureFileStat(fileStat), true);
+    if (process.platform !== "win32") {
+        assert.equal(directoryStat.mode & 0o777, 0o700);
+        assert.equal(fileStat.mode & 0o777, 0o600);
+    }
     assert.equal("canonicalPayload" in descriptor, false); Delivery.cleanup(descriptor);
 });
 

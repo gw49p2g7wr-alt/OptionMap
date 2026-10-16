@@ -65,7 +65,8 @@ function build(root) {
 function createProductionProvisioner() { return build(resolveProductionProfile()); }
 function createIsolatedProvisioner(root) {
   mainOnly(); const canonical = fs.realpathSync(root);
-  if (canonical !== root || fs.lstatSync(root).isSymbolicLink() || path.dirname(root) !== fs.realpathSync(os.tmpdir()) ||
+  if (!Filesystem.samePath(canonical, root) || fs.lstatSync(root).isSymbolicLink() ||
+      !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) ||
       !path.basename(root).startsWith("optionmap-writer-safety-")) throw Error("isolated_profile_invalid");
   return build(root);
 }

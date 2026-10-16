@@ -3,6 +3,7 @@
 // Data-only one-child Git approval, not a developer signature or startup token.
 // No production state, writer, migration or network imports.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
+const Filesystem = require("../marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const { createHash } = require("node:crypto"), { TextDecoder } = require("node:util");
 const MANIFEST_PATH = "approvals/marketCalendarFreshDayCanary.json";
 const GATE_ID = "market-calendar-parent-bound-fresh-day-canary-v1";
@@ -113,11 +114,12 @@ function classifyRuntimeFiles(root, files) {
   const inertMetadata = [], runtimeOverrides = [];
   function inert(p) {
     try {
-      if (typeof root !== "string" || root !== fs.realpathSync(root) || typeof p !== "string" ||
+      if (typeof root !== "string" || !Filesystem.samePath(root, fs.realpathSync(root)) || typeof p !== "string" ||
           path.posix.isAbsolute(p) || p.includes("\0") || p.split("/").some(s => !s || s === "." || s === "..") ||
           path.posix.basename(p) !== ".DS_Store") return false;
       const target = path.resolve(root, p);
-      return target.startsWith(root + path.sep) && fs.lstatSync(target).isFile() && fs.realpathSync(target) === target;
+      return Filesystem.contains(root, target) && target !== root && fs.lstatSync(target).isFile() &&
+        Filesystem.samePath(fs.realpathSync(target), target);
     } catch (_) { return false; }
   }
   for (const p of files) (inert(p) ? inertMetadata : runtimeOverrides).push(p);
@@ -159,12 +161,12 @@ function verifyEvidence(e) {
 function verifyRepository(root) {
   try {
     if (process.type === "renderer" || typeof window !== "undefined" && window.document) reject("main_side_only");
-    if (typeof root !== "string" || root !== fs.realpathSync(root)) reject("repository_root_invalid");
+    if (typeof root !== "string" || !Filesystem.samePath(root, fs.realpathSync(root))) reject("repository_root_invalid");
     const git = args => cp.execFileSync("git", ["--no-replace-objects", ...args],
       { cwd: root, stdio: ["ignore", "pipe", "ignore"], maxBuffer: 8 * 1024 * 1024 });
     const text = args => git(args).toString("utf8").trim();
     const paths = args => git(args).toString("utf8").split("\0").filter(Boolean);
-    if (text(["rev-parse", "--show-toplevel"]) !== root) reject("repository_root_invalid");
+    if (!Filesystem.samePath(text(["rev-parse", "--show-toplevel"]), root)) reject("repository_root_invalid");
     // Index flags must not conceal physical tracked drift from clean-tree checks.
     const masked = () => paths(["ls-files", "-v", "-z"]).some(p => /^[a-zS]/.test(p));
     if (masked()) reject("tracked_index_mask_forbidden");
@@ -193,7 +195,7 @@ function verifyRepository(root) {
     }
     function working(p) {
       const target = path.join(root, p);
-      if (!fs.lstatSync(target).isFile() || fs.realpathSync(target) !== target) reject("artifact_worktree_invalid");
+      if (!fs.lstatSync(target).isFile() || !Filesystem.samePath(fs.realpathSync(target), target)) reject("artifact_worktree_invalid");
       return fs.readFileSync(target);
     }
     const manifest = treeEntry(head, MANIFEST_PATH); if (!manifest) reject("approval_manifest_missing");

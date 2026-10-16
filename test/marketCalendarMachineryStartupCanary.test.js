@@ -196,7 +196,8 @@ test("missing safety never provisions during startup", async () => {
 test("shared transaction core and Formal schema are not changed or forked", () => {
   const cp = require("node:child_process");
   for (const p of ["js/marketCalendarHistory/formalControlledWriterCore.js", "js/marketCalendarHistory/productionSchemaV1.js"])
-    assert.deepEqual(fs.readFileSync(path.join(__dirname, "..", p)), cp.execFileSync("git", ["show", `HEAD:${p}`]));
+    assert.deepEqual(fs.readFileSync(path.join(__dirname, "..", p)),
+      cp.execFileSync("git", ["cat-file", "--filters", `--path=${p}`, `HEAD:${p}`]));
 });
 test("canary fixed context never added to main IPC/preload/renderer", () => {
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");

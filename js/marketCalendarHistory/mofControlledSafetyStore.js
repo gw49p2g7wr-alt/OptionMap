@@ -4,6 +4,7 @@
 // Immutable generations + a durable attempt ownership latch make interruption
 // fail closed, including an authorization-only crash before a pending fence exists.
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const A = require("./formalWriterAuthorityV2.js");
 const Auth = require("./mofControlledAuthorization.js"), Semantic = require("./mofControlledSemanticPlan.js");
 const Atomic = require("./writerSafetyAtomicCore.js"), Core = require("./formalControlledWriterCore.js");
@@ -16,8 +17,8 @@ const CRASH_POINTS = Object.freeze(["after_authorization", "after_prepared", "af
 function createIsolatedStore({ userData, crashAt = null } = {}) {
   if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only");
   if (typeof userData !== "string" || !path.isAbsolute(userData) ||
-    path.dirname(userData) !== fs.realpathSync(os.tmpdir()) || !path.basename(userData).startsWith("optionmap-writer-safety-") ||
-    fs.realpathSync(userData) !== userData ||
+    !Filesystem.samePath(path.dirname(userData), fs.realpathSync(os.tmpdir())) || !path.basename(userData).startsWith("optionmap-writer-safety-") ||
+    !Filesystem.samePath(fs.realpathSync(userData), userData) ||
     crashAt !== null && !CRASH_POINTS.includes(crashAt)) throw Error("isolated_store_path_invalid");
   const io = SafetyIO.createBoundStore(userData, { crashAt });
   const handles = new WeakMap(), audit = { authorizations: 0, readonlyTransactions: 0,
