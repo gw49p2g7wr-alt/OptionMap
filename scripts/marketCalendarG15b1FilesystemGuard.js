@@ -9,11 +9,13 @@ const File = require("../js/marketCalendarHistory/writerSafetyFileSchema.js");
 const E = require("../js/marketCalendarHistory/writerSafetySourceSetEnvelope.js");
 const Generation = require("../js/marketCalendarRuntime/writerSafetyGenerationReadOnly.js");
 const Atomic = require("../js/marketCalendarHistory/writerSafetyAtomicCore.js");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const template = Base.createProductionPolicy();
 function deny() { const e = Error("controlled_guard_access_denied"); e.code = "EACCES"; throw e; }
 function bindResolvedProfile(root, selection = null, record = null) {
   const pathApi = /^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? path.win32 : path.posix;
-  const child = (parent, target) => target.startsWith(parent + pathApi.sep);
+  const platform = pathApi === path.win32 ? "win32" : process.platform;
+  const child = (parent, target) => Filesystem.contains(parent, target, platform) && !Filesystem.samePath(parent, target, platform);
   if (typeof root !== "string" || !pathApi.isAbsolute(root) || pathApi.normalize(root) !== root || pathApi.basename(root) !== "OptionMap")
     throw Error("controlled_guard_profile_invalid");
   if (selection && (!A.exact(selection, ["schemaVersion", "generation", "sequence", "stateChecksum", "checksum"]) ||
@@ -29,8 +31,9 @@ function bindResolvedProfile(root, selection = null, record = null) {
   const files = new Set([...frames].flatMap(g => names.map(n => pathApi.join(sourceSet, g, Atomic.DIRECTORY, n))));
   const latch = pathApi.join(sourceSet, "controlled.lock"), temp = pathApi.join(sourceSet, "controlled-selection.tmp"), pointer = pathApi.join(sourceSet, "selection.json");
   const translate = p => path.posix.join(template.profile, ...pathApi.relative(root, p).split(pathApi.sep));
-  const map = p => p === parents[0] ? template.parents[0] : p === parents[1] ? template.parents[1] :
-    p === root ? template.profile : child(root, p) ? translate(p) : null;
+  const map = p => Filesystem.samePath(p, parents[0], platform) ? template.parents[0] :
+    Filesystem.samePath(p, parents[1], platform) ? template.parents[1] :
+    Filesystem.samePath(p, root, platform) ? template.profile : child(root, p) ? translate(p) : null;
   function permits(p, operation, writing = false) {
     if (typeof p !== "string" || !pathApi.isAbsolute(p) || pathApi.normalize(p) !== p || p.includes("\0")) return false;
     if (parents.includes(p)) return !writing && Base.PARENT_METADATA.includes(operation);

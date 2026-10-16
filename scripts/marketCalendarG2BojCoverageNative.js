@@ -42,7 +42,7 @@ async function worker() {
   const { app, net, session } = require("electron"), pack = app.getAppPath();
   const config = JSON.parse(fs.readFileSync(path.join(pack, "fixture.json"), "utf8"));
   if (!Filesystem.samePath(path.dirname(config.root), fs.realpathSync(os.tmpdir())) || !path.basename(config.root).startsWith("optionmap-g2-boj-") ||
-      pack !== path.join(config.root, "package") || !["isolated", "live-readonly"].includes(config.mode)) throw Error("g2_fixture_scope_invalid");
+      !Filesystem.samePath(pack, path.join(config.root, "package")) || !["isolated", "live-readonly"].includes(config.mode)) throw Error("g2_fixture_scope_invalid");
   const profile = path.join(config.root, "profile"), appData = path.join(config.root, "appData");
   fs.mkdirSync(profile, { recursive: true }); fs.mkdirSync(appData, { recursive: true });
   app.setPath("appData", appData); app.setPath("userData", profile); app.setPath("sessionData", profile);

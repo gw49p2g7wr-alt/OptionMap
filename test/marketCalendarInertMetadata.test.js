@@ -59,6 +59,7 @@ function approvedGit(fn) {
         GIT_AUTHOR_NAME: "Isolated fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid",
         GIT_COMMITTER_NAME: "Isolated fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
     git("init", "-b", "main");
+    const repositoryRoot = fs.realpathSync(git("rev-parse", "--show-toplevel"));
     const criticalArtifactDigests = {};
     for (const p of V.CRITICAL_ARTIFACTS) {
       const bytes = fs.readFileSync(path.join(repo, p)); write(p, bytes); criticalArtifactDigests[p] = sha(bytes);
@@ -68,7 +69,7 @@ function approvedGit(fn) {
     const manifest = { schemaVersion: 1, gateId: V.GATE_ID, approvedImplementationCommit: parent,
       approvedOperation: V.OPERATION, approvedSourceId: V.SOURCE, authorityVersion: 3, expectedSafetySequence: 2, criticalArtifactDigests };
     write(V.MANIFEST_PATH, JSON.stringify(manifest)); git("add", "--", V.MANIFEST_PATH); git("commit", "-m", "isolated approval");
-    return fn({ root, write, git, parent });
+    return fn({ root: repositoryRoot, write, git, parent });
   });
 }
 test("M9/M10 real approval verifier permits inert metadata and existing exclusions only", () => approvedGit(({ root, write, parent }) => {
@@ -97,7 +98,8 @@ test("metadata/approval scope remains the committed seventeen-artifact contract"
   const filtered = p => cp.execFileSync("git", ["cat-file", "--filters", `--path=${p}`, `HEAD:${p}`], { cwd: repo });
   const old = filtered("js/marketCalendarRuntime/freshDayCanaryApproval.js").toString("utf8");
   const module = { exports: {} };
-  require("node:vm").runInNewContext(old, { module, require, Buffer, process });
+  const filename = require.resolve("../js/marketCalendarRuntime/freshDayCanaryApproval.js");
+  require("node:vm").runInNewContext(old, { module, require: require("node:module").createRequire(filename), Buffer, process });
   for (const key of ["MANIFEST_PATH", "GATE_ID", "OPERATION", "SOURCE"])
     assert.equal(JSON.stringify(V[key]), JSON.stringify(module.exports[key]));
   assert.equal(V.CRITICAL_ARTIFACTS.length, 17);

@@ -4,6 +4,7 @@
 // no production factory or production acquisition is invoked by this harness.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
 const assert = require("node:assert/strict"), crypto = require("node:crypto");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const ROOT = path.resolve(__dirname, ".."), sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 function installSentinel(root) {
   const audit = { forbiddenAttempts: 0, networkAttempts: 0 };
@@ -26,11 +27,12 @@ function installSentinel(root) {
 }
 async function worker() {
   const { app, BrowserWindow, session } = require("electron"), packageRoot = app.getAppPath();
-  if (!packageRoot.startsWith("/private/tmp/optionmap-g14bg-fixture-") && !packageRoot.startsWith("/private/var/folders/"))
-    throw Error("fixture_package_path_required");
   const config = JSON.parse(fs.readFileSync(path.join(packageRoot, "fixture.json"), "utf8"));
+  if (!Filesystem.samePath(packageRoot, path.join(config.fixtureRoot, "package")) ||
+      !Filesystem.samePath(path.dirname(config.fixtureRoot), fs.realpathSync(require("node:os").tmpdir())) ||
+      !path.basename(config.fixtureRoot).startsWith("optionmap-g14bg-fixture-")) throw Error("fixture_package_path_required");
   const Guard = require("./marketCalendarG14bFilesystemGuard.js"), policy = Guard.createIsolatedPolicy({ targetEnvironment: "isolated_test", fixtureRoot: config.fixtureRoot });
-  assert.equal(packageRoot, path.join(config.fixtureRoot, "package"));
+  assert(Filesystem.samePath(packageRoot, path.join(config.fixtureRoot, "package")));
   app.setPath("appData", policy.parents[1]); app.setPath("userData", policy.profile); app.setPath("sessionData", policy.profile);
   app.setPath("crashDumps", path.join(config.fixtureRoot, "crashes")); app.commandLine.appendSwitch("disable-background-networking");
   const guard = installSentinel(config.fixtureRoot); app.on("window-all-closed", () => {});
@@ -128,8 +130,10 @@ async function nativeCase(fault = null) {
     assert.equal(fresh.output.preflight.eligible, false); assert.equal(fresh.output.guard.forbiddenAttempts, 0);
     assert.equal(fresh.output.formal.audit.readwrite, 0); assert.equal(fresh.output.formal.audit.writes, 0);
     // Inspect process command identity only, never a production filesystem path.
-    const processRows = cp.spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" });
-    assert.equal(processRows.status, 0); assert.equal(processRows.stdout.split("\n").filter(row => row.includes(profile)).length, 0, "fixture_child_leftover");
+    const processRows = process.platform === "win32" ? cp.spawnSync("tasklist", ["/FO", "CSV", "/NH"], { encoding: "utf8" }) :
+      cp.spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+    assert.equal(processRows.status, 0);
+    if (process.platform !== "win32") assert.equal(processRows.stdout.split("\n").filter(row => row.includes(profile)).length, 0, "fixture_child_leftover");
     return { fault, executed, reload: fresh.output, cleanup: { profileDeleted: true, windows: 0, children: 0 } };
   });
 }

@@ -196,7 +196,8 @@ test("preflight load does not rewrite isolated safety; historical/core/schema/ma
   P.loadIsolated(root); assert.deepEqual(fs.readFileSync(file), before);
   for (const p of ["scripts/marketCalendarE4fStartupCanary.js", "js/marketCalendarHistory/formalControlledWriterCore.js",
     "js/marketCalendarHistory/writerSafetyVersionedEnvelope.js", "js/marketCalendarHistory/productionSchemaV1.js"])
-    assert.deepEqual(fs.readFileSync(path.resolve(__dirname, "..", p)), cp.execFileSync("git", ["show", `HEAD:${p}`]));
+    assert.deepEqual(fs.readFileSync(path.resolve(__dirname, "..", p)),
+      cp.execFileSync("git", ["cat-file", "--filters", `--path=${p}`, `HEAD:${p}`]));
   for (const p of ["main.js", "preload.js"])
     assert.deepEqual(fs.readFileSync(path.resolve(__dirname, "..", p)), integrationBytes[p]);
   for (const p of P.IMPLEMENTATION_FILES.filter(p => !p.startsWith("test/"))) {

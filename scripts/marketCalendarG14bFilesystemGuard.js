@@ -62,7 +62,7 @@ function build(profile, parents, isolated) {
     function checked(p, operation, args) {
       assertAccess(p, operation); noSymlinks(p);
       const result = raw[operation](p, ...args); touches.push({ path: p, operation, validation: false });
-      if (operation === "realpathSync" && result !== p) fail("migration_guard_resolved_path_mismatch");
+      if (operation === "realpathSync" && !Filesystem.samePath(result, p)) fail("migration_guard_resolved_path_mismatch");
       return result;
     }
     return Object.freeze({ lstatSync: (p, ...args) => checked(p, "lstatSync", args), statSync: (p, ...args) => checked(p, "statSync", args),
@@ -115,8 +115,8 @@ function createIsolatedPolicy(options) {
     !Filesystem.samePath(path.dirname(root), fs.realpathSync(os.tmpdir())) || fs.lstatSync(root).isSymbolicLink() ||
     !Filesystem.samePath(fs.realpathSync(root), root))
     fail("migration_guard_fixture_invalid");
-  const library = root + "/Users/natsu/Library", support = library + "/Application Support";
-  return build(support + "/OptionMap", [library, support], true);
+  const library = path.join(root, "Users", "natsu", "Library"), support = path.join(library, "Application Support");
+  return build(path.join(support, "OptionMap"), [library, support], true);
 }
 module.exports = Object.freeze({ PRODUCTION_PROFILE, PRODUCTION_PARENTS, PARENT_METADATA,
   createProductionPolicy, windowsMainAuthority, createWindowsMainPolicy, createIsolatedPolicy });

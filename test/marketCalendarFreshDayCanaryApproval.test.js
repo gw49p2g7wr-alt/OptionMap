@@ -31,6 +31,7 @@ function isolatedGit(fn, patch = null) {
   const write = (p, bytes) => { fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.writeFileSync(path.join(root, p), bytes); };
   try {
     git(["init", "-b", "main"]);
+    const repositoryRoot = fs.realpathSync(git(["rev-parse", "--show-toplevel"]));
     const artifacts = Object.fromEntries(V.CRITICAL_ARTIFACTS.map(p => [p, fs.readFileSync(path.join(repo, p))]));
     for (const p of V.CRITICAL_ARTIFACTS) write(p, artifacts[p]);
     git(["add", "--", ...V.CRITICAL_ARTIFACTS]); git(["commit", "-m", "isolated implementation A"]);
@@ -40,7 +41,7 @@ function isolatedGit(fn, patch = null) {
     if (patch) patch({ root, git, write, m });
     git(["add", "--", V.MANIFEST_PATH]); git(["commit", "-m", "isolated manifest-only approval B"]);
     const head = git(["rev-parse", "HEAD"]);
-    return fn({ root, git, write, m, parent, head });
+    return fn({ root: repositoryRoot, git, write, m, parent, head });
   } finally { fs.rmSync(root, { recursive: true }); assert.equal(fs.existsSync(root), false); }
 }
 
