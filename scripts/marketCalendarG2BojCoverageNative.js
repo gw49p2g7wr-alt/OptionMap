@@ -106,10 +106,18 @@ function run(mode = "isolated") {
     fs.writeFileSync(path.join(pack, "entry.cjs"), `require(${JSON.stringify(__filename)}).worker().catch(async e=>{console.error(e.message);const electron=require('electron');await require(${JSON.stringify(require.resolve("../test/fixtures/nativeElectronFixtureLifecycle.js"))}).shutdown(electron.app,electron.session,1)});`);
     fs.writeFileSync(path.join(pack, "fixture.json"), JSON.stringify({ root, mode }));
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-    const child = cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],
-      { cwd: ROOT, env, encoding: "utf8", timeout: 90000, maxBuffer: 40960 });
+    const stdoutPath = path.join(root, "stdout.log"), stderrPath = path.join(root, "stderr.log");
+    const stdout = fs.openSync(stdoutPath, "w", 0o600), stderr = fs.openSync(stderrPath, "w", 0o600);
+    let child;
+    try { child = cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],
+      { cwd: ROOT, env, stdio: ["ignore", stdout, stderr], timeout: 90000, killSignal: "SIGKILL" }); }
+    finally { fs.closeSync(stdout); fs.closeSync(stderr); }
     const receiptPath = path.join(root, "receipt.json");
-    if (!fs.existsSync(receiptPath)) throw Error(`g2_native_receipt_missing:${child.status}:${child.stderr?.slice(0, 500)}`);
+    if (!fs.existsSync(receiptPath)) {
+      const diagnostics = { status: child.status, signal: child.signal, error: child.error?.message || null,
+        stdout: fs.readFileSync(stdoutPath, "utf8").slice(0, 500), stderr: fs.readFileSync(stderrPath, "utf8").slice(0, 500) };
+      throw Error(`g2_native_receipt_missing:${JSON.stringify(diagnostics)}`);
+    }
     const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
     return { ...receipt, processExitCode: child.status, tempDeleted: true };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }

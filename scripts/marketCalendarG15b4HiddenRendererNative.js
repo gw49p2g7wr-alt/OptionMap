@@ -107,10 +107,10 @@ function launch(fixtureRoot, profile, mode = "execute", fault = null) {
     stdio: ["ignore", out, err], timeout: 45000, killSignal: "SIGKILL" }); }
   finally { fs.closeSync(out); fs.closeSync(err); }
   const crashFaults = ["before_window", "before_load", "after_load", "consume_before_started", "started_before_permit", "commit_before_readback", "readback_before_completion"];
-  const intentionalCrash = mode === "execute" && crashFaults.includes(fault) && child.signal === "SIGKILL" && !child.error;
+  const intentionalCrash = Lifecycle.isIntentionalForcedTermination({ child, mode, fault, forcedFaults: crashFaults });
   if ((child.error || child.signal) && !intentionalCrash) {
     // Only the process group freshly created above, never an existing app.
-    if (child.error && Number.isInteger(child.pid) && child.pid > 0)
+    if (process.platform !== "win32" && child.error && Number.isInteger(child.pid) && child.pid > 0)
       try { process.kill(-child.pid, "SIGKILL"); } catch (e) { if (!["ESRCH", "EPERM"].includes(e.code)) throw e; }
     throw Error("native_child_failed: " + (child.error?.message || child.signal));
   }
@@ -131,11 +131,7 @@ async function nativeCase(fault = null) {
     if (!fault && executed.output?.status !== "PASS") throw Error(JSON.stringify({ reason: executed.output?.reason, phases: executed.output?.phases, stderr: executed.stderr }));
     assert.equal(fresh.output.preflight.eligible, false); assert.equal(fresh.output.guard.forbiddenAttempts, 0);
     assert.equal(fresh.output.formal.audit.readwrite, 0); assert.equal(fresh.output.formal.audit.writes, 0);
-    // Inspect process command identity only, never a production filesystem path.
-    const processRows = process.platform === "win32" ? cp.spawnSync("tasklist", ["/FO", "CSV", "/NH"], { encoding: "utf8" }) :
-      cp.spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" });
-    assert.equal(processRows.status, 0);
-    if (process.platform !== "win32") assert.equal(processRows.stdout.split("\n").filter(row => row.includes(profile)).length, 0, "fixture_child_leftover");
+    Lifecycle.assertFixtureExited({ child: { status: fresh.code, signal: fresh.crashSignal, error: null }, profile, childProcess: cp });
     return { fault, executed, reload: fresh.output, cleanup: { profileDeleted: true, windows: 0, children: 0 } };
   });
 }

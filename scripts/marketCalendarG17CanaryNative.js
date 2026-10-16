@@ -14,6 +14,7 @@ function sentinel(){const audit={productionAttempts:0,networkAttempts:0};
   for(const m of ["node:http","node:https"])for(const k of ["get","request"])require(m)[k]=noNetwork;return audit;
 }
 function killOwnedProcessGroup(pid){
+  if(process.platform==="win32")return;
   if(!Number.isInteger(pid)||pid<=0)throw Error("cleanup_pid_invalid");
   const uid=process.getuid(),listed=cp.spawnSync("ps",["-axo","pid=,pgid=,uid="],{encoding:"utf8"});
   if(listed.status!==0)throw Error("cleanup_inventory_failed");
@@ -85,7 +86,7 @@ function launch(root,profile,fixture,mode,fault,wiring=false){
   try{child=cp.spawnSync(require("electron"),[pack,"--user-data-dir="+profile],{cwd:ROOT,env,detached:true,stdio:["ignore",out,err],timeout:45000,killSignal:"SIGKILL"});}
   finally{fs.closeSync(out);fs.closeSync(err);}
   const hard=["after_authorization","before_window","before_load","after_load","after_challenge","started_before_permit","commit_before_readback","readback_before_completion"];
-  const crash=mode==="execute"&&(child.status===86&&fault==="after_authorization"||child.signal==="SIGKILL"&&hard.includes(fault));
+  const crash=mode==="execute"&&(child.status===86&&fault==="after_authorization"||Lifecycle.isIntentionalForcedTermination({child,mode,fault,forcedFaults:hard}));
   if(child.error||crash)killOwnedProcessGroup(child.pid);
   if(child.error||child.signal&&!crash)throw Error("isolated_native_child_failed: "+fs.readFileSync(path.join(pack,"stderr.log"),"utf8"));
   let result=null;if(child.status===0){const b=fs.readFileSync(path.join(pack,"result.json")),m=JSON.parse(fs.readFileSync(path.join(pack,"result.json.complete")));
@@ -105,8 +106,7 @@ async function nativeCase(fault=null,newEvents=1,wiring=false){
     assert.equal(reload.code,0,reload.stderr);assert.equal(reload.result.loaded.status,"valid",reload.result.loaded.reason);
     assert.equal(A.hash(reload.result.loaded.record.historicalRecord),history);assert.equal(reload.result.formal.audit.readwrite,0);
     if(!fault&&wiring!=="stale")assert.equal(executed.result?.status,"PASS",executed.result?.reason||executed.stderr);
-    const processes=cp.spawnSync("ps",["-axo","pid=,command="],{encoding:"utf8"});assert.equal(processes.status,0);
-    assert.equal(processes.stdout.split("\n").filter(r=>r.includes(policy.profile)).length,0,"isolated_process_leftover");
+    Lifecycle.assertFixtureExited({child:{status:reload.code,signal:null,error:null},profile:policy.profile,childProcess:cp});
     return {executed,reload,historyUnchanged:true,cleanup:{profiles:0,children:0}};
   }finally{fs.rmSync(root,{recursive:true});}
 }

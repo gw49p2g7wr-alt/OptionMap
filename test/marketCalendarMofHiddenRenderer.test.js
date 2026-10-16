@@ -4,8 +4,26 @@ const A = require("../js/marketCalendarHistory/formalWriterAuthorityV2.js"), S =
 const F = require("./fixtures/marketCalendar/mofControlledFixture.js"), AF = require("./fixtures/marketCalendar/automaticShadowFixture.js");
 const Core = require("../js/marketCalendarHistory/formalControlledWriterCore.js"), C = require("../js/marketCalendarRuntime/mofControlledGrantController.js");
 const W = require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"), Native = require("../scripts/marketCalendarG15b4HiddenRendererNative.js");
+const Lifecycle = require("./fixtures/nativeElectronFixtureLifecycle.js");
 const hashFile = p => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 let successful;
+test("native forced-termination classification is explicit and platform-bound", () => {
+  const forcedFaults = ["before_window"];
+  assert.equal(Lifecycle.isIntentionalForcedTermination({ child: { status: null, signal: "SIGKILL", error: null },
+    mode: "execute", fault: "before_window", forcedFaults, platform: "darwin" }), true);
+  assert.equal(Lifecycle.isIntentionalForcedTermination({ child: { status: 1, signal: null, error: null },
+    mode: "execute", fault: "before_window", forcedFaults, platform: "win32" }), true);
+  for (const fixture of [
+    { child: { status: 1, signal: null, error: null }, mode: "read", fault: "before_window", platform: "win32" },
+    { child: { status: 1, signal: null, error: null }, mode: "execute", fault: "other", platform: "win32" },
+    { child: { status: 2, signal: null, error: null }, mode: "execute", fault: "before_window", platform: "win32" },
+    { child: { status: 1, signal: null, error: Error("spawn") }, mode: "execute", fault: "before_window", platform: "win32" }
+  ]) assert.equal(Lifecycle.isIntentionalForcedTermination({ ...fixture, forcedFaults }), false);
+  let inspections = 0;
+  assert.deepEqual(Lifecycle.assertFixtureExited({ child: { status: 0, signal: null, error: null }, profile: "C:\\profile",
+    platform: "win32", childProcess: { spawnSync() { inspections++; } } }), { method: "spawnSync_exit", exited: true });
+  assert.equal(inspections, 0);
+});
 test("X1/X7/X9/X11 exact native renderer: local token, one real transaction, fresh process readback", async () => {
   successful = await Native.nativeCase(); const r = successful.executed.output;
   assert.equal(r.status, "PASS"); assert.equal(r.mainTokenAttempts, 0); assert.equal(r.audit.mainExecutionTokens, 0);
