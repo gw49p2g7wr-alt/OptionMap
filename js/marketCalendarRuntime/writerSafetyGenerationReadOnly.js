@@ -5,17 +5,18 @@
 const fs = require("node:fs"), path = require("node:path");
 const A = require("../marketCalendarHistory/formalWriterAuthorityV2.js");
 const File = require("../marketCalendarHistory/writerSafetyFileSchema.js");
+const Filesystem = require("../marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const DIRECTORY = "market-calendar-source-set-safety";
 function controlledGeneration(generation, sequence) {
   return A.integer(sequence) && generation === `controlled-${sequence}`;
 }
 function secureDirectory(directory) {
   const s = fs.lstatSync(directory);
-  if (!s.isDirectory() || s.isSymbolicLink() || fs.realpathSync(directory) !== directory ||
-      process.platform !== "win32" && (s.mode & 0o077)) throw Error("safety_directory_invalid");
+  if (!Filesystem.secureDirectoryStat(s) || !Filesystem.samePath(fs.realpathSync(directory), directory))
+    throw Error("safety_directory_invalid");
 }
 function select(root, read) {
-  if (root !== fs.realpathSync(root) || fs.lstatSync(root).isSymbolicLink()) throw Error("safety_profile_invalid");
+  if (!Filesystem.samePath(root, fs.realpathSync(root)) || fs.lstatSync(root).isSymbolicLink()) throw Error("safety_profile_invalid");
   const directory = path.join(root, DIRECTORY);
   try { secureDirectory(directory); }
   catch (e) { if (e.code === "ENOENT") return { generation: "legacy", directory: path.join(root, "market-calendar-writer-safety"), selection: null };

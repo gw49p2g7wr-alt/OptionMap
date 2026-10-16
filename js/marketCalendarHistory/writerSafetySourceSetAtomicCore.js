@@ -8,6 +8,7 @@ const fs = require("node:fs"), path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const A = require("./formalWriterAuthorityV2.js"), File = require("./writerSafetyFileSchema.js");
 const Core = require("./writerSafetyAtomicCore.js"), E = require("./writerSafetySourceSetEnvelope.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const DIRECTORY = "market-calendar-source-set-safety";
 const CRASH_POINTS = Object.freeze(["pre_persist", "after_temp_write", "before_rename", "after_rename",
   "before_checkpoint", "after_checkpoint", "before_publish", "after_publish"]);
@@ -25,21 +26,19 @@ function createGenerationStore(root, crashAt = null) {
     loads: 0, persists: 0, writerExecution: 0, migrationValidationMs: 0, persistMs: 0, loadMs: 0 };
   function checkDirectory() {
     const r = fs.lstatSync(root), d = fs.lstatSync(directory);
-    if (r.dev !== rootStat.dev || r.ino !== rootStat.ino || r.isSymbolicLink() || !d.isDirectory() || d.isSymbolicLink() ||
-      process.platform !== "win32" && (d.mode & 0o077)) fail("safety_directory_invalid");
+    if (r.dev !== rootStat.dev || r.ino !== rootStat.ino || r.isSymbolicLink() || !Filesystem.secureDirectoryStat(d)) fail("safety_directory_invalid");
   }
   function handle(name, flags, action) {
-    const fd = fs.openSync(path.join(directory, name), flags | (fs.constants.O_NOFOLLOW || 0), 0o600);
+    const fd = fs.openSync(path.join(directory, name), flags | Filesystem.noFollowFlag(), 0o600);
     counts.fileHandles++; if (name === "migration.lock") counts.lockHandles++;
     try {
       const s = fs.fstatSync(fd);
-      if (!s.isFile() || s.nlink !== 1 || process.platform !== "win32" && (s.mode & 0o077)) fail("safety_file_access_invalid");
+      if (!Filesystem.secureFileStat(s)) fail("safety_file_access_invalid");
       return action(fd, s);
     } finally { fs.closeSync(fd); counts.fileHandles--; if (name === "migration.lock") counts.lockHandles--; }
   }
   function syncDirectory() {
-    const fd = fs.openSync(directory, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); counts.fileHandles++;
-    try { fs.fsyncSync(fd); counts.directorySyncs++; } finally { fs.closeSync(fd); counts.fileHandles--; }
+    const result = Filesystem.syncDirectory(directory); if (result.synced) counts.directorySyncs++;
   }
   function readSmall(name) {
     return handle(name, fs.constants.O_RDONLY, (fd, s) => {

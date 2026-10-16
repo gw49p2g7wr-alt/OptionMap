@@ -6,6 +6,7 @@ const fs = require("node:fs"), path = require("node:path");
 const os = require("node:os"), { createHash } = require("node:crypto"), { TextDecoder } = require("node:util");
 const Controller = require("./marketCalendarE4fFreshDayCanary.js");
 const Approval = require("../js/marketCalendarRuntime/freshDayCanaryApproval.js");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const TYPE = "fresh_day_canary_entry_receipt";
 const LATCH = Symbol.for("optionmap.fresh-day-canary.package-entry.v1");
 const safe = reason => typeof reason === "string" && /^[a-z_]+$/.test(reason) ? reason : "controller_rejected";
@@ -19,8 +20,7 @@ function receiptRoot(root) {
   mainOnly();
   if (typeof root !== "string" || fs.realpathSync(root) !== root ||
       path.dirname(root) !== fs.realpathSync(os.tmpdir()) || !path.basename(root).startsWith("optionmap-writer-safety-") ||
-      !fs.lstatSync(root).isDirectory() || fs.lstatSync(root).isSymbolicLink() ||
-      process.platform !== "win32" && (fs.lstatSync(root).mode & 0o077)) throw Error("receipt_root_invalid");
+      !Filesystem.secureDirectoryStat(fs.lstatSync(root))) throw Error("receipt_root_invalid");
 }
 function messageShape(message) {
   const keys = ["type", "entryReached", "controllerReached", "controllerInvocations", "receiptReceived", "receipt"];
@@ -33,20 +33,17 @@ function messageShape(message) {
 function readBounded(root, name, limit) {
   const target = path.join(root, name);
   if (fs.realpathSync(target) !== target) throw Error("receipt_file_invalid");
-  const fd = fs.openSync(target, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  const fd = fs.openSync(target, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.nlink !== 1 || stat.size > limit || process.platform !== "win32" && (stat.mode & 0o077))
+    if (!Filesystem.secureFileStat(stat, { maxBytes: limit }))
       throw Error("receipt_file_invalid");
     const bytes = fs.readFileSync(fd);
     if (bytes.length !== stat.size || bytes.length > limit) throw Error("receipt_length_invalid");
     return bytes;
   } finally { fs.closeSync(fd); }
 }
-function syncDirectory(root) {
-  const fd = fs.openSync(root, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
-  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-}
+function syncDirectory(root) { Filesystem.syncDirectory(root); }
 function writeReceipt(root, message) {
   receiptRoot(root); messageShape(message);
   const bytes = Buffer.from(JSON.stringify(message) + "\n");

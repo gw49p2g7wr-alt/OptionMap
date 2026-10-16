@@ -5,6 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const Authorization = require("./planAuthorization.js");
 const Canonicalizer = require("../marketCalendar/marketEventCanonicalizer.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 
 const CONTRACT_VERSION = 1;
 const sha256Bytes = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -45,8 +46,7 @@ async function stage({ artifactBytes, expected, operationId, tempRoot = os.tmpdi
     finally { fsApi.closeSync(handle); }
     return Object.freeze(descriptor);
 }
-function secureFile(stat) { return stat.isFile() && (stat.mode & 0o077) === 0 &&
-    (typeof process.getuid !== "function" || stat.uid === process.getuid()); }
+function secureFile(stat) { return Filesystem.secureFileStat(stat); }
 function cleanup(descriptor, fsApi = fs) { const errors = [];
     for (const target of [descriptor.artifactPath, `${descriptor.artifactPath}.claim`]) try {
         fsApi.unlinkSync(target); } catch (error) { if (error?.code !== "ENOENT") errors.push(

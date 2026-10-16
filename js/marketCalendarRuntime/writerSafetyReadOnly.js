@@ -8,6 +8,7 @@ const Envelope = require("../marketCalendarHistory/writerSafetyVersionedEnvelope
 const SourceSet = require("../marketCalendarHistory/writerSafetySourceSetEnvelope.js");
 const Permission = require("../marketCalendarHistory/writerSafetySourceSetPermission.js");
 const Generation = require("./writerSafetyGenerationReadOnly.js");
+const Filesystem = require("../marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const Canary = require("../marketCalendarHistory/mofStartupCanaryEnvelope.js");
 const RELATIVE_PATH = "market-calendar-writer-safety/safety.json";
 function createReader(userData) {
@@ -17,11 +18,11 @@ function createReader(userData) {
   const audit = { loads: 0, reads: 0, writes: 0, handles: 0 };
   function read(directory, name, limit) {
     Generation.secureDirectory(directory);
-    const fd = fs.openSync(path.join(directory, name), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const fd = fs.openSync(path.join(directory, name), fs.constants.O_RDONLY | Filesystem.noFollowFlag());
     audit.handles++;
     try {
       const s = fs.fstatSync(fd);
-      if (!s.isFile() || s.nlink !== 1 || s.size > limit || process.platform !== "win32" && (s.mode & 0o077)) throw Error("safety_file_access_invalid");
+      if (!Filesystem.secureFileStat(s, { maxBytes: limit })) throw Error("safety_file_access_invalid");
       const bytes = Buffer.alloc(limit + 1); let length = 0, n;
       while (length < bytes.length && (n = fs.readSync(fd, bytes, length, bytes.length - length, null)) > 0) length += n;
       if (length > limit) throw Error("safety_file_access_invalid");

@@ -3,6 +3,7 @@
 // Migration-harness access policy only. No adapter invocation, state load,
 // provisioning, migration, Electron launch or filesystem mutation on import.
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
+const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const PRODUCTION_PROFILE = "/Users/natsu/Library/Application Support/OptionMap";
 const PRODUCTION_PARENTS = Object.freeze(["/Users/natsu/Library", "/Users/natsu/Library/Application Support"]);
 const METADATA = Object.freeze(["lstatSync", "statSync", "realpathSync"]);
@@ -90,6 +91,20 @@ function createProductionPolicy(...args) {
   if (args.length) fail("migration_guard_production_override_rejected");
   return build(PRODUCTION_PROFILE, PRODUCTION_PARENTS, false);
 }
+function windowsMainAuthority(app) {
+  const profile = app.getPath("userData"), appData = app.getPath("appData");
+  if (!path.win32.isAbsolute(profile) || !path.win32.isAbsolute(appData) ||
+      !Filesystem.contains(appData, profile, "win32") ||
+      path.win32.dirname(Filesystem.normalize(profile, "win32")) !== Filesystem.normalize(appData, "win32") ||
+      path.win32.basename(profile).toLowerCase() !== "optionmap") fail("migration_guard_windows_profile_invalid");
+  return Object.freeze({ profile, parents: Object.freeze([path.win32.dirname(appData), appData]) });
+}
+function createWindowsMainPolicy(...args) {
+  if (args.length || process.platform !== "win32" || process.type !== "browser" || !process.versions.electron)
+    fail("migration_guard_windows_main_required");
+  const authority = windowsMainAuthority(require("electron").app);
+  return build(authority.profile, authority.parents, false);
+}
 function createIsolatedPolicy(options) {
   if (!options || Object.keys(options).sort().join("|") !== "fixtureRoot|targetEnvironment" || options.targetEnvironment !== "isolated_test")
     fail("migration_guard_fixture_invalid");
@@ -100,4 +115,5 @@ function createIsolatedPolicy(options) {
   const library = root + "/Users/natsu/Library", support = library + "/Application Support";
   return build(support + "/OptionMap", [library, support], true);
 }
-module.exports = Object.freeze({ PRODUCTION_PROFILE, PRODUCTION_PARENTS, PARENT_METADATA, createProductionPolicy, createIsolatedPolicy });
+module.exports = Object.freeze({ PRODUCTION_PROFILE, PRODUCTION_PARENTS, PARENT_METADATA,
+  createProductionPolicy, windowsMainAuthority, createWindowsMainPolicy, createIsolatedPolicy });

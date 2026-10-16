@@ -2,6 +2,7 @@
 
 // Internal shared persistence mechanics. Only fixed-path boundaries may call this.
 const fs = require("node:fs"), path = require("node:path"), { randomUUID } = require("node:crypto");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const DIRECTORY = "market-calendar-writer-safety";
 const NAMES = Object.freeze({ state: "safety.json", checkpoint: "sequence.json", lock: "ownership.lock",
   intent: "update.intent", temp: "safety.tmp", checkpointTemp: "sequence.tmp" });
@@ -16,7 +17,7 @@ function create(directory, { crashAt = null } = {}) {
   const owner = randomUUID(); let owned = false;
   const file = name => path.join(directory, NAMES[name]);
   function handle(name, flags, action) {
-    const fd = fs.openSync(file(name), flags | (fs.constants.O_NOFOLLOW || 0), 0o600); audit.fileHandles++; audit.opens++;
+    const fd = fs.openSync(file(name), flags | Filesystem.noFollowFlag(), 0o600); audit.fileHandles++; audit.opens++;
     if (name === "lock") audit.lockHandles++;
     try { const stat = fs.fstatSync(fd); if (!stat.isFile() || stat.nlink !== 1) throw Error("safety_file_type_invalid");
       return action(fd, stat); } finally { fs.closeSync(fd); audit.fileHandles--; if (name === "lock") audit.lockHandles--; }
@@ -24,18 +25,16 @@ function create(directory, { crashAt = null } = {}) {
   function checkDirectory() {
     const currentRoot = fs.lstatSync(root);
     if (currentRoot.dev !== rootStat.dev || currentRoot.ino !== rootStat.ino || currentRoot.isSymbolicLink()) throw Error("safety_directory_invalid");
-    const stat = fs.lstatSync(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error("safety_directory_invalid");
-    if (process.platform !== "win32" && (stat.mode & 0o077)) throw Error("safety_permissions_invalid");
+    const stat = fs.lstatSync(directory); if (!Filesystem.secureDirectoryStat(stat)) throw Error("safety_permissions_invalid");
   }
   function exists(name) { try { fs.lstatSync(file(name)); return true; } catch (e) { if (e.code === "ENOENT") return false; throw e; } }
   function read(name, maxBytes) {
     checkDirectory(); return handle(name, fs.constants.O_RDONLY, (fd, stat) => {
-      if (stat.size > maxBytes || process.platform !== "win32" && (stat.mode & 0o077)) throw Error("safety_file_access_invalid");
+      if (!Filesystem.secureFileStat(stat, { maxBytes })) throw Error("safety_file_access_invalid");
       audit.reads++; return fs.readFileSync(fd, "utf8"); });
   }
   function syncDirectory() {
-    const fd = fs.openSync(directory, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); audit.fileHandles++;
-    try { fs.fsyncSync(fd); audit.directorySyncs++; } finally { fs.closeSync(fd); audit.fileHandles--; }
+    const result = Filesystem.syncDirectory(directory); if (result.synced) audit.directorySyncs++;
   }
   function writeNew(name, text, sync = true) {
     handle(name, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, fd => {

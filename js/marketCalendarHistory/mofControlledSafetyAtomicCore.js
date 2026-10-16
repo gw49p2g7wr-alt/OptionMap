@@ -8,6 +8,7 @@ const E = require("./writerSafetySourceSetEnvelope.js"), L = require("./writerSa
 const Atomic = require("./writerSafetyAtomicCore.js");
 const Reader = require("../marketCalendarRuntime/writerSafetyReadOnly.js");
 const Generation = require("../marketCalendarRuntime/writerSafetyGenerationReadOnly.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const CRASH_POINTS = Object.freeze(["after_authorization", "before_completion_persist", "after_completion_persist",
   ...L.PHASES.flatMap(p => [`before_${p}`, `after_${p}`, `before_publish_${p}`,
     ...Atomic.CRASH_POINTS.map(a => `${p}:${a}`)]), ...Atomic.CRASH_POINTS.map(p => `completion_${p}`)]);
@@ -23,13 +24,12 @@ function createBoundStore(root, { crashAt = null } = {}) {
   let current = null, base = null, owned = false, healthy = true, attempted = false, completed = false;
   function point(name) { if (crashAt === name) process.exit(86); }
   function handle(file, flags, action) {
-    const fd = fs.openSync(file, flags | fs.constants.O_NOFOLLOW, 0o600); audit.handles++;
-    try { const s = fs.fstatSync(fd); if (!s.isFile() || s.nlink !== 1 || s.size > File.MAX_BYTES ||
-      process.platform !== "win32" && (s.mode & 0o077)) throw Error("controlled_file_invalid"); return action(fd); }
+    const fd = fs.openSync(file, flags | Filesystem.noFollowFlag(), 0o600); audit.handles++;
+    try { const s = fs.fstatSync(fd); if (!Filesystem.secureFileStat(s, { maxBytes: File.MAX_BYTES }))
+      throw Error("controlled_file_invalid"); return action(fd); }
     finally { fs.closeSync(fd); audit.handles--; }
   }
-  function syncDir(d) { const fd = fs.openSync(d, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); audit.handles++;
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); audit.handles--; } }
+  function syncDir(d) { Filesystem.syncDirectory(d); }
   function checkDirectories() {
     const r = fs.lstatSync(userData), d = fs.lstatSync(directory);
     if (r.dev !== rootStat.dev || r.ino !== rootStat.ino || d.dev !== directoryStat.dev || d.ino !== directoryStat.ino ||

@@ -5,12 +5,23 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
 const A = require("./formalWriterAuthorityV2.js"), S = require("./formalWriterSafetyEvaluator.js");
 const Schema = require("./writerSafetyFileSchema.js"), Core = require("./writerSafetyAtomicCore.js");
 const Reader = require("../marketCalendarRuntime/writerSafetyReadOnly.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 function mainOnly() { if (process.type === "renderer" || typeof window !== "undefined" && window.document) throw Error("main_side_only"); }
+function productionProfileAuthority(app, platform = process.platform) {
+  const appData = app.getPath("appData"), userData = app.getPath("userData");
+  if (platform !== "win32") return { fixed: path.join(appData, "OptionMap"), userData };
+  if (!path.win32.isAbsolute(appData) || !path.win32.isAbsolute(userData) ||
+      !Filesystem.contains(appData, userData, "win32") ||
+      path.win32.dirname(Filesystem.normalize(userData, "win32")) !== Filesystem.normalize(appData, "win32") ||
+      path.win32.basename(userData).toLowerCase() !== "optionmap") throw Error("production_profile_identity_invalid");
+  return { fixed: userData, userData };
+}
 function resolveProductionProfile() {
   mainOnly();
   if (!process.versions.electron || process.type !== "browser") throw Error("native_main_required");
-  const { app } = require("electron"), fixed = path.join(app.getPath("appData"), "OptionMap");
-  if (app.getPath("userData") !== fixed || fs.lstatSync(fixed).isSymbolicLink() || fs.realpathSync(fixed) !== fixed)
+  const { app } = require("electron"), authority = productionProfileAuthority(app), fixed = authority.fixed;
+  if (!Filesystem.samePath(authority.userData, fixed) || fs.lstatSync(fixed).isSymbolicLink() ||
+      !Filesystem.samePath(fs.realpathSync(fixed), fixed))
     throw Error("production_profile_identity_invalid");
   return fixed;
 }
@@ -58,4 +69,4 @@ function createIsolatedProvisioner(root) {
       !path.basename(root).startsWith("optionmap-writer-safety-")) throw Error("isolated_profile_invalid");
   return build(root);
 }
-module.exports = Object.freeze({ resolveProductionProfile, createProductionProvisioner, createIsolatedProvisioner, initial });
+module.exports = Object.freeze({ productionProfileAuthority, resolveProductionProfile, createProductionProvisioner, createIsolatedProvisioner, initial });

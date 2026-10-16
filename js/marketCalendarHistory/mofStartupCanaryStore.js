@@ -8,6 +8,7 @@ const File = require("./writerSafetyFileSchema.js"), Atomic = require("./writerS
 const Cycle = require("../marketCalendarRuntime/formalShadowCycle.js"), Schema = require("./productionSchemaV1.js");
 const Guard = require("../../scripts/marketCalendarG14bFilesystemGuard.js");
 const Profile = require("./writerSafetyInitialProvisioning.js");
+const Filesystem = require("./crossPlatformFilesystemSafety.js");
 const DIRECTORY = E.DIRECTORY;
 const CRASH_POINTS = Object.freeze(["after_authorization", ...["activation", ...E.PHASES].flatMap(p =>
   [`before_publish_${p}`, `after_${p}`, ...Atomic.CRASH_POINTS.map(k => `${p}:${k}`)])]);
@@ -26,18 +27,17 @@ function build(profile, crashAt, production=false) {
     if (process.type === "browser") { process.kill(process.pid, "SIGKILL"); throw Error("isolated_crash_failed"); }
     process.exit(86);
   } };
-  function secure(d) { const s = fs.lstatSync(d); if (!s.isDirectory() || s.isSymbolicLink() || fs.realpathSync(d) !== d ||
-    process.platform !== "win32" && (s.mode & 0o077)) throw Error("canary_directory_invalid"); }
+  function secure(d) { const s = fs.lstatSync(d); if (!Filesystem.secureDirectoryStat(s) ||
+    !Filesystem.samePath(fs.realpathSync(d), d)) throw Error("canary_directory_invalid"); }
   function file(p, flags, work) {
-    const fd = fs.openSync(p, flags | fs.constants.O_NOFOLLOW, 0o600); audit.handles++;
-    try { const s = fs.fstatSync(fd); if (!s.isFile() || s.nlink !== 1 || s.size > File.MAX_BYTES ||
-      process.platform !== "win32" && (s.mode & 0o077)) throw Error("canary_file_invalid"); return work(fd); }
+    const fd = fs.openSync(p, flags | Filesystem.noFollowFlag(), 0o600); audit.handles++;
+    try { const s = fs.fstatSync(fd); if (!Filesystem.secureFileStat(s, { maxBytes: File.MAX_BYTES }))
+      throw Error("canary_file_invalid"); return work(fd); }
     finally { fs.closeSync(fd); audit.handles--; }
   }
   function read(p, max) { return file(p, fs.constants.O_RDONLY, fd => { if (fs.fstatSync(fd).size > max) throw Error("canary_file_too_large");
     return fs.readFileSync(fd, "utf8"); }); }
-  function syncDir(d) { const fd = fs.openSync(d, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); audit.handles++;
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); audit.handles--; } }
+  function syncDir(d) { Filesystem.syncDirectory(d); }
   function exists(p) { try { fs.lstatSync(p); return true; } catch (e) { if (e.code === "ENOENT") return false; throw e; } }
   function load() {
     audit.loads++;
