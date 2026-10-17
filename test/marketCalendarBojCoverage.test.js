@@ -163,14 +163,18 @@ test("Windows BOJ native fixture owns an isolated Electron runtime without mutat
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-g2-runtime-copy-"));
   try {
     const shared = path.join(root, "shared", "electron.exe");
-    fs.mkdirSync(path.dirname(shared)); fs.writeFileSync(shared, "fixture-electron");
+    fs.mkdirSync(path.dirname(shared)); fs.writeFileSync(shared, Buffer.concat([Buffer.from("MZ"), Buffer.alloc(62), Buffer.from("fixture-electron")]));
     fs.mkdirSync(path.join(path.dirname(shared), "resources"));
     fs.writeFileSync(path.join(path.dirname(shared), "resources", "default_app.asar"), "fixture-resource");
+    fs.symlinkSync(path.join(path.dirname(shared), "resources", "default_app.asar"), path.join(path.dirname(shared), "linked-resource"));
     const runtime = Native.prepareFixtureElectronRuntime(root, { platform: "win32", sharedExecutable: shared });
     A.equal(runtime.isolated, true); A.notEqual(runtime.executable, shared);
-    A.equal(fs.readFileSync(runtime.executable, "utf8"), "fixture-electron");
+    A.deepEqual(runtime.sourceIdentity, runtime.destinationIdentity); A.equal(runtime.sourceIdentity.header, "4d5a");
+    A.deepEqual(fs.readFileSync(runtime.executable), fs.readFileSync(shared));
     A.equal(fs.readFileSync(path.join(runtime.runtimeRoot, "resources", "default_app.asar"), "utf8"), "fixture-resource");
+    A.equal(fs.lstatSync(path.join(runtime.runtimeRoot, "linked-resource")).isFile(), true);
+    A.equal(fs.readFileSync(path.join(runtime.runtimeRoot, "linked-resource"), "utf8"), "fixture-resource");
     fs.writeFileSync(runtime.executable, "isolated-change");
-    A.equal(fs.readFileSync(shared, "utf8"), "fixture-electron");
+    A.equal(fs.readFileSync(shared).subarray(0, 2).toString("utf8"), "MZ");
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

@@ -3,19 +3,40 @@
 // Official public network only in explicit live-readonly mode; all app storage
 // is disposable. No production profile resolver, IndexedDB, safety or writer.
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"),
-  cp = require("node:child_process"), assert = require("node:assert/strict");
+  cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT = path.resolve(__dirname, "..");
+function copyRuntimeEntry(source, destination) {
+  const stat = fs.lstatSync(source);
+  if (stat.isSymbolicLink()) return copyRuntimeEntry(fs.realpathSync(source), destination);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(destination);
+    for (const name of fs.readdirSync(source)) copyRuntimeEntry(path.join(source, name), path.join(destination, name));
+    return;
+  }
+  if (!stat.isFile()) throw Error("g2_electron_runtime_entry_invalid");
+  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(destination, stat.mode);
+}
+function executableIdentity(file) {
+  const bytes = fs.readFileSync(file);
+  return Object.freeze({ size: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+    header: bytes.subarray(0, 2).toString("hex") });
+}
 function prepareFixtureElectronRuntime(root, options = {}) {
   const platform = options.platform || process.platform;
   const sharedExecutable = options.sharedExecutable || require("electron");
   if (platform !== "win32") return Object.freeze({ executable: sharedExecutable, isolated: false, runtimeRoot: null });
   const runtimeRoot = path.join(root, "electron-runtime");
-  fs.cpSync(path.dirname(sharedExecutable), runtimeRoot, { recursive: true, force: false, errorOnExist: true });
+  copyRuntimeEntry(path.dirname(sharedExecutable), runtimeRoot);
   const executable = path.join(runtimeRoot, path.basename(sharedExecutable));
   if (!fs.statSync(executable).isFile()) throw Error("g2_isolated_electron_executable_missing");
-  return Object.freeze({ executable, isolated: true, runtimeRoot });
+  const sourceIdentity = executableIdentity(sharedExecutable), destinationIdentity = executableIdentity(executable);
+  if (sourceIdentity.header !== "4d5a" || destinationIdentity.header !== "4d5a") throw Error("g2_isolated_electron_pe_header_invalid");
+  if (sourceIdentity.size !== destinationIdentity.size || sourceIdentity.sha256 !== destinationIdentity.sha256)
+    throw Error("g2_isolated_electron_integrity_mismatch");
+  return Object.freeze({ executable, isolated: true, runtimeRoot, sourceIdentity, destinationIdentity });
 }
 function sentinel(root) {
   const audit = { forbiddenAttempts: 0, repositoryWrites: 0 };
