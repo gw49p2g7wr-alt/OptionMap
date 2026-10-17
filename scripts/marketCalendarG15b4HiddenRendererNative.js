@@ -103,8 +103,9 @@ function launch(fixtureRoot, profile, mode = "execute", fault = null) {
   const outPath = path.join(packageRoot, "stdout.log"), errPath = path.join(packageRoot, "stderr.log");
   const out = fs.openSync(outPath, "w", 0o600), err = fs.openSync(errPath, "w", 0o600);
   let child;
-  try { child = cp.spawnSync(require("electron"), [packageRoot, "--user-data-dir=" + profile], { env, detached: true,
-    stdio: ["ignore", out, err], timeout: 45000, killSignal: "SIGKILL" }); }
+  try { child = Lifecycle.withNativeElectronLaunchLock(() =>
+    cp.spawnSync(require("electron"), [packageRoot, "--user-data-dir=" + profile], { env, detached: true,
+      stdio: ["ignore", out, err], timeout: 45000, killSignal: "SIGKILL" })); }
   finally { fs.closeSync(out); fs.closeSync(err); }
   const crashFaults = ["before_window", "before_load", "after_load", "consume_before_started", "started_before_permit", "commit_before_readback", "readback_before_completion"];
   const intentionalCrash = Lifecycle.isIntentionalForcedTermination({ child, mode, fault, forcedFaults: crashFaults });

@@ -109,8 +109,9 @@ function run(mode = "isolated") {
     const stdoutPath = path.join(root, "stdout.log"), stderrPath = path.join(root, "stderr.log");
     const stdout = fs.openSync(stdoutPath, "w", 0o600), stderr = fs.openSync(stderrPath, "w", 0o600);
     let child;
-    try { child = cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],
-      { cwd: ROOT, env, stdio: ["ignore", stdout, stderr], timeout: 90000, killSignal: "SIGKILL" }); }
+    try { child = Lifecycle.withNativeElectronLaunchLock(() =>
+      cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],
+        { cwd: ROOT, env, stdio: ["ignore", stdout, stderr], timeout: 90000, killSignal: "SIGKILL" })); }
     finally { fs.closeSync(stdout); fs.closeSync(stderr); }
     const receiptPath = path.join(root, "receipt.json");
     if (!fs.existsSync(receiptPath)) {

@@ -83,7 +83,8 @@ function launch(root,profile,fixture,mode,fault,wiring=false){
   for(const name of ["result.json","result.json.complete"]){const p=path.join(pack,name);if(fs.existsSync(p))fs.unlinkSync(p);}
   const env={...process.env};for(const k of ["ELECTRON_RUN_AS_NODE","NODE_TEST_CONTEXT","NODE_CHANNEL_FD","NODE_CHANNEL_SERIALIZATION_MODE"])delete env[k];
   const out=fs.openSync(path.join(pack,"stdout.log"),"w"),err=fs.openSync(path.join(pack,"stderr.log"),"w");let child;
-  try{child=cp.spawnSync(require("electron"),[pack,"--user-data-dir="+profile],{cwd:ROOT,env,detached:true,stdio:["ignore",out,err],timeout:45000,killSignal:"SIGKILL"});}
+  try{child=Lifecycle.withNativeElectronLaunchLock(()=>cp.spawnSync(require("electron"),[pack,"--user-data-dir="+profile],
+    {cwd:ROOT,env,detached:true,stdio:["ignore",out,err],timeout:45000,killSignal:"SIGKILL"}));}
   finally{fs.closeSync(out);fs.closeSync(err);}
   const hard=["after_authorization","before_window","before_load","after_load","after_challenge","started_before_permit","commit_before_readback","readback_before_completion"];
   const crash=mode==="execute"&&(child.status===86&&fault==="after_authorization"||Lifecycle.isIntentionalForcedTermination({child,mode,fault,forcedFaults:hard}));

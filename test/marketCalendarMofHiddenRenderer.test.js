@@ -24,6 +24,19 @@ test("native forced-termination classification is explicit and platform-bound", 
     platform: "win32", childProcess: { spawnSync() { inspections++; } } }), { method: "spawnSync_exit", exited: true });
   assert.equal(inspections, 0);
 });
+test("native Electron launch lock recovers stale ownership and fails closed on live contention", () => {
+  const os = require("node:os"), path = require("node:path");
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-native-lock-test-"));
+  const lock = path.join(root, "optionmap-native-electron-launch.lock");
+  try {
+    fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: 2147483647, token: "stale" }));
+    assert.equal(Lifecycle.withNativeElectronLaunchLock(() => "launched", { lockRoot: root, timeoutMs: 100 }), "launched");
+    assert.equal(fs.existsSync(lock), false);
+    fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: process.pid, token: "live" }));
+    assert.throws(() => Lifecycle.withNativeElectronLaunchLock(() => "forbidden", { lockRoot: root, timeoutMs: 0 }),
+      /native_electron_launch_lock_timeout/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 test("X1/X7/X9/X11 exact native renderer: local token, one real transaction, fresh process readback", async () => {
   successful = await Native.nativeCase(); const r = successful.executed.output;
   assert.equal(r.status, "PASS"); assert.equal(r.mainTokenAttempts, 0); assert.equal(r.audit.mainExecutionTokens, 0);
