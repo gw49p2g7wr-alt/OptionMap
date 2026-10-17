@@ -31,6 +31,7 @@ async function setup({ f, readFailure = false, sameDay = false } = {}) {
     stores[name] = { read: async () => ({ status: "ok", value: structuredClone(states.get(id)) }),
       reserveReevaluation: async () => { throw Error("new_reservation_forbidden"); },
       completeReevaluation: async () => { throw Error("new_reservation_forbidden"); },
+      completeInitialAcquisition: async () => { throw Error("initial_acquisition_forbidden"); },
       completeActiveAcquisition: async input => { writes++;
         const checked = Policy.normalStateUpdate({ ...input, state: states.get(id), authority: Routes.PRODUCTION_AUTHORITY });
         assert.equal(checked.valid, true, checked.reason); states.set(id, checked.state);

@@ -90,13 +90,33 @@ async function worker(root, mode) {
       assert.equal(limited.sources[0].reasonClass, "session_attempt_limit_reached");
       const partial = await f.runtime.check({ trigger: "manual", sourceIds: [F.MOF] }); assert.equal(partial.sources[0].status, "failed");
       const failure = await call("read", [F.MOF]); assert.equal(failure.value.lastSuccessAt, updated.value.lastSuccessAt);
+      const RoutePolicy = require("../js/marketCalendarRuntime/routeReevaluationPolicy.js");
+      const RouteAuthority = require("../js/marketCalendarRuntime/calendarRouteAuthority.js");
+      const controlled = [];
+      for (const [name, id] of [["Cpi", "jp-stat-cpi"], ["Labor", "jp-stat-labor"], ["Bls", "us-bls-calendar"]]) {
+        const module = require(`../js/marketCalendarRuntime/${name.toLowerCase()}RuntimeStateElectron.js`);
+        const controlledStore = module[`create${name}RuntimeStateElectron`]({ webContents: window.wc });
+        assert.equal((await controlledStore.read()).value, null);
+        const expectedBinding = RoutePolicy.initialBinding(id, RouteAuthority.PRODUCTION_AUTHORITY);
+        assert(expectedBinding);
+        const completion = await controlledStore.completeInitialAcquisition({ sourceId: id, expectedBinding,
+          completedAt: "2026-10-15T00:00:01.000Z", result: { lastAttemptAt: "2026-10-15T00:00:00.000Z",
+            lastOutcome: "success", lastHttpStatus: 200, lastDiagnosticClass: null } });
+        assert.equal(completion.status, "ok", completion.reason);
+        const persisted = await controlledStore.read();
+        assert.equal(persisted.value.runtimeStateContractVersion, 2);
+        assert.equal(persisted.value.reevaluation, null);
+        assert.deepEqual(persisted.value.routeBinding, RoutePolicy.APPROVALS[id].targetBinding);
+        controlled.push({ sourceId: id, before: "absent", after: persisted.value,
+          audit: controlledStore.diagnostics() });
+      }
       const after = await readFormal(); assert.deepEqual(after.snapshot, before.snapshot);
       const audit = await window.run("__nativeAudit"); assert.equal(audit.runtimeCreates, 1); assert.equal(audit.runtimeUpdates, 2); assert.equal(audit.formalReadwrite, 0);
       report = { gate: "G1.6a", mode, status: "PASS", sources: first.sources.length, concurrency: first.peakSourceConcurrency,
         fixtureRequests: requests, candidates: unchanged.candidate, comparison: unchanged, runtime: { initialState, updated, failure, sameDay: "already_succeeded_today", audit },
         formalUnchanged: true, formalAudits: [before.audit, after.audit], storeAudit: await call("diagnostics"),
         writerExecution: f.runtime.diagnostics().writerExecution, writerTraps,
-        safetyWrites: f.runtime.diagnostics().safetyWrites };
+        safetyWrites: f.runtime.diagnostics().safetyWrites, controlledRuntimeState: controlled };
       assert.deepEqual(writerTraps, { authorization: 0, grant: 0, executionToken: 0 });
     } else {
       // Parity never constructs normal acquisition/authorization/grant factories.

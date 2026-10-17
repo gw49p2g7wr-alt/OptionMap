@@ -51,6 +51,7 @@ async function setup({ store, patch = {}, readFormal, compose = Runtime.create }
     stores[name] = { read: async () => ({ status: "ok", value: structuredClone(states.get(id)) }),
       reserveReevaluation: async () => { throw Error("unexpected_reservation"); },
       completeReevaluation: async () => { throw Error("unexpected_reservation"); },
+      completeInitialAcquisition: async () => { throw Error("unexpected_initial_acquisition"); },
       completeActiveAcquisition: async input => {
         const result = Reevaluation.normalStateUpdate({ ...input, state: states.get(id), authority: Routes.PRODUCTION_AUTHORITY });
         assert.equal(result.valid, true, result.reason); states.set(id, result.state); return { status: "ok", state: result.state };

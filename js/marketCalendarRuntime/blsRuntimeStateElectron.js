@@ -47,6 +47,7 @@ function createBlsRuntimeStateElectron({ webContents, getAuthority = () => Autho
     reserveReevaluation: input => invoke("reserveReevaluation", input),
     completeReevaluation: input => invoke("completeReevaluation", input),
     completeActiveAcquisition: input => invoke("completeActiveAcquisition", input),
+    completeInitialAcquisition: input => invoke("completeInitialAcquisition", input),
     diagnostics: () => structuredClone(audits)
   });
 }

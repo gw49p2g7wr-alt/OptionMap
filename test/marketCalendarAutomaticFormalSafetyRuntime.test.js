@@ -79,7 +79,8 @@ test("R11/R14/R15 missing safety real pipeline continues, one load + one Formal 
   const f = await F.fixture(), s = f.sources.find(s => s.sourceId === ID); let reads = 0, calls = 0;
   const runtime = Runtime.createRuntime({ loadSafety: reader.load, now: () => F.FRESH,
     stores: Object.fromEntries(["labor", "cpi", "bls"].map(name => [name, Object.fromEntries(
-      ["read", "reserveReevaluation", "completeReevaluation"].map(method => [method, async () => { throw Error("unrequested_state"); }]))])),
+      ["read", "reserveReevaluation", "completeReevaluation", "completeActiveAcquisition",
+        "completeInitialAcquisition"].map(method => [method, async () => { throw Error("unrequested_state"); }]))])),
     fetchImpl: () => { throw Error("extra_network"); }, acquire: async () => {
       assert.equal(reader.audit().loads, calls + 1); calls++; return { success: true, sourceId: ID, documents: [] }; },
     builder: { buildCalendarCandidate: async () => ({ ...F.envelope(s).candidateEnvelope, formalEligible: true,

@@ -122,6 +122,37 @@ test("C6 absent read/reservation do not create DB; v1 schema and Formal isolatio
   await reserve(ctx); assert.equal(audit.creates, created);
   assert.deepEqual(await ctx.factory.databases(), [{ name: Store.DATABASE_NAME, version: 1 }]);
 });
+test("C7 absent CPI Labor and BLS rows initialize exact v2 state only from fixed-route success", async () => {
+  for (const id of [CPI, LABOR, BLS]) {
+    const ctx = fixture(), expectedBinding = binding(id, ctx.authority);
+    assert.equal((await ctx.store.read(id)).status, "absent");
+    const completed = await ctx.store.completeInitialAcquisition({ sourceId: id, expectedBinding,
+      completedAt: END, result: outcome() });
+    assert.equal(completed.status, "ok");
+    assert.equal(completed.state.runtimeStateContractVersion, 2);
+    assert.equal(completed.state.reevaluation, null);
+    assert.deepEqual(completed.state.routeBinding, P.APPROVALS[id].targetBinding);
+    assert.equal(State.validateCompatibleRuntimeState(completed.state, id).valid, true);
+    assert.equal(decide(completed.state, ctx.authority).decision, "skip");
+    assert.equal(ctx.store.diagnostics().initialCompletionCommits, 1);
+    assert.equal((await ctx.store.completeInitialAcquisition({ sourceId: id, expectedBinding,
+      completedAt: END, result: outcome() })).reason, "stale_route_result");
+  }
+});
+test("C8 failed or malformed initial completion creates no row and malformed existing state is preserved", async () => {
+  const absent = fixture(), expectedBinding = binding(CPI, absent.authority);
+  for (const result of [outcome("network_failure"), { ...outcome(), rawStack: "secret/path" },
+    { ...outcome(), lastHttpStatus: 404 }, { ...outcome(), lastAttemptAt: END, }])
+    assert.equal((await absent.store.completeInitialAcquisition({ sourceId: CPI, expectedBinding,
+      completedAt: AT, result })).status, "unavailable");
+  assert.deepEqual(await absent.factory.databases(), []);
+  const malformed = fixture(), record = { sourceId: CPI, rawStack: "secret/path" };
+  await rawPut(malformed, record);
+  assert.equal((await malformed.store.completeInitialAcquisition({ sourceId: CPI,
+    expectedBinding: binding(CPI, malformed.authority), completedAt: END, result: outcome() })).reason,
+  "stale_route_result");
+  assert.equal((await malformed.store.read(CPI)).reason, "runtime_state_invalid");
+});
 test("R1 CPI/Labor old 404 and known legacy binding reserve only approved new route", async () => {
   const ctx = fixture(); await seed(ctx); await rawPut(ctx, v2(LABOR));
   for (const id of [CPI, LABOR]) { const r = await reserve(ctx, id); assert.equal(r.networkEligible, true);

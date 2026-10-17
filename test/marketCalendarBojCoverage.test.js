@@ -127,7 +127,7 @@ test("normal BOJ acquisition persists existing Runtime State once; same JST day 
   let requests = 0, reads = 0;
   const forbidden = async () => { throw Error("unexpected_managed_write"); };
   const managed = { read: async () => ({ status: "ok", value: null }), reserveReevaluation: forbidden,
-    completeReevaluation: forbidden, completeActiveAcquisition: forbidden };
+    completeReevaluation: forbidden, completeActiveAcquisition: forbidden, completeInitialAcquisition: forbidden };
   const ShouldFixture = require("./fixtures/marketCalendar/bojShouldFixture.js");
   const runtime = Runtime.create({ fetchImpl: async url => { requests++; return ShouldFixture.response(url); },
     store, stores: { cpi: managed, labor: managed, bls: managed }, targetEnvironment: "isolated_test",

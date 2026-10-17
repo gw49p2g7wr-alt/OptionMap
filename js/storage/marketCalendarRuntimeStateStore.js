@@ -19,12 +19,14 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
   // Trusted isolated composition injects the fixed policy; ordinary browser imports never load alternative routes.
   if ((getRouteAuthority !== undefined || Reevaluation !== undefined) && (!["isolated_test", "controlled_labor", "controlled_cpi", "controlled_bls"].includes(targetEnvironment) ||
       typeof getRouteAuthority !== "function" || !Reevaluation ||
-      !["evaluate", "reserveState", "reservationToken", "completeState"].every(k => typeof Reevaluation[k] === "function")))
+      !["evaluate", "reserveState", "reservationToken", "completeState", "initialStateUpdate"].every(k =>
+        typeof Reevaluation[k] === "function")))
     throw new TypeError("isolated_reevaluation_required");
   const counts = { databaseCreateAttempts: 0, successfulCreates: 0,
     readonlyTransactions: 0, readwriteTransactions: 0, successfulWrites: 0,
     failedWrites: 0, openHandles: 0, reservationAttempts: 0, successfulReservations: 0,
-    duplicateRejects: 0, completionAttempts: 0, completionCommits: 0, completionRejects: 0 };
+    duplicateRejects: 0, completionAttempts: 0, completionCommits: 0, completionRejects: 0,
+    initialCompletionAttempts: 0, initialCompletionCommits: 0, initialCompletionRejects: 0 };
   async function open(create) {
     const catalog = await indexedDB.databases(), entry = catalog.find(x => x.name === DATABASE_NAME);
     if (!entry && !create) return null;
@@ -204,8 +206,42 @@ function createRuntimeStateStore({ indexedDB, targetEnvironment, getRouteAuthori
     counts[output.status === "ok" ? "successfulWrites" : "failedWrites"]++;
     return output;
   }
+  async function completeInitialAcquisition(input) {
+    counts.initialCompletionAttempts++;
+    const denied = reason => ({ status: "unavailable", reason });
+    const ids = { controlled_labor: "jp-stat-labor", controlled_cpi: "jp-stat-cpi", controlled_bls: "us-bls-calendar" };
+    if (!getRouteAuthority || typeof Reevaluation?.initialStateUpdate !== "function")
+      return denied("ordinary_write_disabled");
+    if (ids[targetEnvironment] && input?.sourceId !== ids[targetEnvironment])
+      return denied("source_out_of_scope");
+    if (!input || Object.keys(input).sort().join("|") !== "completedAt|expectedBinding|result|sourceId" ||
+        !sourceValid(input.sourceId)) return denied("runtime_state_invalid");
+    let captured;
+    try { captured = structuredClone(input); }
+    catch (_) { counts.initialCompletionRejects++; return denied("runtime_state_invalid"); }
+    let preflight;
+    try { preflight = Reevaluation.initialStateUpdate({ ...captured, state: null,
+      authority: getRouteAuthority() }); }
+    catch (_) { counts.initialCompletionRejects++; counts.failedWrites++;
+      return denied("runtime_state_invalid"); }
+    if (!preflight.valid) { counts.initialCompletionRejects++; counts.failedWrites++;
+      return denied(preflight.reason); }
+    const result = await access("readwrite", (store, done, abort) => {
+      const request = store.get(captured.sourceId);
+      request.onsuccess = () => { try {
+        const checked = Reevaluation.initialStateUpdate({ ...captured, state: request.result,
+          authority: getRouteAuthority() });
+        if (!checked.valid) { done(denied(checked.reason)); return; }
+        store.add(checked.state); done({ status: "ok", state: checked.state });
+      } catch (_) { abort("initial_completion_failed"); } };
+    }, true); // Creation is allowed only after a successful authoritative acquisition.
+    const output = result.status === "ok" ? result.value : denied("initial_completion_failed");
+    if (output.status === "ok") { counts.initialCompletionCommits++; counts.successfulWrites++; }
+    else { counts.initialCompletionRejects++; counts.failedWrites++; }
+    return output;
+  }
   return Object.freeze({ read, readAll, write, reserveReevaluation, completeReevaluation,
-    completeActiveAcquisition, diagnostics: () => ({ ...counts }) });
+    completeActiveAcquisition, completeInitialAcquisition, diagnostics: () => ({ ...counts }) });
 }
 return Object.freeze({ DATABASE_NAME, VERSION, STORE_NAME, TIMEOUT_MS, createRuntimeStateStore });
 });

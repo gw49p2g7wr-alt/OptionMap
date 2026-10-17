@@ -59,7 +59,9 @@ async function setup({ factory = new IDBFactory(), gate, failure = false, failed
       assert.ok(role);
       assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "manual");
       assert.deepEqual(Object.keys(options.headers), ["accept"]);
-      const saved = (await store.read()).value; assert.equal(saved.reevaluation.status, "reserved");
+      const saved = (await store.read()).value;
+      if (seedAbsent) assert.equal(saved.reevaluation.status, "reserved");
+      else assert.equal(saved, null);
       if (gate) await gate;
       const rows = [...F.rows[role], ...(role === "employment_situation" ? [["November 2026", "Dec. 04, 2026", "08:30 AM"]] : [])];
       const body = F.html(role, rows).replace('<meta charset="utf-8">', '<meta http-equiv="x-ua-compatible" content="IE=edge">');
@@ -120,7 +122,7 @@ test("authority generation change during acquisition rejects late completion", a
   assert.equal(r.sources[0].reasonClass, "stale_route_result");
   assert.equal((await f.store.read()).value.reevaluation.status, "reserved");
 });
-test("absent or interrupted state cannot acquire/create or automatically retry", async () => {
+test("interrupted route reservation cannot acquire or automatically retry", async () => {
   const f = await setup(); await f.store.reserveReevaluation({ sourceId: ID, requestedAt: AT });
   assert.equal((await f.service.check({ sourceIds: [ID] })).sources[0].reasonClass, "reevaluation_interrupted");
   assert.equal(f.requests(), 0);
@@ -143,10 +145,23 @@ test("production store rejects non-Bls reservation/completion and never creates 
   assert.equal((await f.store.completeReevaluation({ token: { sourceId: L.EXCLUDED[1] } })).reason, "source_out_of_scope");
   assert.deepEqual(await f.factory.databases(), [{ name: S.DATABASE_NAME, version: 1 }]);
 });
-test("DB absent fails closed without create or network", async () => {
+test("DB absent initializes exact v2 state only after successful authoritative acquisition", async () => {
   const f = await setup({ seedAbsent: false });
-  assert.equal((await f.service.check({ sourceIds: [ID] })).sources[0].reasonClass, "runtime_state_invalid");
-  assert.equal(f.requests(), 0); assert.deepEqual(await f.factory.databases(), []);
+  const result = await f.service.check({ sourceIds: [ID], trigger: "startup" }), source = result.sources[0];
+  assert.equal(source.status, "success"); assert.equal(source.acquisitionMode, "initial_active_route");
+  assert.equal(source.planningDecision, "authoritative_initial_acquisition"); assert.equal(f.requests(), 4);
+  const state = (await f.store.read()).value;
+  assert.equal(state.lastOutcome, "success"); assert.equal(state.lastSuccessAt, AT);
+  assert.equal(state.runtimeStateContractVersion, 2); assert.equal(state.reevaluation, null);
+  assert.deepEqual(state.routeBinding, require("../js/marketCalendarRuntime/routeReevaluationPolicy.js").APPROVALS[ID].targetBinding);
+  assert.deepEqual(await f.factory.databases(), [{ name: S.DATABASE_NAME, version: 1 }]);
+  assert.equal(f.store.diagnostics().reduce((n, d) => n + d.initialCompletionCommits, 0), 1);
+});
+test("DB absent remains absent when authoritative acquisition fails", async () => {
+  const f = await setup({ seedAbsent: false, failure: true });
+  const source = (await f.service.check({ sourceIds: [ID], trigger: "startup" })).sources[0];
+  assert.equal(source.status, "failed"); assert.equal(source.reasonClass, "http_404");
+  assert.equal(f.requests(), 4); assert.deepEqual(await f.factory.databases(), []);
 });
 test("existing renderer integration does not overwrite main-managed v2 Bls or CPI/BLS", async () => {
   const f = await setup(), before = f.seed.diagnostics().successfulWrites;

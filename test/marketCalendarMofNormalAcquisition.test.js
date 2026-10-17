@@ -139,6 +139,10 @@ test("native temp Chromium: normal13, Runtime State create/update, Formal unchan
   assert.equal(r.status, "PASS"); assert.equal(r.sources, 13); assert.equal(r.candidates, 16);
   assert.equal(r.runtime.audit.runtimeCreates, 1); assert.equal(r.runtime.audit.runtimeUpdates, 2);
   assert.equal(r.runtime.audit.formalReadwrite, 0); assert.equal(r.formalUnchanged, true);
+  assert.deepEqual(r.controlledRuntimeState.map(x => x.sourceId),
+    ["jp-stat-cpi", "jp-stat-labor", "us-bls-calendar"]);
+  assert.ok(r.controlledRuntimeState.every(x => x.before === "absent" &&
+    x.after.runtimeStateContractVersion === 2 && x.after.reevaluation === null));
   assert.deepEqual(r.writerTraps, { authorization: 0, grant: 0, executionToken: 0 });
   assert.equal(r.guard.productionContentAttempts, 0); assert.equal(r.guard.networkAttempts, 0); assert.equal(r.tempDeleted, true);
 });

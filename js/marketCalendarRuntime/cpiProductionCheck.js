@@ -11,7 +11,8 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
   getAuthority = () => Authority.PRODUCTION_AUTHORITY, adapterFactory = Adapter.createRouteAdapter,
   onAcquisition, acquisitionContract } = {}) {
   const activeSourceIds = Contracts.resolve(acquisitionContract);
-  if (!store?.read || !store?.reserveReevaluation || !store?.completeReevaluation || !legacyService?.check ||
+  if (!store?.read || !store?.reserveReevaluation || !store?.completeReevaluation ||
+      !store?.completeActiveAcquisition || !store?.completeInitialAcquisition || !legacyService?.check ||
       typeof fetchImpl !== "function") throw TypeError("cpi_configuration_invalid");
   let active = null;
   let startupAttempts = 0;
@@ -23,7 +24,7 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
   async function cpi(trigger) {
     const old = await store.read();
     record({ phase: "read", record: old.value || null, status: old.status });
-    if (old.status !== "ok" || !old.value) return { ...base, reasonClass: "runtime_state_invalid" };
+    if (!["ok", "absent"].includes(old.status)) return { ...base, reasonClass: "runtime_state_invalid" };
     const authority = getAuthority();
     const plan = Continuation.plan({ sourceId: ID, state: old.value, authority, trigger,
       requestedAt: now(), attemptCount: startupAttempts });
@@ -37,13 +38,17 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
       acquisitionPolicyIdentity: { routeIdentity: selected.routeIdentity, activationVersion: selected.activationVersion },
       execute: async () => {
         const normal = plan.mode === "normal_active_route";
-        const reserved = normal ? { state: old.value } :
+        const initial = plan.mode === "initial_active_route";
+        const expectedBinding = initial ? Policy.initialBinding(ID, authority) : null;
+        const reserved = normal ? { state: old.value } : initial ? { state: null } :
           await store.reserveReevaluation({ sourceId: ID, requestedAt: now() });
-        if (!normal) record({ phase: "reservation", result: reserved });
-        if (!normal && !reserved.networkEligible) return { ...base, acquisitionMode: plan.mode,
+        if (!normal && !initial) record({ phase: "reservation", result: reserved });
+        if (!normal && !initial && !reserved.networkEligible) return { ...base, acquisitionMode: plan.mode,
           planningDecision: decision.decision, reasonClass: reserved.reason };
         const current = Authority.selectRoute({ sourceId: ID, operation: Flights.OPERATION }, getAuthority());
-        if (!current.valid || !current.acquisitionAllowed || !Policy.sameBinding(Policy.binding(current), reserved.state.routeBinding))
+        const requiredBinding = initial ? expectedBinding : reserved.state.routeBinding;
+        if (!current.valid || !current.acquisitionAllowed || !requiredBinding ||
+            !Policy.sameBinding(Policy.binding(current), requiredBinding))
           return { ...base, reasonClass: "stale_route_result" };
         const at = now(), dateJst = new Date(Date.parse(at) + 9 * 3600000).toISOString().slice(0, 10);
         if (trigger === "startup") startupAttempts++;
@@ -74,7 +79,9 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
         const completion = { completedAt: now(), result: { lastAttemptAt: at,
           lastOutcome: success ? "success" : "failure", lastHttpStatus: http, lastDiagnosticClass: diagnostic } };
         const completed = normal ? await store.completeActiveAcquisition({ ...completion, sourceId: ID,
-          expectedState: old.value }) : await store.completeReevaluation({ ...completion, token: reserved.token });
+          expectedState: old.value }) : initial ? success ? await store.completeInitialAcquisition({ ...completion,
+            sourceId: ID, expectedBinding }) : { status: "unavailable", reason: diagnostic } :
+          await store.completeReevaluation({ ...completion, token: reserved.token });
         try { onAcquisition?.({ ...result, sourceId: ID, acquisitionOutcome:
           success && completed.status === "ok" ? "complete" : result.acquisitionOutcome === "partial" ? "partial" : "failed" }); }
         catch (_) { /* Shadow capture cannot affect completion or the public result. */ }
@@ -86,11 +93,11 @@ function createCpiProductionCheck({ store, legacyService, fetchImpl, now = () =>
               [...new Set((candidate.canonicalRecords || []).filter(r => r.logical?.scope === lane).map(r => r.logical.edition))]])),
             canonicalDiagnostics: candidate.canonicalDiagnostics } : null,
           resources: adapter.diagnostics?.() || null });
-        record({ phase: normal ? "normal_completion" : "completion", result: completed });
+        record({ phase: normal ? "normal_completion" : initial ? "initial_completion" : "completion", result: completed });
         return { ...base, status: success && completed.status === "ok" ? "success" : "failed",
           acquisitionStatus: success ? "succeeded" : "failed", candidateStatus: candidate?.candidateStatus || "unavailable",
           recordCount: candidate?.recordCount || 0, lastHttpStatus: http, acquisitionMode: plan.mode,
-          planningDecision: normal ? decision.decision : "approved_reevaluation",
+          planningDecision: normal ? decision.decision : initial ? "authoritative_initial_acquisition" : "approved_reevaluation",
           reasonClass: completed.status !== "ok" ? completed.reason : diagnostic };
       } });
     return flight.executionOutcome || { ...base, reasonClass: "flight_failed" };

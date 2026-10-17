@@ -31,6 +31,13 @@ const APPROVALS = freeze(Object.fromEntries(PINS.map(([sourceId, routeKind, from
       routeIdentity: toIdentity, activationVersion: 2 },
     allowedDiagnostic: sourceId === "us-bls-calendar" ? "network_failure" : "http_404" }];
 })));
+// A missing row is not a migration claim. It may be initialized only after a
+// successful acquisition on the exact, fixed generation-2 production route.
+function initialBinding(sourceId, authority) {
+  const selected = select(sourceId, authority), approval = APPROVALS[sourceId];
+  return selected.valid && selected.acquisitionAllowed && selected.activationState === "alternative_active" &&
+    approval && sameBinding(binding(selected), approval.targetBinding) ? binding(selected) : null;
+}
 function evaluate({ sourceId, state, authority, requestedAt }) {
   const reject = reason => ({ eligible: false, reason });
   const current = select(sourceId, authority);
@@ -92,6 +99,23 @@ function completeState({ state, token, authority, result, completedAt }) {
   if (!State.validateCompatibleRuntimeState(next, token.sourceId).valid) return reject("runtime_state_invalid");
   return { valid: true, reason: null, state: next };
 }
+function initialStateUpdate({ sourceId, expectedBinding, state, authority, result, completedAt }) {
+  const reject = reason => ({ valid: false, reason });
+  const approved = initialBinding(sourceId, authority);
+  if (state != null || !approved || !sameBinding(expectedBinding, approved))
+    return reject("stale_route_result");
+  if (!exact(result, ["lastAttemptAt", "lastOutcome", "lastHttpStatus", "lastDiagnosticClass"]) ||
+      !instant(result.lastAttemptAt) || !instant(completedAt) || result.lastOutcome !== "success" ||
+      result.lastDiagnosticClass !== null || Date.parse(result.lastAttemptAt) > Date.parse(completedAt) ||
+      result.lastHttpStatus !== null && !(result.lastHttpStatus >= 200 && result.lastHttpStatus < 300))
+    return reject("runtime_state_invalid");
+  const next = { sourceId, lastAttemptAt: result.lastAttemptAt, lastSuccessAt: result.lastAttemptAt,
+    lastOutcome: "success", retryAfter: null, lastHttpStatus: result.lastHttpStatus,
+    lastDiagnosticClass: null, coordinatorVersion: 1, runtimeStateContractVersion: 2,
+    routeBinding: approved, reevaluation: null };
+  return State.validateCompatibleRuntimeState(next, sourceId).valid
+    ? { valid: true, reason: null, state: next } : reject("runtime_state_invalid");
+}
 // Explicit route-aware boundary outside B1. Never treats a version difference as permission to retry.
 function evaluateBoundUpdate(input, authority) {
   const { runtimeState: state } = input, checked = State.validateCompatibleRuntimeState(state, input.sourceId);
@@ -114,7 +138,8 @@ function normalStateUpdate({ sourceId, expectedState, state, authority, result, 
   if (!State.validateCompatibleRuntimeState(state, sourceId).valid ||
       !State.validateCompatibleRuntimeState(expectedState, sourceId).valid ||
       !state || !expectedState || stable(state) !== stable(expectedState) ||
-      state.reevaluation?.status !== "completed" || !selected.valid || !selected.acquisitionAllowed ||
+      state.reevaluation !== null && state.reevaluation?.status !== "completed" ||
+      !selected.valid || !selected.acquisitionAllowed ||
       selected.activationState !== "alternative_active" || !sameBinding(state.routeBinding, binding(selected)))
     return reject("stale_route_result");
   if (!exact(result, ["lastAttemptAt", "lastOutcome", "lastHttpStatus", "lastDiagnosticClass"]) ||
@@ -133,5 +158,5 @@ function normalStateUpdate({ sourceId, expectedState, state, authority, result, 
   return State.validateCompatibleRuntimeState(next, sourceId).valid
     ? { valid: true, state: next } : reject("runtime_state_invalid");
 }
-module.exports = Object.freeze({ APPROVALS, binding, sameBinding, evaluate, reserveState, reservationToken,
-  completeState, evaluateBoundUpdate, normalStateUpdate });
+module.exports = Object.freeze({ APPROVALS, binding, sameBinding, initialBinding, evaluate, reserveState,
+  reservationToken, completeState, initialStateUpdate, evaluateBoundUpdate, normalStateUpdate });
