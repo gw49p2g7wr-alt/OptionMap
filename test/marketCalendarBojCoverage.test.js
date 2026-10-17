@@ -157,3 +157,20 @@ test("isolated native BOJ fixed-document acquisition (public network forbidden)"
   for (const k of ["runtimeStateWrites", "formalReadwrite", "safetyWrites", "authorization", "grant", "token", "writer"]) A.equal(r[k], 0);
   A.equal(r.tempDeleted, true); A.equal(r.package.name, "optionmap");
 });
+test("Windows BOJ native fixture owns an isolated Electron runtime without mutating the shared distribution", () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const Native = require("../scripts/marketCalendarG2BojCoverageNative.js");
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-g2-runtime-copy-"));
+  try {
+    const shared = path.join(root, "shared", "electron.exe");
+    fs.mkdirSync(path.dirname(shared)); fs.writeFileSync(shared, "fixture-electron");
+    fs.mkdirSync(path.join(path.dirname(shared), "resources"));
+    fs.writeFileSync(path.join(path.dirname(shared), "resources", "default_app.asar"), "fixture-resource");
+    const runtime = Native.prepareFixtureElectronRuntime(root, { platform: "win32", sharedExecutable: shared });
+    A.equal(runtime.isolated, true); A.notEqual(runtime.executable, shared);
+    A.equal(fs.readFileSync(runtime.executable, "utf8"), "fixture-electron");
+    A.equal(fs.readFileSync(path.join(runtime.runtimeRoot, "resources", "default_app.asar"), "utf8"), "fixture-resource");
+    fs.writeFileSync(runtime.executable, "isolated-change");
+    A.equal(fs.readFileSync(shared, "utf8"), "fixture-electron");
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

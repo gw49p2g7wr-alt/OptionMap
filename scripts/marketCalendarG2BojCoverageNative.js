@@ -7,6 +7,16 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT = path.resolve(__dirname, "..");
+function prepareFixtureElectronRuntime(root, options = {}) {
+  const platform = options.platform || process.platform;
+  const sharedExecutable = options.sharedExecutable || require("electron");
+  if (platform !== "win32") return Object.freeze({ executable: sharedExecutable, isolated: false, runtimeRoot: null });
+  const runtimeRoot = path.join(root, "electron-runtime");
+  fs.cpSync(path.dirname(sharedExecutable), runtimeRoot, { recursive: true, force: false, errorOnExist: true });
+  const executable = path.join(runtimeRoot, path.basename(sharedExecutable));
+  if (!fs.statSync(executable).isFile()) throw Error("g2_isolated_electron_executable_missing");
+  return Object.freeze({ executable, isolated: true, runtimeRoot });
+}
 function sentinel(root) {
   const audit = { forbiddenAttempts: 0, repositoryWrites: 0 };
   const inside = (p, base) => p === base || p.startsWith(base + path.sep);
@@ -109,9 +119,11 @@ function run(mode = "isolated") {
     const stdoutPath = path.join(root, "stdout.log"), stderrPath = path.join(root, "stderr.log");
     const stdout = fs.openSync(stdoutPath, "w", 0o600), stderr = fs.openSync(stderrPath, "w", 0o600);
     let child;
-    try { child = Lifecycle.withNativeElectronLaunchLock(() =>
-      cp.spawnSync(require("electron"), [pack, `--user-data-dir=${path.join(root, "profile")}`],
-        { cwd: ROOT, env, stdio: ["ignore", stdout, stderr], timeout: 90000, killSignal: "SIGKILL" })); }
+    try { child = Lifecycle.withNativeElectronLaunchLock(() => {
+      const runtime = prepareFixtureElectronRuntime(root);
+      return cp.spawnSync(runtime.executable, [pack, `--user-data-dir=${path.join(root, "profile")}`],
+        { cwd: ROOT, env, stdio: ["ignore", stdout, stderr], timeout: 90000, killSignal: "SIGKILL" });
+    }); }
     finally { fs.closeSync(stdout); fs.closeSync(stderr); }
     const receiptPath = path.join(root, "receipt.json");
     if (!fs.existsSync(receiptPath)) {
@@ -123,7 +135,7 @@ function run(mode = "isolated") {
     return { ...receipt, processExitCode: child.status, tempDeleted: true };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
-module.exports = Object.freeze({ run, worker });
+module.exports = Object.freeze({ run, worker, prepareFixtureElectronRuntime });
 if (require.main === module && process.type !== "browser") {
   const receipt = run(process.argv[2] || "isolated"); console.log(JSON.stringify(receipt));
   process.exitCode = receipt.status === "PASS" ? 0 : 1;
