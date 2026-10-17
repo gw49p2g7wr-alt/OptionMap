@@ -6,6 +6,7 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
   A = require("node:assert/strict"), crypto = require("node:crypto");
 const ROOT = path.resolve(__dirname, ".."), sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
+const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const MODES = ["isolated", "live-readonly", "production-readonly"];
 function guard(root, production) {
   const profile = "/Users/natsu/Library/Application Support/OptionMap", inside = (p,b) => p===b || p.startsWith(b+path.sep);
@@ -104,7 +105,8 @@ function run(mode="isolated") {
     fs.writeFileSync(path.join(pack,"entry.cjs"),`require(${JSON.stringify(__filename)}).worker().catch(e=>{console.error(e.stack);require('electron').app.exit(1)});`);
     fs.writeFileSync(path.join(pack,"guard.json"),JSON.stringify({root,mode}));
     const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.NODE_TEST_CONTEXT;
-    const child=cp.spawnSync(require("electron"),[pack],{cwd:ROOT,env,encoding:"utf8",timeout:90000,maxBuffer:40960});
+    const child=Lifecycle.withNativeElectronLaunchLock(()=>cp.spawnSync(require("electron"),[pack],
+      {cwd:ROOT,env,encoding:"utf8",timeout:90000,maxBuffer:40960}));
     A.equal(child.status,0,child.stderr||"g4_native_failed");
     const bytes=fs.readFileSync(path.join(root,"receipt.json")),marker=JSON.parse(fs.readFileSync(path.join(root,"receipt.complete")));
     A.equal(bytes.length,marker.length);A.equal(sha(bytes),marker.sha256);

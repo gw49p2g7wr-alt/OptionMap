@@ -164,12 +164,19 @@ test("Windows BOJ native fixture owns an isolated Electron runtime without mutat
   try {
     const shared = path.join(root, "shared", "electron.exe");
     fs.mkdirSync(path.dirname(shared)); fs.writeFileSync(shared, Buffer.concat([Buffer.from("MZ"), Buffer.alloc(62), Buffer.from("fixture-electron")]));
+    fs.writeFileSync(path.join(path.dirname(shared), "ffmpeg.dll"), Buffer.concat([Buffer.from("MZ"), Buffer.alloc(30), Buffer.from("fixture-dll")]));
     fs.mkdirSync(path.join(path.dirname(shared), "resources"));
     fs.writeFileSync(path.join(path.dirname(shared), "resources", "default_app.asar"), "fixture-resource");
     fs.symlinkSync(path.join(path.dirname(shared), "resources", "default_app.asar"), path.join(path.dirname(shared), "linked-resource"));
     const runtime = Native.prepareFixtureElectronRuntime(root, { platform: "win32", sharedExecutable: shared });
     A.equal(runtime.isolated, true); A.notEqual(runtime.executable, shared);
     A.deepEqual(runtime.sourceIdentity, runtime.destinationIdentity); A.equal(runtime.sourceIdentity.header, "4d5a");
+    for (const [role, evidence] of Object.entries(runtime.audits)) {
+      A.equal(evidence.role, role); A.equal(evidence.sourceType.lstat, "file"); A.equal(evidence.sourceType.stat, "file");
+      A.equal(evidence.destinationType.lstat, "file"); A.equal(evidence.destinationType.stat, "file");
+      A.deepEqual(evidence.captured, evidence.sourceIdentity); A.deepEqual(evidence.sourceIdentity, evidence.destinationIdentity);
+    }
+    A.equal(runtime.audits.dll.sourceIdentity.header, "4d5a");
     A.deepEqual(fs.readFileSync(runtime.executable), fs.readFileSync(shared));
     A.equal(fs.readFileSync(path.join(runtime.runtimeRoot, "resources", "default_app.asar"), "utf8"), "fixture-resource");
     A.equal(fs.lstatSync(path.join(runtime.runtimeRoot, "linked-resource")).isFile(), true);

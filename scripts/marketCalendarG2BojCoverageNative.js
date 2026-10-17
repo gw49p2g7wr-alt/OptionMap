@@ -7,36 +7,113 @@ const fs = require("node:fs"), path = require("node:path"), os = require("node:o
 const Filesystem = require("../js/marketCalendarHistory/crossPlatformFilesystemSafety.js");
 const Lifecycle = require("../test/fixtures/nativeElectronFixtureLifecycle.js");
 const ROOT = path.resolve(__dirname, "..");
-function copyRuntimeEntry(source, destination) {
-  const stat = fs.lstatSync(source);
-  if (stat.isSymbolicLink()) return copyRuntimeEntry(fs.realpathSync(source), destination);
-  if (stat.isDirectory()) {
-    fs.mkdirSync(destination);
-    for (const name of fs.readdirSync(source)) copyRuntimeEntry(path.join(source, name), path.join(destination, name));
-    return;
-  }
-  if (!stat.isFile()) throw Error("g2_electron_runtime_entry_invalid");
-  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
-  fs.chmodSync(destination, stat.mode);
+function fileType(stat) {
+  if (stat.isFile()) return "file";
+  if (stat.isDirectory()) return "directory";
+  if (stat.isSymbolicLink()) return "symbolic_link";
+  return "other";
 }
-function executableIdentity(file) {
+function integrityError(reason, evidence) {
+  return Error(`${reason}:${JSON.stringify(evidence)}`);
+}
+function fileIdentity(file) {
   const bytes = fs.readFileSync(file);
   return Object.freeze({ size: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
     header: bytes.subarray(0, 2).toString("hex") });
+}
+function copyRegularFileSnapshot(source, destination, audited) {
+  const sourceDescriptor = fs.openSync(source, "r");
+  let destinationDescriptor;
+  const hash = audited ? crypto.createHash("sha256") : null, buffer = Buffer.allocUnsafe(1024 * 1024);
+  let before, after, bytesRead = 0, header = Buffer.alloc(0);
+  try {
+    destinationDescriptor = fs.openSync(destination, "wx");
+    before = fs.fstatSync(sourceDescriptor);
+    for (;;) {
+      const count = fs.readSync(sourceDescriptor, buffer, 0, buffer.length, null);
+      if (count === 0) break;
+      if (audited) {
+        hash.update(buffer.subarray(0, count));
+        if (header.length < 2) header = Buffer.concat([header, buffer.subarray(0, Math.min(count, 2 - header.length))]);
+      }
+      for (let offset = 0; offset < count;) {
+        const written = fs.writeSync(destinationDescriptor, buffer, offset, count - offset, null);
+        if (written <= 0) throw Error("g2_electron_runtime_snapshot_write_failed");
+        offset += written;
+      }
+      bytesRead += count;
+    }
+    after = fs.fstatSync(sourceDescriptor);
+  } finally {
+    fs.closeSync(sourceDescriptor);
+    if (destinationDescriptor !== undefined) fs.closeSync(destinationDescriptor);
+  }
+  const captured = audited ? Object.freeze({ size: bytesRead, sha256: hash.digest("hex"), header: header.toString("hex") }) : null;
+  if (before.size !== bytesRead || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+    const destinationIdentity = audited ? fileIdentity(destination) : { size: fs.statSync(destination).size };
+    throw integrityError("g2_electron_source_mutated_during_snapshot", { source, destination,
+      sourceBefore: { size: before.size, mtimeMs: before.mtimeMs, ctimeMs: before.ctimeMs },
+      sourceAfter: { size: after.size, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs }, captured, destinationIdentity });
+  }
+  return captured;
+}
+function copyRuntimeEntry(source, destination, context, relative = "") {
+  const stat = fs.lstatSync(source);
+  if (stat.isSymbolicLink()) return copyRuntimeEntry(fs.realpathSync(source), destination, context, relative);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(destination);
+    for (const name of fs.readdirSync(source).sort())
+      copyRuntimeEntry(path.join(source, name), path.join(destination, name), context, path.join(relative, name));
+    return;
+  }
+  if (!stat.isFile()) throw Error("g2_electron_runtime_entry_invalid");
+  const captured = copyRegularFileSnapshot(source, destination, context.auditPaths.has(relative));
+  fs.chmodSync(destination, stat.mode);
+  if (captured) context.captured.set(relative, captured);
+}
+function selectAuditPaths(sourceRoot, executableName) {
+  const presentFile = relative => {
+    const target = path.join(sourceRoot, relative);
+    return fs.existsSync(target) && fs.statSync(target).isFile();
+  };
+  const dll = ["ffmpeg.dll", "libEGL.dll", "libGLESv2.dll", "d3dcompiler_47.dll"].find(name =>
+    presentFile(name));
+  const resource = [path.join("resources", "default_app.asar"), path.join("resources", "electron.asar"), "resources.pak"].find(name =>
+    presentFile(name));
+  if (!dll || !resource) throw integrityError("g2_electron_runtime_audit_asset_missing", { sourceRoot, dll: dll || null, resource: resource || null });
+  return Object.freeze({ executable: executableName, dll, resource });
+}
+function auditCopiedFile(role, relative, sourceRoot, destinationRoot, captured) {
+  const source = path.join(sourceRoot, relative), destination = path.join(destinationRoot, relative);
+  if (!captured) throw integrityError("g2_electron_runtime_audit_capture_missing", { role, relative, source, destination });
+  const sourceIdentity = fileIdentity(source), destinationIdentity = fileIdentity(destination);
+  const evidence = Object.freeze({ role, relative, source, destination,
+    sourceType: { lstat: fileType(fs.lstatSync(source)), stat: fileType(fs.statSync(source)) },
+    destinationType: { lstat: fileType(fs.lstatSync(destination)), stat: fileType(fs.statSync(destination)) },
+    captured, sourceIdentity, destinationIdentity });
+  if (captured.size !== sourceIdentity.size || captured.sha256 !== sourceIdentity.sha256 || captured.header !== sourceIdentity.header)
+    throw integrityError("g2_electron_source_mutated_after_snapshot", evidence);
+  if (captured.size !== destinationIdentity.size || captured.sha256 !== destinationIdentity.sha256 || captured.header !== destinationIdentity.header)
+    throw integrityError("g2_isolated_electron_integrity_mismatch", evidence);
+  return evidence;
 }
 function prepareFixtureElectronRuntime(root, options = {}) {
   const platform = options.platform || process.platform;
   const sharedExecutable = options.sharedExecutable || require("electron");
   if (platform !== "win32") return Object.freeze({ executable: sharedExecutable, isolated: false, runtimeRoot: null });
-  const runtimeRoot = path.join(root, "electron-runtime");
-  copyRuntimeEntry(path.dirname(sharedExecutable), runtimeRoot);
+  const sourceRoot = path.dirname(sharedExecutable), runtimeRoot = path.join(root, "electron-runtime");
+  const auditPaths = selectAuditPaths(sourceRoot, path.basename(sharedExecutable));
+  const context = { auditPaths: new Set(Object.values(auditPaths)), captured: new Map() };
+  copyRuntimeEntry(sourceRoot, runtimeRoot, context);
   const executable = path.join(runtimeRoot, path.basename(sharedExecutable));
   if (!fs.statSync(executable).isFile()) throw Error("g2_isolated_electron_executable_missing");
-  const sourceIdentity = executableIdentity(sharedExecutable), destinationIdentity = executableIdentity(executable);
+  const audits = Object.freeze(Object.fromEntries(Object.entries(auditPaths).map(([role, relative]) =>
+    [role, auditCopiedFile(role, relative, sourceRoot, runtimeRoot, context.captured.get(relative))])));
+  const { sourceIdentity, destinationIdentity } = audits.executable;
   if (sourceIdentity.header !== "4d5a" || destinationIdentity.header !== "4d5a") throw Error("g2_isolated_electron_pe_header_invalid");
-  if (sourceIdentity.size !== destinationIdentity.size || sourceIdentity.sha256 !== destinationIdentity.sha256)
-    throw Error("g2_isolated_electron_integrity_mismatch");
-  return Object.freeze({ executable, isolated: true, runtimeRoot, sourceIdentity, destinationIdentity });
+  if (audits.dll.sourceIdentity.header !== "4d5a" || audits.dll.destinationIdentity.header !== "4d5a")
+    throw Error("g2_isolated_electron_dll_pe_header_invalid");
+  return Object.freeze({ executable, isolated: true, runtimeRoot, sourceIdentity, destinationIdentity, audits });
 }
 function sentinel(root) {
   const audit = { forbiddenAttempts: 0, repositoryWrites: 0 };
