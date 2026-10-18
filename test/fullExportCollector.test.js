@@ -186,7 +186,8 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     const result = await collect();
     assert.equal(fullExport.validateFullExport(result).valid, true);
     assert.deepEqual(Object.keys(result.sections),
-        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "morningV5Formal", "qriOptionIv"]);
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "consumerReadiness",
+            "morningV5Formal", "qriOptionIv"]);
     assert.equal(result.sections.participants.status, "partial");
     assert.equal(result.sections.aiSummary.status, "available");
     assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
@@ -203,6 +204,13 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     assert.equal(result.sections.qriOptionIv.status, "unavailable");
     assert.equal(result.sections.aiSummary.summary.qriOptionIv.sourcePointer,
         "/sections/qriOptionIv");
+    assert.equal(result.sections.consumerReadiness.status, "available");
+    assert.equal(result.sections.consumerReadiness.summary.authoritativeRoot, "/sections");
+    assert.deepEqual(result.sections.aiSummary.summary.consumerReadiness, {
+        sourceSection: "consumerReadiness", sourcePointer: "/sections/consumerReadiness",
+        status: "available", reason: null, vocabularyVersion: 1,
+        authoritativeRoot: "/sections"
+    });
     assert.equal(JSON.stringify(result.compactSummary).includes("qriOptionIv"), false);
     assert.equal(result.compactSummary.freshnessIssues.some(issue =>
         issue.section === "qriOptionIv"), false);
@@ -567,6 +575,7 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     assert.equal(result.sections.participants.status, "unavailable");
     assert.equal(result.sections.participants.reason, "participant_read_failed");
     assert.deepEqual(Object.keys(result.sections),
-        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "morningV5Formal", "qriOptionIv"]);
+        [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "consumerReadiness",
+            "morningV5Formal", "qriOptionIv"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

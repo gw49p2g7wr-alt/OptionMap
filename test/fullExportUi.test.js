@@ -140,7 +140,8 @@ test("save serviceはwrite/rename失敗時にtemporary fileを除去して失敗
 test("UI wiringは専用buttonとPhase 1A/1Bを読み込む", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     assert.match(html, /id="fullExportJsonButton"/); assert.match(html, /id="fullExportStatus"/);
-    for (const file of ["fullExportSecurity.js", "fullExport.js", "fullExportCollector.js", "fullExportUi.js"])
+    for (const file of ["fullExportSecurity.js", "fullExport.js",
+        "fullExportConsumerReadiness.js", "fullExportCollector.js", "fullExportUi.js"])
         assert.match(html, new RegExp(`js/${file.replace(".", "\\.")}`));
 });
 

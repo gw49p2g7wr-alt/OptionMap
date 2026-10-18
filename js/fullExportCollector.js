@@ -11,15 +11,17 @@
         root?.OptionMapFullExportAiSummary;
     const qriOptionIvApi = commonJs ? require("./fullExportQriOptionIv.js") :
         root?.OptionMapFullExportQriOptionIv;
+    const consumerReadinessApi = commonJs ? require("./fullExportConsumerReadiness.js") :
+        root?.OptionMapFullExportConsumerReadiness;
     const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
         root?.OptionMapMorningV5FormalReadSurfaces;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
-        aiSummaryApi, qriOptionIvApi, morningV5Api);
+        aiSummaryApi, qriOptionIvApi, consumerReadinessApi, morningV5Api);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
-    qriOptionIvApi, morningV5Api) {
+    qriOptionIvApi, consumerReadinessApi, morningV5Api) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -727,6 +729,10 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
                         qriOptionsMajorSqNextContract).freshness)
             }) || unavailable("formal_iv_revision_unavailable", "qri-nikkei225-option-iv");
             const sections = { ...coreSections, qriOptionIv };
+            sections.consumerReadiness = consumerReadinessApi
+                ?.buildConsumerReadinessIndex?.(sections) || unavailable(
+                "consumer_readiness_builder_unavailable", "optionmap-full-export",
+                { status: "not_applicable", reason: "index_only" });
             const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
                 exportMeta: { generatedAt, timeZone: "Asia/Tokyo", profile: "full",
                     appVersion: options.appVersion || null, readOnly: true },

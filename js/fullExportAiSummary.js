@@ -179,6 +179,15 @@
             aggregateComparison: field(summary, "aggregateComparison") };
     }
 
+    function consumerReadiness(sections) {
+        const name = "consumerReadiness", section = sectionAt(sections, name);
+        if (!section) return null;
+        return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
+            reason: reason(section), vocabularyVersion: field(section?.summary,
+                "vocabularyVersion"), authoritativeRoot: field(section?.summary,
+                "authoritativeRoot") };
+    }
+
     function issueKey(issue) {
         return [issue.section, issue.issueType, issue.status, issue.reason]
             .map(value => String(value ?? "")).join("|");
@@ -263,6 +272,7 @@
         }
         const generatedAt = field(source.exportMeta, "generatedAt");
         if (generatedAt === null) return unavailable("ai_summary_source_invalid");
+        const readiness = consumerReadiness(source.sections);
         const summary = {
             summaryVersion: SUMMARY_VERSION, purpose: PURPOSE, generatedAt,
             market: market(source.sections), overallV2: overall(source.sections),
@@ -279,6 +289,7 @@
                 participants: datedSource(source.sections, "participants")
             },
             morning: morning(source.sections), morningV5Formal: morningV5(source.sections),
+            ...(readiness ? { consumerReadiness: readiness } : {}),
             dataQuality: dataQuality(source),
             readingOrder: SECTION_ORDER.filter(name => sectionAt(source.sections, name))
                 .map(name => ({ section: name,
