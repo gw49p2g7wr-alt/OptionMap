@@ -63,12 +63,13 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
       if (!captures.size) { last = { status: "skipped", reason: "no_fresh_acquisition" }; return result; }
       let cycle;
       try {
-        const before = await read();
-        if (before.status !== "ok") { last = { status: "unsafe", reason: before.reason }; return result; }
-        cycle = Cycle.create(before.snapshot, before.schemaFingerprint);
         const sourceResults = ids.map(sourceId => captures.get(sourceId) || { sourceId,
           canonicalRecords: [], acquisitionOutcome: "not_attempted", candidateStatus: "unavailable",
           failedRoles: [], absenceAuthority: "none" });
+        const before = await read();
+        if (before.status !== "ok") { last = { status: "unsafe", reason: before.reason,
+          sourceResults }; return result; }
+        cycle = Cycle.create(before.snapshot, before.schemaFingerprint);
         const comparison = await Compare.compare({ sourceResults, formalSnapshot: before.snapshot, cycleContext: cycle });
         last = { comparison, sourceResults, formalAudit: before.audit,
           snapshotIdentity: Cycle.get(cycle, before.snapshot).snapshotIdentity,

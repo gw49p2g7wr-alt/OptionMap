@@ -42,7 +42,10 @@
             detailsHidden: failed.length === 0 && persistWarnings.length === 0,
             detailsText: [...failed.map(source => `${source.displayName || source.sourceId || "不明なsource"}：${
                 source.reasonClass || "確認失敗"}`), ...persistWarnings].join("\n"),
-            writerQualifier: "保存は行っていません" });
+            writerQualifier: input.formalPersistence?.status === "committed" ?
+                "カレンダー予定を保存しました" :
+                input.formalPersistence?.reason === "database_exists" ?
+                    "保存済みカレンダーを使用しています" : "保存は行っていません" });
     }
     return Object.freeze({ STATES, build });
 });

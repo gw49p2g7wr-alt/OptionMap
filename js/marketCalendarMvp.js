@@ -212,6 +212,7 @@
         panel.querySelector("#marketCalendarToday").addEventListener("click", () => {
             selectedDate = todayJst(); year = Number(selectedDate.slice(0, 4));
             month = Number(selectedDate.slice(5, 7)); refreshMonth(); });
+        document.addEventListener("optionmap:calendar-formal-updated", refreshMonth);
         refreshMonth(); return Object.freeze({ refreshMonth, selectDate });
     }
     if (typeof document !== "undefined") {

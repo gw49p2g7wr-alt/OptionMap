@@ -29,8 +29,10 @@ const calendarAcquisition = require(
   "./js/marketCalendarRuntime/calendarAcquisitionService.js"
 );
 const normalAcquisitionRuntime = require("./js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
+const calendarFormalBootstrap = require("./js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js");
 let calendarShadowRuntime = null;
 let calendarCanaryRuntime = null;
+let calendarFormalBootstrapRuntime = null;
 let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const morningV5FormalStore = require("./js/morningV5FormalStore.js");
@@ -220,11 +222,14 @@ ipcMain.handle("request-market-calendar-source", async (event, request) => {
 });
 
 function ensureCalendarRuntime(webContents) {
-  if (!calendarShadowRuntime) calendarShadowRuntime = normalAcquisitionRuntime.create({
-    webContents, fetchImpl: (url, options) => net.fetch(url, options),
-    runtimeStateOwner: "renderer",
-    acquire: request => calendarAcquisitionService.acquire(request)
-  });
+  if (!calendarShadowRuntime) {
+    const normal = normalAcquisitionRuntime.create({ webContents,
+      fetchImpl: (url, options) => net.fetch(url, options), runtimeStateOwner: "renderer",
+      acquire: request => calendarAcquisitionService.acquire(request) });
+    calendarFormalBootstrapRuntime = calendarFormalBootstrap.createProductionRuntime(webContents);
+    calendarShadowRuntime = calendarFormalBootstrap.wrapNormalRuntime(normal,
+      calendarFormalBootstrapRuntime);
+  }
   return calendarShadowRuntime;
 }
 
@@ -692,6 +697,7 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
     calendarCanaryRuntime?.close();calendarCanaryRuntime=null;
+    calendarFormalBootstrapRuntime?.close();calendarFormalBootstrapRuntime=null;
     calendarShadowRuntime = null;
   });
   const mainDocumentUrl = pathToFileURL(

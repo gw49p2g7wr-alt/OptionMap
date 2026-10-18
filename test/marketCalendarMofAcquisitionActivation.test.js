@@ -36,6 +36,8 @@ async function bootstrap({ readFailure = false } = {}) {
       instance = Runtime.create({ ...options, ...config, stores: options.stores, readFormal: options.readFormal,
         fetchImpl: options.fetchImpl, acquire: options.acquire }); return instance;
     } },
+    "./js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js": {
+      createProductionRuntime: () => ({ close() {} }), wrapNormalRuntime: normal => normal },
     "./js/security/networkUrlPolicy.js": {}, "./js/fullExportFileSave.js": { createSaveService: () => ({}) },
     "./js/morningV5FormalStore.js": { createProductionStore() {
       throw Error("morning_v5_store_must_remain_dormant"); } },
