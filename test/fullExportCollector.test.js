@@ -85,6 +85,20 @@ function dependencies(overrides = {}) {
         getCurrentPriceIdentity: () => ({ status: "available", fact: { available: true,
             sourceKind: "live", origin: "live", mode: "automatic", identityVerified: true,
             acquisitionVerified: true, currentRequestVerified: true, contract: "2026-09",
+            value: 42125, quotedAtRaw: "09/05 18:44",
+            quotedAtNormalized: "2026-09-05T18:44:00+09:00",
+            quoteSignature: "price-quote-signature", versionKey: "price-version-key",
+            wrapperSignature: "price-wrapper-signature",
+            requestId: "qri-price-request-1", fetchedAt: "2026-09-05T09:45:00Z",
+            sourceUrl: "https://svc.qri.jp/jpx/nkopm/202609",
+            quoteIdentity: { value: 42125, contract: "2026-09",
+                quotedAtRaw: "09/05 18:44",
+                quotedAtNormalized: "2026-09-05T18:44:00+09:00",
+                quoteSignature: "price-quote-signature", versionKey: "price-version-key" },
+            acquisitionIdentity: { requestId: "qri-price-request-1",
+                fetchedAt: "2026-09-05T09:45:00Z",
+                sourceUrl: "https://svc.qri.jp/jpx/nkopm/202609",
+                wrapperSignature: "price-wrapper-signature" },
             qriTradingDateMapping: { mappingVerified: true,
                 mappingSource: "same_date_explicit" } } }),
         getOverallV2FormalEnvelope: () => ({ status: "available", envelope: {
@@ -203,8 +217,9 @@ test("production形状のsourceなしlive current-price factを正常受理", as
     assert.equal(result.sections.marketSnapshot.authority.sourceClass, "formal_live");
 });
 
-test("current-price contract不一致とacquisition未検証はunavailable", async () => {
-    for (const patch of [{ contract: "2026-12" }, { acquisitionVerified: false }]) {
+test("current-price fact内部のcontract不一致とacquisition未検証はunavailable", async () => {
+    for (const patch of [{ contract: "2026-12" }, { contract: null },
+        { acquisitionVerified: false }, { sourceUrl: "https://example.invalid/futures" }]) {
         const deps = dependencies(); const state = deps.getCurrentPriceIdentity();
         deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact, ...patch } });
         const result = await awaitFullExport(deps);
@@ -222,17 +237,34 @@ test("stale reference freshness never promotes an automatic marketSnapshot", asy
     assert.equal(result.sections.marketSnapshot.freshness.status, "stale");
 });
 
-test("QRI option限月とverified futures price限月は別identityとしてmarketSnapshotを昇格", async () => {
-    const deps = dependencies(); const mobile = deps.getMobileSummary();
-    deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
-        currentPrice: { ...mobile.payload.currentPrice, contract: "2026-12" } } });
+test("stale Mobile投影を使わずQRI option限月とfresh Futures限月を独立昇格", async () => {
+    const deps = dependencies();
     const state = deps.getCurrentPriceIdentity();
     deps.getCurrentPriceIdentity = () => ({ ...state, fact: { ...state.fact,
-        contract: "2026-12" } });
+        value: 66480, contract: "2026-12", quotedAtRaw: "10/15 06:00",
+        quotedAtNormalized: "2026-10-15T06:00:00+09:00",
+        fetchedAt: "2026-10-15T06:01:00+09:00",
+        sourceUrl: "https://svc.qri.jp/jpx/nkopm/202611",
+        requestId: "qri-price-request-2", quoteIdentity: { ...state.fact.quoteIdentity,
+            value: 66480, contract: "2026-12", quotedAtRaw: "10/15 06:00",
+            quotedAtNormalized: "2026-10-15T06:00:00+09:00" },
+        acquisitionIdentity: { ...state.fact.acquisitionIdentity,
+            requestId: "qri-price-request-2", fetchedAt: "2026-10-15T06:01:00+09:00",
+            sourceUrl: "https://svc.qri.jp/jpx/nkopm/202611" } } });
     const result = await awaitFullExport(deps);
     assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.summary.value, 66480);
     assert.equal(result.sections.marketSnapshot.summary.contract, "2026-12");
     assert.equal(result.sections.qriOptions.summary.contract, "2026-09");
+});
+
+test("verified live factがあればMobile currentPrice欠落でもmarketSnapshotを昇格", async () => {
+    const deps = dependencies(); const mobile = deps.getMobileSummary();
+    deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
+        currentPrice: { available: false, status: "unavailable" } } });
+    const result = await awaitFullExport(deps);
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.marketSnapshot.summary.contract, "2026-09");
 });
 
 test("saved/cache/reference current-price factへfallbackしない", async () => {
@@ -294,11 +326,12 @@ test("current-price identity/currentRequest未検証はunavailable", async () =>
 test("manual modeの既存user_input分岐は不変", async () => {
     const deps = dependencies(); const mobile = deps.getMobileSummary();
     deps.getMobileSummary = () => ({ ...mobile, payload: { ...mobile.payload,
-        currentPrice: { ...mobile.payload.currentPrice, mode: "manual", source: "manual" } } });
-    deps.getCurrentPriceIdentity = () => ({ status: "unavailable", fact: null });
+        currentPrice: { ...mobile.payload.currentPrice, value: 43001,
+            mode: "manual", source: "manual" } } });
     const result = await awaitFullExport(deps);
     assert.equal(result.sections.marketSnapshot.status, "available");
     assert.equal(result.sections.marketSnapshot.authority.sourceClass, "user_input");
+    assert.equal(result.sections.marketSnapshot.summary.value, 43001);
 });
 
 test("collectorは独自contract normalizerを持たない", () => {

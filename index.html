@@ -1870,11 +1870,12 @@ window.OptionMapFullExportUi.configure({
             calendarDate: formalDateAuthority.calendarDate,
             authority: formalDateAuthority.authority
         } : null;
+        const currentPriceIdentity = window.getCurrentPriceLiveIdentityFact?.() || null;
         const freshnessAdapter = window.OptionMapFullExportFreshness
             .createFullExportFreshnessAdapter({
                 now: () => observedAt,
                 getMarketSession: () => freshnessSession,
-                getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
+                getCurrentPriceIdentity: () => currentPriceIdentity,
                 getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
                 getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
                 getFetchState: name => window.dataFetchState?.[name] || null,
@@ -1890,7 +1891,7 @@ window.OptionMapFullExportUi.configure({
                 status: session.valid === false ? "unavailable" : "verified",
                 calendarDate: session.captureCalendarDate || null,
                 tradingDate: session.formalTradingDate || null } : null,
-            getCurrentPriceIdentity: () => window.getCurrentPriceLiveIdentityFact?.() || null,
+            getCurrentPriceIdentity: () => currentPriceIdentity,
             getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
             getMorningRestoreState: () => window.getMorningBaselineV4RestoreRuntimeState?.() || null,
             getMorningComparisonState: () => window.getMorningComparisonV4RuntimeState?.() || null,
@@ -6088,7 +6089,7 @@ async function fetchQriData({ requestId } = {}) {
                             quotedAt: priceResult.quotedAt,
                             fetchedAt: priceResult.fetchedAt
                         },
-                        activeContract: payload.canonicalV2?.contract || null,
+                        activeContract: priceResult.contract || null,
                         pageTradingDate: payload.canonicalV2?.tradingDate || null,
                         pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
                         sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl

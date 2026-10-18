@@ -198,6 +198,14 @@ test("price identity binds to the acquired futures contract, not the QRI option 
     assert.match(publication, /activeContract:\s*livePriceAcquisition\?\.contract/);
     assert.doesNotMatch(publication, /activeContract:\s*payload\.canonicalV2\?\.contract/);
 });
+test("last-valid writer binds to the acquired futures contract, not the QRI option contract", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const start = html.indexOf(
+        "OptionMapCurrentPriceLastValidStore?.buildAndSaveCurrentPriceLastValid");
+    const publication = html.slice(start, html.indexOf("}).catch(error =>", start));
+    assert.match(publication, /activeContract:\s*priceResult\.contract/);
+    assert.doesNotMatch(publication, /activeContract:\s*payload\.canonicalV2\?\.contract/);
+});
 test("no Morning collector or storage wiring was added", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const publication = html.slice(html.indexOf("const livePriceAcquisition"),

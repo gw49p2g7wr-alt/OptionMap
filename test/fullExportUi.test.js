@@ -157,6 +157,15 @@ test("Full Export runtime versionはmain-owned Electron metadataから取得", (
     assert.doesNotMatch(wiring, /appVersion:\s*["'][^"']+["']/);
 });
 
+test("marketSnapshot identityとfreshnessは同一取得世代を共有", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const wiring = html.slice(html.indexOf("window.OptionMapFullExportUi.configure"),
+        html.indexOf("const qriOptionsHistoryPersistence"));
+    assert.equal((wiring.match(/getCurrentPriceLiveIdentityFact\?\.\(\)/g) || []).length, 1);
+    assert.match(wiring, /const currentPriceIdentity\s*=\s*window\.getCurrentPriceLiveIdentityFact\?\.\(\)\s*\|\|\s*null/);
+    assert.equal((wiring.match(/getCurrentPriceIdentity:\s*\(\)\s*=>\s*currentPriceIdentity/g) || []).length, 2);
+});
+
 test("UI export pathにfetch/write/publishやtrade計算を持たない", () => {
     const source = fs.readFileSync(path.join(__dirname, "../js/fullExportUi.js"), "utf8");
     assert.doesNotMatch(source, /\bfetch\s*\(|localStorage|indexedDB|\.publish\s*\(|\.put\s*\(|\.add\s*\(|\.delete\s*\(|calculateOverall/);

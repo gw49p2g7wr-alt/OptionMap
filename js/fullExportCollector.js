@@ -28,6 +28,7 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
     const validTimestamp = value => text(value) && Number.isFinite(Date.parse(value));
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+    const CURRENT_PRICE_SOURCE = "qri-nikkei225-futures";
 
     function asOf(values = {}) {
         return {
@@ -73,25 +74,46 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             observedAt: validTimestamp(observedAt) ? observedAt : null };
     }
 
+    function verifiedAutomaticPrice(configuration, liveFact) {
+        const quote = liveFact?.quoteIdentity;
+        const acquisition = liveFact?.acquisitionIdentity;
+        const contractMatched = configuration.contractsMatch?.(
+            liveFact?.contract, quote?.contract) === true;
+        const value = Number(liveFact?.value);
+        const quoteValue = Number(quote?.value);
+        const quoteMatched = object(quote) && Number.isFinite(value) && value > 0 &&
+            value === quoteValue && contractMatched &&
+            liveFact.quotedAtRaw === quote.quotedAtRaw &&
+            liveFact.quotedAtNormalized === quote.quotedAtNormalized &&
+            liveFact.quoteSignature === quote.quoteSignature &&
+            liveFact.versionKey === quote.versionKey;
+        const acquisitionMatched = object(acquisition) &&
+            liveFact.requestId === acquisition.requestId &&
+            liveFact.fetchedAt === acquisition.fetchedAt &&
+            liveFact.sourceUrl === acquisition.sourceUrl &&
+            liveFact.wrapperSignature === acquisition.wrapperSignature;
+        const valid = liveFact?.available === true && liveFact.sourceKind === "live" &&
+            liveFact.origin === "live" && liveFact.mode === "automatic" &&
+            liveFact.identityVerified === true && liveFact.acquisitionVerified === true &&
+            liveFact.currentRequestVerified === true && quoteMatched && acquisitionMatched;
+        return valid ? { available: true, value, source: CURRENT_PRICE_SOURCE,
+            mode: "automatic", contract: liveFact.contract,
+            quotedAt: liveFact.quotedAtNormalized, fetchedAt: liveFact.fetchedAt } : null;
+    }
+
     function createMarketSection(configuration, mobile, marketSession) {
-        const price = mobile?.payload?.currentPrice;
-        if (!object(price) || price.available !== true) {
-            return unavailable("current_price_unavailable", "current-price",
-                freshnessFor(configuration, "marketSnapshot", mobile?.freshness?.currentPriceAt));
-        }
-        const mode = price.mode;
+        const projectedPrice = mobile?.payload?.currentPrice;
         const identityState = clone(configuration.getCurrentPriceIdentity?.() || null);
         const liveFact = identityState?.status === "available" ? identityState.fact : null;
-        const contractMatched = configuration.contractsMatch?.(
-            price.contract, liveFact?.contract) === true;
-        const automaticValid = mode === "automatic" && liveFact?.available === true &&
-            liveFact.sourceKind === "live" && liveFact.origin === "live" &&
-            liveFact.mode === "automatic" && liveFact.identityVerified === true &&
-            liveFact.acquisitionVerified === true && liveFact.currentRequestVerified === true &&
-            contractMatched;
-        const manualValid = mode === "manual";
+        const manualValid = object(projectedPrice) && projectedPrice.available === true &&
+            projectedPrice.mode === "manual";
+        const automaticPrice = manualValid ? null : verifiedAutomaticPrice(configuration, liveFact);
+        const automaticValid = object(automaticPrice);
+        const price = manualValid ? projectedPrice : automaticPrice;
         if (!automaticValid && !manualValid) {
-            return unavailable("current_price_identity_mismatch", "current-price",
+            const reason = (object(projectedPrice) && projectedPrice.available === true) || liveFact
+                ? "current_price_identity_mismatch" : "current_price_unavailable";
+            return unavailable(reason, "current-price",
                 freshnessFor(configuration, "marketSnapshot", mobile?.freshness?.currentPriceAt));
         }
         const marketFreshness = freshnessFor(configuration, "marketSnapshot",
