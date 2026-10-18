@@ -13,15 +13,17 @@
         root?.OptionMapFullExportQriOptionIv;
     const consumerReadinessApi = commonJs ? require("./fullExportConsumerReadiness.js") :
         root?.OptionMapFullExportConsumerReadiness;
+    const changeSummaryApi = commonJs ? require("./fullExportChangeSummary.js") :
+        root?.OptionMapFullExportChangeSummary;
     const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
         root?.OptionMapMorningV5FormalReadSurfaces;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
-        aiSummaryApi, qriOptionIvApi, consumerReadinessApi, morningV5Api);
+        aiSummaryApi, qriOptionIvApi, consumerReadinessApi, changeSummaryApi, morningV5Api);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
-    qriOptionIvApi, consumerReadinessApi, morningV5Api) {
+    qriOptionIvApi, consumerReadinessApi, changeSummaryApi, morningV5Api) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -297,6 +299,10 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             freshnessFor(configuration, "qriHistoryComparison")), comparison: null };
         }
         const byType = comparison.comparison?.byType || {};
+        const previousEntry = loaded.history.entries.find(item => item.contract === fact.contract &&
+            item.sourceDateKey === comparison.previousSourceDate);
+        const previousRevision = previousEntry?.revisions?.find(item =>
+            item.versionKey === previousEntry.activeVersionKey);
         const highlights = ["call", "put"].map(optionType => ({ optionType,
             netDelta: byType[optionType]?.summary?.netDelta ?? null,
             topIncreases: clone(byType[optionType]?.summary?.topIncreases || []),
@@ -315,9 +321,11 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             currentTradingDate: comparison.currentSourceDate, highlights },
         details: { previousIdentity: { tradingDate: comparison.previousSourceDate,
             versionKey: comparison.previousVersionKey,
+            signature: previousRevision?.signature || null,
             pageUpdatedAt: comparison.previousPageUpdatedAt || null },
         currentIdentity: { tradingDate: comparison.currentSourceDate,
             versionKey: comparison.currentVersionKey,
+            signature: revision.signature,
             pageUpdatedAt: comparison.currentPageUpdatedAt || null },
         comparison: clone(comparison.comparison) } });
         return { qriOptions, qriHistoryComparison, comparison };
@@ -732,6 +740,12 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             sections.consumerReadiness = consumerReadinessApi
                 ?.buildConsumerReadinessIndex?.(sections) || unavailable(
                 "consumer_readiness_builder_unavailable", "optionmap-full-export",
+                { status: "not_applicable", reason: "index_only" });
+            const morningV5Projection = morningV5Api?.project?.(morningV5Response, "current");
+            sections.changeSummary = changeSummaryApi?.buildChangeSummary?.({ sections,
+                evidence: { morningV5Observations:
+                    clone(morningV5Projection?.observations || []) } }) || unavailable(
+                "change_summary_builder_unavailable", "optionmap-full-export",
                 { status: "not_applicable", reason: "index_only" });
             const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
                 exportMeta: { generatedAt, timeZone: "Asia/Tokyo", profile: "full",

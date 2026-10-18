@@ -188,6 +188,16 @@
                 "authoritativeRoot") };
     }
 
+    function changeSummary(sections) {
+        const name = "changeSummary", section = sectionAt(sections, name);
+        if (!section) return null;
+        return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
+            reason: reason(section), comparisonVocabularyVersion: field(section?.summary,
+                "comparisonVocabularyVersion"), comparisonStatus: field(section?.summary,
+                "comparisonStatus"), changedDomainCount: field(section?.summary,
+                "changedDomainCount") };
+    }
+
     function issueKey(issue) {
         return [issue.section, issue.issueType, issue.status, issue.reason]
             .map(value => String(value ?? "")).join("|");
@@ -273,6 +283,7 @@
         const generatedAt = field(source.exportMeta, "generatedAt");
         if (generatedAt === null) return unavailable("ai_summary_source_invalid");
         const readiness = consumerReadiness(source.sections);
+        const changes = changeSummary(source.sections);
         const summary = {
             summaryVersion: SUMMARY_VERSION, purpose: PURPOSE, generatedAt,
             market: market(source.sections), overallV2: overall(source.sections),
@@ -290,6 +301,7 @@
             },
             morning: morning(source.sections), morningV5Formal: morningV5(source.sections),
             ...(readiness ? { consumerReadiness: readiness } : {}),
+            ...(changes ? { changeSummary: changes } : {}),
             dataQuality: dataQuality(source),
             readingOrder: SECTION_ORDER.filter(name => sectionAt(source.sections, name))
                 .map(name => ({ section: name,
