@@ -38,6 +38,32 @@
         return CALCULATION_STATES.has(value) ? value : "undetermined";
     }
 
+    function payloadValidation(input) {
+        if (input.validation === false || input.signatureValid === false) return "invalid";
+        if (input.hasData === false) return "unavailable";
+        if (input.validation === true && input.signatureValid === true) return "valid";
+        return "unverified";
+    }
+
+    function dateRelation(input) {
+        const dataDate = date(input.dataTradingDate || input.tradingDate || input.sourceDate);
+        const expectedDate = date(input.expectedTradingDate);
+        if (!dataDate || !expectedDate) return "unverifiable";
+        if (dataDate === expectedDate) return "matched";
+        return dataDate < expectedDate ? "older_than_expected" : "newer_than_expected";
+    }
+
+    function consumerState(input, values) {
+        const validation = payloadValidation(input);
+        if (values.status === "unavailable" || validation === "invalid" ||
+            validation === "unavailable") return "invalid_or_unavailable";
+        if (values.reason === "saved_last_valid") return "valid_saved_fallback";
+        if (values.reason === "date_unverifiable") return "valid_date_unverifiable";
+        if (values.status === "fresh" && validation === "valid") return "valid_current";
+        if (validation === "valid") return "valid_stale";
+        return "unverified";
+    }
+
     function diagnostics(input, extra = {}) {
         const invalidFields = [];
         for (const field of ["sourceUpdatedAt", "fetchedAt", "lastAttemptedAt", "quotedAt",
@@ -66,6 +92,11 @@
             reason: values.reason,
             origin: origin(input.origin),
             dataTradingDate: date(input.dataTradingDate || input.tradingDate || input.sourceDate),
+            expectedTradingDate: date(input.expectedTradingDate),
+            expectedTradingDateSource: text(input.expectedTradingDateSource),
+            dateRelation: dateRelation(input),
+            payloadValidation: payloadValidation(input),
+            consumerState: consumerState(input, values),
             sourceUpdatedAt: iso(input.sourceUpdatedAt || input.pageUpdatedAt ||
                 input.publishedAt || input.listingUpdatedAt),
             fetchedAt: iso(input.fetchedAt),
@@ -104,7 +135,7 @@
         const extra = { policyType: "daily", mode: text(input.mode),
             contract: text(input.contract), secondaryReasons };
         if (!hasData) return unavailable(input, attemptFailed ? "fetch_failed" : "no_saved_data", extra);
-        if (!validated) return unavailable(input, "no_saved_data", extra);
+        if (!validated) return unavailable(input, "payload_invalid", extra);
 
         const expected = date(input.expectedTradingDate);
         const reference = date(input.currentReferenceDate);
@@ -113,15 +144,15 @@
         const displayEligible = input.displayEligible !== false;
 
         if (input.mode === "manual") {
-            return output(input, { status: "stale", reason: "date_unverifiable", displayEligible,
+            return output(input, { status: "stale", reason: "manual_reference", displayEligible,
                 staleReason: "manual_not_automatic_freshness" }, extra);
         }
         if (input.contractMatches === false) {
-            return output(input, { status: "stale", reason: saved ? "saved_last_valid" : "date_unverifiable",
+            return output(input, { status: "stale", reason: saved ? "saved_last_valid" : "contract_mismatch",
                 displayEligible, staleReason: "contract_mismatch" }, extra);
         }
         if (invalidDateInput || !dataDate) {
-            return output(input, { status: "stale", reason: "date_unverifiable", displayEligible,
+            return output(input, { status: "stale", reason: "trading_date_unverifiable", displayEligible,
                 staleReason: "trading_date_unverifiable" }, extra);
         }
         if (comparison && dataDate === comparison && !attemptFailed && !saved) {
@@ -135,7 +166,8 @@
         if (comparison && dataDate < comparison) {
             return output(input, { status: "stale",
                 reason: saved ? "saved_last_valid" : "source_not_updated", displayEligible,
-                staleReason: expected ? "data_older_than_expected" : "date_unverifiable" }, extra);
+                staleReason: expected ? "data_older_than_expected" :
+                    "data_older_than_reference" }, extra);
         }
         if (saved || attemptFailed) {
             return output(input, { status: "stale", reason: "saved_last_valid", displayEligible,
@@ -163,8 +195,8 @@
         if (remote === "newer_available") secondaryReasons.push("new_revision_available");
         const extra = { policyType: "weekly", remoteCheckStatus: remote, secondaryReasons };
         if (!hasData) return unavailable(input, remote === "failed" ? "fetch_failed" : "no_saved_data", extra);
-        if (!validated) return unavailable(input, "no_saved_data", extra);
-        if (!sourceDate) return output(input, { status: "stale", reason: "date_unverifiable",
+        if (!validated) return unavailable(input, "payload_invalid", extra);
+        if (!sourceDate) return output(input, { status: "stale", reason: "source_date_unverifiable",
             displayEligible: true, staleReason: "source_date_unverifiable" }, extra);
         if (remote === "newer_available" || remote === "not_updated") {
             return output(input, { status: "stale", reason: "source_not_updated",

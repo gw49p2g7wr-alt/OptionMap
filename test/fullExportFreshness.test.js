@@ -22,7 +22,8 @@ function dependencies(overrides = {}) {
     };
     return {
         now: () => "2026-09-05T05:45:00+09:00",
-        getMarketSession: () => ({ formalTradingDate: "2026-09-07" }),
+        getMarketSession: () => ({ formalTradingDate: "2026-09-07",
+            authority: "formal_calendar_history_readonly" }),
         getCurrentPriceIdentity: () => ({ status: "available", fact: { available: true,
             sourceKind: "live", origin: "live", mode: "automatic", identityVerified: true,
             acquisitionVerified: true, currentRequestVerified: true, contract: "2026-09",
@@ -57,10 +58,13 @@ test("daily/weekly sourceは既存evaluatorの結果をそのまま利用", () =
         origin: "live", hasData: true, dataTradingDate: "2026-09-07",
         sourceUpdatedAt: "2026-09-05T18:45:00+09:00",
         fetchedAt: "2026-09-06T00:05:00Z", expectedTradingDate: "2026-09-07",
+        expectedTradingDateSource: "formal_calendar_history_readonly",
         lastAttemptedAt: "2026-09-06T00:05:00Z", lastAttemptStatus: "success",
         mode: "automatic", contract: "2026-09", validation: true,
         signatureValid: true, calculationEligible: "eligible" });
     assert.deepEqual(qri, expectedQri);
+    assert.deepEqual([qri.payloadValidation, qri.dateRelation, qri.consumerState],
+        ["valid", "matched", "valid_current"]);
     assert.equal(adapter.getSectionFreshness("weeklyFutures").status, "fresh");
     assert.equal(adapter.getSectionFreshness("weeklyOptions").status, "fresh");
 });
@@ -86,6 +90,30 @@ test("情報不足と未検証authorityはunavailable", () => {
     assert.equal(adapter.getSectionFreshness("marketSnapshot").status, "unavailable");
     assert.equal(adapter.getSectionFreshness("weeklyFutures").status, "unavailable");
     assert.equal(adapter.getSectionFreshness("participants").status, "unavailable");
+});
+
+test("valid payload with unavailable date authority remains explicit and fail-closed", () => {
+    const result = createFullExportFreshnessAdapter(dependencies({
+        getMarketSession: () => ({ status: "unavailable", formalTradingDate: null,
+            authority: "formal_calendar_history_readonly" })
+    })).getSectionFreshness("qriOptions");
+    assert.deepEqual([result.status, result.reason, result.payloadValidation,
+        result.expectedTradingDate, result.expectedTradingDateSource, result.consumerState],
+    ["stale", "date_unverifiable", "valid", null,
+        "formal_calendar_history_readonly", "valid_date_unverifiable"]);
+});
+
+test("invalid payload and saved history remain distinct consumer states", () => {
+    const invalid = freshness.evaluateDailyFreshness({ sourceType: "qri_options",
+        origin: "live", hasData: true, dataTradingDate: "2026-09-07",
+        expectedTradingDate: "2026-09-07", validation: false, signatureValid: true });
+    const saved = freshness.evaluateDailyFreshness({ sourceType: "qri_options",
+        origin: "history", hasData: true, dataTradingDate: "2026-09-07",
+        expectedTradingDate: "2026-09-07", validation: true, signatureValid: true });
+    assert.deepEqual([invalid.status, invalid.reason, invalid.consumerState],
+        ["unavailable", "payload_invalid", "invalid_or_unavailable"]);
+    assert.deepEqual([saved.status, saved.reason, saved.consumerState],
+        ["stale", "saved_last_valid", "valid_saved_fallback"]);
 });
 
 test("Morning/history/Intelligence/OverallV2をcurrent data freshnessへ昇格しない", () => {

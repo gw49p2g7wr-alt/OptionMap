@@ -482,6 +482,24 @@ test("freshness statusをそのまま保持", async () => {
             reason: "formal_observation_not_saved" }]);
 });
 
+test("compact freshness issue preserves consumer provenance without recomputation", async () => {
+    const provenance = { status: "stale", reason: "date_unverifiable", origin: "live",
+        dataTradingDate: "2026-09-07", expectedTradingDate: null,
+        expectedTradingDateSource: "formal_calendar_history_readonly",
+        payloadValidation: "valid", dateRelation: "unverifiable",
+        consumerState: "valid_date_unverifiable", staleReason: "expected_trading_date_unknown" };
+    const result = await collect({ getSectionFreshness: name => name === "qriOptions"
+        ? provenance : { status: "fresh", reason: "current" } });
+    const issue = result.compactSummary.freshnessIssues.find(value =>
+        value.section === "qriOptions");
+    assert.deepEqual(issue, { section: "qriOptions", ...provenance });
+    const aiIssue = result.sections.aiSummary.summary.dataQuality.affectedSections.find(value =>
+        value.section === "qriOptions" && value.issueType === "freshness");
+    assert.deepEqual([aiIssue.payloadValidation, aiIssue.consumerState,
+        aiIssue.expectedTradingDateSource], ["valid", "valid_date_unverifiable",
+        "formal_calendar_history_readonly"]);
+});
+
 test("unavailable sectionは提供freshnessがfreshでも昇格させない", async () => {
     const result = await collect({
         getCurrentPriceIdentity: () => ({ status: "unavailable", fact: null }),

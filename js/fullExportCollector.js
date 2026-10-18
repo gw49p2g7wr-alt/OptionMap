@@ -74,6 +74,17 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             observedAt: validTimestamp(observedAt) ? observedAt : null };
     }
 
+    function compactFreshnessIssue(section, freshness = {}) {
+        const result = { section, status: freshness.status || null,
+            reason: freshness.reason || null };
+        for (const key of ["dataTradingDate", "expectedTradingDate",
+            "expectedTradingDateSource", "origin", "payloadValidation", "dateRelation",
+            "consumerState", "staleReason"]) {
+            if (Object.hasOwn(freshness, key)) result[key] = freshness[key] ?? null;
+        }
+        return result;
+    }
+
     function verifiedAutomaticPrice(configuration, liveFact) {
         const quote = liveFact?.quoteIdentity;
         const acquisition = liveFact?.acquisitionIdentity;
@@ -678,8 +689,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
                 weeklyFutures, weeklyOptions, participants, intelligence, morningV5Formal };
             const freshnessIssues = Object.entries(coreSections)
                 .filter(([, section]) => section.freshness?.status !== "fresh")
-                .map(([section, value]) => ({ section, status: value.freshness?.status || null,
-                    reason: value.freshness?.reason || null }));
+                .map(([section, value]) => compactFreshnessIssue(section,
+                    value.freshness || {}));
             const sourceWarnings = Array.isArray(mobile?.warnings) ? clone(mobile.warnings) : [];
             const availabilityWarnings = Object.entries(coreSections)
                 .filter(([, section]) => ["unavailable", "invalid"].includes(section.status))

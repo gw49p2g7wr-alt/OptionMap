@@ -12,8 +12,38 @@
         ? structuredClone(value) : JSON.parse(JSON.stringify(value));
     const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 
-    function unavailable(reason = "freshness_status_unavailable") {
-        return { status: "unavailable", reason };
+    function classifyConsumerState({ status, reason, payloadValidation }) {
+        if (status === "unavailable" || ["invalid", "unavailable"].includes(payloadValidation)) {
+            return "invalid_or_unavailable";
+        }
+        if (reason === "saved_last_valid") return "valid_saved_fallback";
+        if (reason === "date_unverifiable") return "valid_date_unverifiable";
+        if (status === "fresh" && payloadValidation === "valid") return "valid_current";
+        if (payloadValidation === "valid") return "valid_stale";
+        return "unverified";
+    }
+
+    function provenance(values = {}) {
+        const result = { ...values };
+        result.expectedTradingDate = values.expectedTradingDate || null;
+        result.expectedTradingDateSource = values.expectedTradingDateSource || null;
+        result.payloadValidation = values.payloadValidation || "unavailable";
+        result.dateRelation = values.dataTradingDate && values.expectedTradingDate
+            ? values.dataTradingDate === values.expectedTradingDate ? "matched"
+                : values.dataTradingDate < values.expectedTradingDate
+                    ? "older_than_expected" : "newer_than_expected"
+            : "unverifiable";
+        result.consumerState = classifyConsumerState(result);
+        if (!Object.hasOwn(result, "staleReason")) result.staleReason = null;
+        return result;
+    }
+
+    function unavailable(reason = "freshness_status_unavailable", values = {}) {
+        return provenance({ status: "unavailable", reason, origin: values.origin || null,
+            dataTradingDate: values.dataTradingDate || null,
+            expectedTradingDate: values.expectedTradingDate || null,
+            expectedTradingDateSource: values.expectedTradingDateSource || null,
+            payloadValidation: values.payloadValidation || "unavailable", staleReason: null });
     }
 
     function attemptStatus(status) {
@@ -69,31 +99,34 @@
     }
 
     function classifyCurrentPriceSessionFreshness({ fact, observedAt, expectedTradingDate,
-        fetchState = {} } = {}) {
+        expectedTradingDateSource, fetchState = {} } = {}) {
         const quotedAt = fact?.quotedAtNormalized;
         const quoteSession = sessionOf(quotedAt), observedSession = sessionOf(observedAt);
         const base = { origin: fact?.origin || null,
             dataTradingDate: fact?.qriTradingDateMapping?.qriTradingDate || null,
+            expectedTradingDate: expectedTradingDate || null,
+            expectedTradingDateSource: expectedTradingDateSource || null,
+            payloadValidation: "valid",
             sourceUpdatedAt: quotedAt || null, fetchedAt: fact?.fetchedAt || fetchState.fetchedAt || null,
             lastAttemptedAt: fetchState.fetchedAt || null,
             lastAttemptStatus: attemptStatus(fetchState.status), displayEligible: true,
             staleSince: null, diagnostics: { policyType: "current_price_session",
                 timeZone: "Asia/Tokyo", expectedTradingDate: expectedTradingDate || null,
                 quoteSession, observedSession, sessionMatched: false } };
-        if (!quoteSession || !jstParts(quotedAt)) return { ...base, status: "unavailable",
+        if (!quoteSession || !jstParts(quotedAt)) return provenance({ ...base, status: "unavailable",
             reason: "quote_timestamp_unavailable", displayEligible: false,
-            calculationEligible: "ineligible", staleReason: null };
-        if (!observedSession) return { ...base, status: "stale", reason: "stale_reference",
-            calculationEligible: "ineligible", staleReason: "session_closed" };
-        if (Date.parse(quotedAt) > Date.parse(observedAt)) return { ...base, status: "unavailable",
+            calculationEligible: "ineligible", staleReason: null });
+        if (!observedSession) return provenance({ ...base, status: "stale", reason: "stale_reference",
+            calculationEligible: "ineligible", staleReason: "session_closed" });
+        if (Date.parse(quotedAt) > Date.parse(observedAt)) return provenance({ ...base, status: "unavailable",
             reason: "quote_timestamp_invalid", displayEligible: false,
-            calculationEligible: "ineligible", staleReason: null };
+            calculationEligible: "ineligible", staleReason: null });
         const matched = quoteSession.kind === observedSession.kind && quoteSession.key === observedSession.key;
         base.diagnostics.sessionMatched = matched;
-        return matched ? { ...base, status: "fresh", reason: "current_session",
-            calculationEligible: "eligible", staleReason: null }
-            : { ...base, status: "stale", reason: "stale_reference",
-                calculationEligible: "ineligible", staleReason: "previous_session_quote" };
+        return matched ? provenance({ ...base, status: "fresh", reason: "current_session",
+            calculationEligible: "eligible", staleReason: null })
+            : provenance({ ...base, status: "stale", reason: "stale_reference",
+                calculationEligible: "ineligible", staleReason: "previous_session_quote" });
     }
 
     function createFullExportFreshnessAdapter(configuration = {}) {
@@ -102,12 +135,20 @@
             return session?.formalTradingDate || session?.tradingDate || null;
         }
 
+        function sessionAuthority() {
+            const session = configuration.getMarketSession?.();
+            return session?.authority || session?.expectedTradingDateSource || null;
+        }
+
         function marketSnapshot() {
             const state = configuration.getCurrentPriceIdentity?.();
             const fact = state?.status === "available" ? state.fact : null;
             if (!object(fact) || fact.available !== true || fact.identityVerified !== true ||
                 fact.acquisitionVerified !== true || fact.currentRequestVerified !== true ||
-                !["live", "manual"].includes(fact.origin)) return unavailable();
+                !["live", "manual"].includes(fact.origin)) return unavailable(
+                    "freshness_status_unavailable", { expectedTradingDate: sessionDate(),
+                        expectedTradingDateSource: sessionAuthority(),
+                        payloadValidation: object(fact) ? "invalid" : "unavailable" });
             const mapping = fact.qriTradingDateMapping;
             const mappedDate = mapping?.mappingVerified === true
                 ? mapping.mappedDate || mapping.qriTradingDate || null : null;
@@ -115,7 +156,8 @@
             return classifyCurrentPriceSessionFreshness({ fact: { ...fact,
                 qriTradingDateMapping: { ...mapping, qriTradingDate: mappedDate } },
                 observedAt: configuration.now?.() || null,
-                expectedTradingDate: sessionDate(), fetchState });
+                expectedTradingDate: sessionDate(),
+                expectedTradingDateSource: sessionAuthority(), fetchState });
         }
 
         function qriOptions() {
@@ -123,13 +165,18 @@
             const fact = state?.status === "available" ? state.fact : null;
             if (!object(fact) || fact.identityVerified !== true ||
                 fact.acquisitionVerified !== true || fact.usingFallback === true ||
-                fact.referenceOnly === true || fact.origin !== "live") return unavailable();
+                fact.referenceOnly === true || fact.origin !== "live") return unavailable(
+                    "freshness_status_unavailable", { expectedTradingDate: sessionDate(),
+                        expectedTradingDateSource: sessionAuthority(),
+                        payloadValidation: object(fact) ? "invalid" : "unavailable" });
             const fetchState = configuration.getFetchState?.("qri") || {};
             return daily({ sourceType: "qri_options", origin: fact.origin, hasData: true,
                 dataTradingDate: fact.tradingDate || null,
                 sourceUpdatedAt: fact.pageUpdatedAt || null,
                 fetchedAt: fact.fetchedAt || fetchState.fetchedAt || null,
-                expectedTradingDate: sessionDate(), lastAttemptedAt: fetchState.fetchedAt || null,
+                expectedTradingDate: sessionDate(),
+                expectedTradingDateSource: sessionAuthority(),
+                lastAttemptedAt: fetchState.fetchedAt || null,
                 lastAttemptStatus: attemptStatus(fetchState.status), mode: "automatic",
                 contract: fact.contract, validation: fact.identityVerified === true,
                 signatureValid: Boolean(fact.canonicalSignature), calculationEligible: "eligible" });
@@ -142,11 +189,17 @@
                 !object(revision) || acquisition.targetContract !== revision.contract ||
                 acquisition.referenceTradingDate !== revision.tradingDate ||
                 acquisition.versionKey !== revision.versionKey || !revision.signature) {
-                return unavailable("next_contract_acquisition_unavailable");
+                return unavailable("next_contract_acquisition_unavailable", {
+                    dataTradingDate: revision?.tradingDate || null,
+                    expectedTradingDate: sessionDate(),
+                    expectedTradingDateSource: sessionAuthority(),
+                    payloadValidation: object(acquisition) || object(revision)
+                        ? "invalid" : "unavailable" });
             }
             return daily({ sourceType: "qri_options", origin: "history", hasData: true,
                 dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
                 fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
+                expectedTradingDateSource: sessionAuthority(),
                 lastAttemptedAt: acquisition.completedAt || revision.confirmedAt || null,
                 lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
                 validation: true, signatureValid: true, calculationEligible: "eligible" });
@@ -160,11 +213,17 @@
                 locator.referenceTradingDate !== revision.tradingDate ||
                 locator.targetUrl !== revision.sourceUrl ||
                 locator.versionKey !== revision.versionKey || !revision.signature) {
-                return unavailable("major_sq_locator_unavailable");
+                return unavailable("major_sq_locator_unavailable", {
+                    dataTradingDate: revision?.tradingDate || null,
+                    expectedTradingDate: sessionDate(),
+                    expectedTradingDateSource: sessionAuthority(),
+                    payloadValidation: object(locator) || object(revision)
+                        ? "invalid" : "unavailable" });
             }
             return daily({ sourceType: "qri_options", origin: "history", hasData: true,
                 dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
                 fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
+                expectedTradingDateSource: sessionAuthority(),
                 lastAttemptedAt: locator.completedAt || revision.confirmedAt || null,
                 lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
                 validation: true, signatureValid: true, calculationEligible: "eligible" });

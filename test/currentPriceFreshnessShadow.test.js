@@ -42,7 +42,7 @@ test("manual value is not automatic freshness", () => {
         contract: null, quotedAt: null, fetchedAt: "2026-08-24T05:40:00+09:00" },
         { selectedContract: null });
     assert.deepEqual([result.freshness.status, result.freshness.reason,
-        result.freshness.staleReason], ["stale", "date_unverifiable",
+        result.freshness.staleReason], ["stale", "manual_reference",
         "manual_not_automatic_freshness"]);
 });
 test("contract mismatch is stale and diagnosed", () => {
@@ -54,7 +54,7 @@ test("contract mismatch is stale and diagnosed", () => {
 test("missing quotedAt cannot become fresh even when fetchedAt exists", () => {
     const result = evaluate({ ...PRICE, quotedAt: null });
     assert.deepEqual([result.input.dataTradingDate, result.freshness.status,
-        result.freshness.reason], [null, "stale", "date_unverifiable"]);
+        result.freshness.reason], [null, "stale", "trading_date_unverifiable"]);
 });
 test("missing fetchedAt remains a factual input and is not inferred", () => {
     const result = evaluate({ ...PRICE, fetchedAt: null });
@@ -65,7 +65,7 @@ test("missing fetchedAt remains a factual input and is not inferred", () => {
 test("both timestamps missing cannot become fresh", () => {
     const result = evaluate({ ...PRICE, quotedAt: null, fetchedAt: null });
     assert.deepEqual([result.freshness.status, result.freshness.reason],
-        ["stale", "date_unverifiable"]);
+        ["stale", "trading_date_unverifiable"]);
 });
 test("malformed timestamp is invalid and not display eligible", () => {
     const result = evaluate({ ...PRICE, quotedAt: "08/24 05:30" });

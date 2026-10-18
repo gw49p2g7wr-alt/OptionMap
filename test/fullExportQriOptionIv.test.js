@@ -108,6 +108,10 @@ test("verified exact Formal history is used for every role when live is absent o
         ["formal_history", "formal_history", "formal_history"]);
     assert.deepEqual(result.details.roles.map(role => role.freshness.status),
         ["saved", "saved", "saved"]);
+    assert.deepEqual(result.details.roles.map(role => role.freshness.reason),
+        ["saved_last_valid", "saved_last_valid", "saved_last_valid"]);
+    assert.deepEqual(result.details.roles.map(role => role.freshness.consumerState),
+        ["valid_saved_fallback", "valid_saved_fallback", "valid_saved_fallback"]);
 });
 
 test("one/two/all unavailable and invalid mixtures derive outer status without aborting export", async () => {

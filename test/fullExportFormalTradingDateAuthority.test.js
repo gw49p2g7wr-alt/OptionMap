@@ -52,10 +52,15 @@ test("F4/F5 Full Export wiring uses formal authority independently of Morning V4
 });
 
 test("F6 weekend and accepted JPX holiday resolve by existing calendar semantics", () => {
-    const weekend = authority.resolveFromCalendar({ observedAt: "2026-10-18T12:00:00+09:00",
+    const weekend = authority.resolveFromCalendar({ observedAt: "2026-10-17T12:00:00+09:00",
         calendarResult: result(holiday("2026-01-01")) });
     assert.equal(weekend.formalTradingDate, "2026-10-16");
     assert.equal(weekend.calendarStatus, "weekend");
+    const monday = authority.resolveFromCalendar({ observedAt: "2026-10-19T12:00:00+09:00",
+        calendarResult: result(holiday("2026-01-01")) });
+    assert.equal(monday.formalTradingDate, "2026-10-19");
+    assert.equal(monday.relation, "current_trading_day");
+    assert.notEqual(weekend.formalTradingDate, monday.formalTradingDate);
     const closed = authority.resolveFromCalendar({ observedAt: "2026-10-12T12:00:00+09:00",
         calendarResult: result(holiday("2026-01-01"), holiday("2026-10-12")) });
     assert.equal(closed.formalTradingDate, "2026-10-09");

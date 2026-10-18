@@ -20,7 +20,16 @@
     const output = value => freeze(clone(value));
     const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
-    const unavailableFreshness = () => ({ status: "unavailable", reason: "role_unavailable" });
+    const unavailableFreshness = () => ({ status: "unavailable", reason: "role_unavailable",
+        origin: null, dataTradingDate: null, expectedTradingDate: null,
+        expectedTradingDateSource: null, payloadValidation: "unavailable",
+        dateRelation: "unverifiable", consumerState: "invalid_or_unavailable",
+        staleReason: null });
+    const savedFreshness = source => ({ status: "saved", reason: "saved_last_valid",
+        origin: "history", dataTradingDate: source?.canonical?.tradingDate || null,
+        expectedTradingDate: null, expectedTradingDateSource: null,
+        payloadValidation: "valid", dateRelation: "unverifiable",
+        consumerState: "valid_saved_fallback", staleReason: "saved_data_origin" });
     const emptyRole = (role, reason = "formal_iv_revision_unavailable", status = "unavailable") => ({
         role, status, reason, contract: null, tradingDate: null, payloadId: null,
         sourceUrl: null, pageUpdatedAt: null, lastTradingDate: null, signature: null,
@@ -169,7 +178,7 @@
         const origin = live ? "live" : "history";
         const freshness = live ? clone(configuration.evaluateLiveFreshness?.(role, source) ||
             { status: "unavailable", reason: "freshness_status_unavailable" }) :
-            { status: "saved", reason: "formal_history" };
+            savedFreshness(source);
         return { role, status: "available", reason: null, contract: source.canonical.contract,
             tradingDate: source.canonical.tradingDate, payloadId: source.versionKey,
             sourceUrl: source.canonical.sourceUrl, pageUpdatedAt: source.canonical.pageUpdatedAt,

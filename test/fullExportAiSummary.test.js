@@ -29,7 +29,11 @@ function source() {
                 components: { option: { available: true }, weekly: { available: false } } } } });
     sections.qriOptions = envelope("qriOptions", { summary: { contract: "2026-09" } });
     sections.qriOptionsNextContract = envelope("qriOptionsNextContract", {
-        freshness: { status: "stale", reason: "saved_last_valid" },
+        freshness: { status: "stale", reason: "saved_last_valid", origin: "history",
+            dataTradingDate: "2026-09-07", expectedTradingDate: "2026-09-07",
+            expectedTradingDateSource: "formal_calendar_history_readonly",
+            payloadValidation: "valid", dateRelation: "matched",
+            consumerState: "valid_saved_fallback", staleReason: "saved_data_origin" },
         summary: { contract: "2026-10", tradingDate: "2026-09-07" } });
     sections.qriOptionsMajorSqNextContract = envelope("qriOptionsMajorSqNextContract", {
         status: "unavailable", reason: "major_sq_locator_unavailable",
@@ -77,7 +81,12 @@ function source() {
             overallV2: { interpretation: FullExport.SAFE_INTERPRETATION },
             morningChange: {}, importantLevels: {}, qriHighlights: [],
             freshnessIssues: [{ section: "qriOptionsNextContract", status: "stale",
-                reason: "saved_last_valid" }], warnings: [] },
+                reason: "saved_last_valid", origin: "history",
+                dataTradingDate: "2026-09-07", expectedTradingDate: "2026-09-07",
+                expectedTradingDateSource: "formal_calendar_history_readonly",
+                payloadValidation: "valid", dateRelation: "matched",
+                consumerState: "valid_saved_fallback",
+                staleReason: "saved_data_origin" }], warnings: [] },
         sections,
         warnings: [{ code: "qriOptionsMajorSqNextContract_unavailable",
             section: "qriOptionsMajorSqNextContract", reason: "major_sq_locator_unavailable" }]
@@ -107,6 +116,12 @@ test("Formal section values are copied with group provenance without promotion",
     assert.equal(result.summary.qriContracts.active.contract, "2026-09");
     assert.equal(result.summary.qriContracts.next.contract, "2026-10");
     assert.equal(result.summary.qriContracts.next.freshnessStatus, "stale");
+    assert.deepEqual(result.summary.qriContracts.next.freshnessProvenance, {
+        dataTradingDate: "2026-09-07", expectedTradingDate: "2026-09-07",
+        expectedTradingDateSource: "formal_calendar_history_readonly", origin: "history",
+        payloadValidation: "valid", dateRelation: "matched",
+        consumerState: "valid_saved_fallback", staleReason: "saved_data_origin"
+    });
     assert.equal(result.summary.qriContracts.majorSq.status, "unavailable");
     assert.equal(result.summary.qriContracts.majorSq.contract, null);
     assert.equal(result.summary.qriHistoryComparison.previousSourceDate, "2026-09-04");
@@ -133,6 +148,10 @@ test("data quality keeps section status and freshness separate and deduplicates 
     assert.equal(issues.filter(issue => issue.section === "qriOptionsNextContract" &&
         issue.issueType === "freshness" && issue.status === "stale" &&
         issue.reason === "saved_last_valid").length, 1);
+    const next = issues.find(issue => issue.section === "qriOptionsNextContract" &&
+        issue.issueType === "freshness");
+    assert.deepEqual([next.payloadValidation, next.consumerState, next.origin],
+        ["valid", "valid_saved_fallback", "history"]);
     assert.equal(issues.some(issue => Object.hasOwn(issue, "severity")), false);
     assert.ok(issues.some(issue => issue.section === "qriOptionIv.next" &&
         issue.issueType === "freshness" && issue.status === "saved"));

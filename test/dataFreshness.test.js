@@ -18,10 +18,14 @@ function weekly(overrides = {}) {
 test("daily current live is fresh", () => {
     const result = daily();
     assert.deepEqual([result.status, result.reason, result.displayEligible], ["fresh", "current", true]);
+    assert.deepEqual([result.dataTradingDate, result.expectedTradingDate,
+        result.payloadValidation, result.dateRelation, result.consumerState],
+    [CURRENT, CURRENT, "valid", "matched", "valid_current"]);
 });
 test("saved last-valid is visible but stale", () => {
     const result = daily({ origin: "cache", dataTradingDate: "2026-08-21" });
     assert.deepEqual([result.status, result.reason, result.displayEligible], ["stale", "saved_last_valid", true]);
+    assert.equal(result.consumerState, "valid_saved_fallback");
 });
 test("failed update with cache keeps display and records both facts", () => {
     const result = daily({ origin: "cache", dataTradingDate: "2026-08-21",
@@ -42,10 +46,16 @@ test("confirmed previous trading day is distinct", () => {
 test("old date without expected trading date is not called previous trading day", () => {
     const result = daily({ expectedTradingDate: null, currentReferenceDate: CURRENT,
         dataTradingDate: "2026-08-21" });
-    assert.deepEqual([result.reason, result.staleReason], ["source_not_updated", "date_unverifiable"]);
+    assert.deepEqual([result.reason, result.staleReason],
+        ["source_not_updated", "data_older_than_reference"]);
 });
 test("missing comparison date is date unverifiable", () => {
-    assert.equal(daily({ expectedTradingDate: null, currentReferenceDate: null }).reason, "date_unverifiable");
+    const result = daily({ expectedTradingDate: null, currentReferenceDate: null,
+        expectedTradingDateSource: "formal_calendar_history_readonly" });
+    assert.deepEqual([result.reason, result.expectedTradingDate,
+        result.expectedTradingDateSource, result.consumerState],
+    ["date_unverifiable", null, "formal_calendar_history_readonly",
+        "valid_date_unverifiable"]);
 });
 test("live source not updated is stale", () => {
     assert.equal(daily({ dataTradingDate: "2026-08-21" }).reason, "source_not_updated");
@@ -86,14 +96,15 @@ test("manual price is not automatic freshness", () => {
     const result = daily({ sourceType: "current_price", mode: "manual" });
     assert.deepEqual([result.status, result.staleReason], ["stale", "manual_not_automatic_freshness"]);
 });
-test("current price without quoted or trading date is date unverifiable", () => {
+test("current price without quoted or trading date is trading-date unverifiable", () => {
     const result = daily({ sourceType: "current_price", dataTradingDate: null,
         fetchedAt: "2026-08-24T05:30:00+09:00" });
-    assert.equal(result.reason, "date_unverifiable");
+    assert.equal(result.reason, "trading_date_unverifiable");
 });
 test("contract mismatch remains visible but stale", () => {
     const result = daily({ sourceType: "current_price", contractMatches: false });
     assert.equal(result.status, "stale");
+    assert.equal(result.reason, "contract_mismatch");
     assert.ok(result.diagnostics.secondaryReasons.includes("contract_mismatch"));
 });
 
@@ -137,7 +148,8 @@ test("weekly does not infer staleness from calendar age", () => {
 });
 test("weekly invalid signature metadata is unavailable", () => {
     const result = weekly({ signatureValid: false });
-    assert.deepEqual([result.status, result.displayEligible], ["unavailable", false]);
+    assert.deepEqual([result.status, result.reason, result.payloadValidation,
+        result.displayEligible], ["unavailable", "payload_invalid", "invalid", false]);
 });
 
 test("Morning Baseline is a session reference, not current freshness", () => {

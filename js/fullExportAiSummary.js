@@ -58,14 +58,30 @@
     const freshnessStatus = section => field(section?.freshness, "status");
     const freshnessReason = section => field(section?.freshness, "reason");
 
+    function freshnessProvenance(freshness) {
+        const result = {
+            dataTradingDate: field(freshness, "dataTradingDate"),
+            expectedTradingDate: field(freshness, "expectedTradingDate"),
+            expectedTradingDateSource: field(freshness, "expectedTradingDateSource"),
+            origin: field(freshness, "origin"),
+            payloadValidation: field(freshness, "payloadValidation"),
+            dateRelation: field(freshness, "dateRelation"),
+            consumerState: field(freshness, "consumerState"),
+            staleReason: field(freshness, "staleReason")
+        };
+        return Object.values(result).some(value => value !== null) ? result : null;
+    }
+
     function sourceBase(section, name) {
+        const provenance = freshnessProvenance(section?.freshness);
         return {
             sourceSection: name,
             sourcePointer: pointer(name),
             status: status(section),
             reason: reason(section),
             freshnessStatus: freshnessStatus(section),
-            freshnessReason: freshnessReason(section)
+            freshnessReason: freshnessReason(section),
+            ...(provenance ? { freshnessProvenance: provenance } : {})
         };
     }
 
@@ -126,9 +142,15 @@
         const name = "qriOptionIv";
         const section = sectionAt(sections, name);
         const roles = object(section?.summary?.roles) ? section.summary.roles : {};
-        const project = role => ({ status: field(role, "status"),
-            contract: field(role, "contract"), tradingDate: field(role, "tradingDate"),
-            freshnessStatus: field(role?.freshness, "status"), payloadId: field(role, "payloadId") });
+        const project = role => {
+            const provenance = freshnessProvenance(role?.freshness);
+            return { status: field(role, "status"), contract: field(role, "contract"),
+                tradingDate: field(role, "tradingDate"),
+                freshnessStatus: field(role?.freshness, "status"),
+                freshnessReason: field(role?.freshness, "reason"),
+                ...(provenance ? { freshnessProvenance: provenance } : {}),
+                payloadId: field(role, "payloadId") };
+        };
         return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
             reason: reason(section), roles: { active: project(roles.active),
                 next: project(roles.next), majorSq: project(roles.major_sq) } };
@@ -176,9 +198,10 @@
                     status: status(section), reason: reason(section) });
             }
             if (freshnessStatus(section) !== "fresh") {
+                const provenance = freshnessProvenance(section?.freshness) || {};
                 add({ section: name, sourcePointer: `${pointer(name)}/freshness`,
                     issueType: "freshness", status: freshnessStatus(section),
-                    reason: freshnessReason(section) });
+                    reason: freshnessReason(section), ...provenance });
             }
         }
         const ivSection = sectionAt(source.sections, "qriOptionIv");
@@ -191,10 +214,12 @@
                     reason: field(roleValue, "reason") });
             }
             const roleFreshness = field(roleValue?.freshness, "status");
-            if (roleValue && roleFreshness !== "fresh") add({
-                section: `qriOptionIv.${role}`, sourcePointer: pointer("qriOptionIv"),
-                issueType: "freshness", status: roleFreshness,
-                reason: field(roleValue.freshness, "reason") });
+            if (roleValue && roleFreshness !== "fresh") {
+                const provenance = freshnessProvenance(roleValue.freshness) || {};
+                add({ section: `qriOptionIv.${role}`, sourcePointer: pointer("qriOptionIv"),
+                    issueType: "freshness", status: roleFreshness,
+                    reason: field(roleValue.freshness, "reason"), ...provenance });
+            }
         }
         const freshnessIssues = Array.isArray(source.compactSummary?.freshnessIssues)
             ? source.compactSummary.freshnessIssues : [];
@@ -202,10 +227,11 @@
             if (!object(value)) return;
             const name = field(value, "section");
             if (typeof name !== "string" || !SECTION_ORDER.includes(name)) return;
+            const provenance = freshnessProvenance(value) || {};
             add({ section: name,
                 sourcePointer: `/compactSummary/freshnessIssues/${index}`,
                 issueType: "freshness", status: field(value, "status"),
-                reason: field(value, "reason") });
+                reason: field(value, "reason"), ...provenance });
         });
         const sourceWarnings = Array.isArray(source.warnings) ? source.warnings : [];
         const warnings = [];
