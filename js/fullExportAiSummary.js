@@ -198,6 +198,24 @@
                 "changedDomainCount") };
     }
 
+    function topChanges(sections) {
+        const name = "topChanges", section = sectionAt(sections, name);
+        if (!section) return null;
+        const buckets = object(section.summary?.buckets) ? section.summary.buckets : {};
+        const counts = {};
+        for (const bucket of ["availabilityChanges", "readinessChanges", "contractChanges",
+            "freshnessChanges", "valueChanges", "newObservations"]) {
+            const value = object(buckets[bucket]) ? buckets[bucket] : {};
+            counts[bucket] = { totalCount: field(value, "totalCount"),
+                shownCount: field(value, "shownCount"),
+                omittedCount: field(value, "omittedCount") };
+        }
+        return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
+            reason: reason(section), digestVocabularyVersion: field(section?.summary,
+                "digestVocabularyVersion"), changeCount: field(section?.summary, "changeCount"),
+            bucketCounts: counts };
+    }
+
     function issueKey(issue) {
         return [issue.section, issue.issueType, issue.status, issue.reason]
             .map(value => String(value ?? "")).join("|");
@@ -284,6 +302,7 @@
         if (generatedAt === null) return unavailable("ai_summary_source_invalid");
         const readiness = consumerReadiness(source.sections);
         const changes = changeSummary(source.sections);
+        const top = topChanges(source.sections);
         const summary = {
             summaryVersion: SUMMARY_VERSION, purpose: PURPOSE, generatedAt,
             market: market(source.sections), overallV2: overall(source.sections),
@@ -302,6 +321,7 @@
             morning: morning(source.sections), morningV5Formal: morningV5(source.sections),
             ...(readiness ? { consumerReadiness: readiness } : {}),
             ...(changes ? { changeSummary: changes } : {}),
+            ...(top ? { topChanges: top } : {}),
             dataQuality: dataQuality(source),
             readingOrder: SECTION_ORDER.filter(name => sectionAt(source.sections, name))
                 .map(name => ({ section: name,

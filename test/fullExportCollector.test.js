@@ -188,7 +188,7 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     assert.equal(fullExport.validateFullExport(result).valid, true);
     assert.deepEqual(Object.keys(result.sections),
         [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "changeSummary", "consumerReadiness",
-            "morningV5Formal", "qriOptionIv"]);
+            "morningV5Formal", "qriOptionIv", "topChanges"]);
     assert.equal(result.sections.participants.status, "partial");
     assert.equal(result.sections.aiSummary.status, "available");
     assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
@@ -207,11 +207,20 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
         "/sections/qriOptionIv");
     assert.equal(result.sections.consumerReadiness.status, "available");
     assert.equal(result.sections.consumerReadiness.summary.authoritativeRoot, "/sections");
+    assert.equal(Object.hasOwn(result.sections.consumerReadiness.summary.entries,
+        "topChanges"), false);
     assert.equal(result.sections.changeSummary.status, "available");
     assert.equal(result.sections.changeSummary.authority.formalStatus, "derived");
     assert.equal(result.sections.changeSummary.summary.comparisonVocabularyVersion, 1);
     assert.equal(result.sections.aiSummary.summary.changeSummary.sourcePointer,
         "/sections/changeSummary");
+    assert.equal(result.sections.topChanges.status, "available");
+    assert.equal(result.sections.topChanges.summary.sourceAuthority, "/sections/changeSummary");
+    assert.equal(result.sections.topChanges.summary.maxItemsPerBucket, 5);
+    assert.equal(result.sections.aiSummary.summary.topChanges.sourcePointer,
+        "/sections/topChanges");
+    assert.equal(result.sections.aiSummary.summary.topChanges.changeCount,
+        result.sections.topChanges.summary.changeCount);
     assert.deepEqual(result.sections.aiSummary.summary.consumerReadiness, {
         sourceSection: "consumerReadiness", sourcePointer: "/sections/consumerReadiness",
         status: "available", reason: null, vocabularyVersion: 1,
@@ -620,6 +629,6 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     assert.equal(result.sections.participants.reason, "participant_read_failed");
     assert.deepEqual(Object.keys(result.sections),
         [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "changeSummary", "consumerReadiness",
-            "morningV5Formal", "qriOptionIv"]);
+            "morningV5Formal", "qriOptionIv", "topChanges"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

@@ -98,7 +98,8 @@
         const errors = [];
         if (!exactKeys(value, ENVELOPE_KEYS)) return [`${name}:section_fields_invalid`];
         if (!SECTION_STATUSES.includes(value.status)) errors.push(`${name}:status_invalid`);
-        if (value.status === "available" && value.reason !== null)
+        if (value.status === "available" && value.reason !== null &&
+            !(name === "topChanges" && value.reason === "no_changes"))
             errors.push(`${name}:available_reason_invalid`);
         if (["unavailable", "invalid"].includes(value.status) &&
             (typeof value.reason !== "string" || !value.reason)) errors.push(`${name}:reason_missing`);

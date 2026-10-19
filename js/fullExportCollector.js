@@ -15,15 +15,18 @@
         root?.OptionMapFullExportConsumerReadiness;
     const changeSummaryApi = commonJs ? require("./fullExportChangeSummary.js") :
         root?.OptionMapFullExportChangeSummary;
+    const topChangesApi = commonJs ? require("./fullExportTopChanges.js") :
+        root?.OptionMapFullExportTopChanges;
     const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
         root?.OptionMapMorningV5FormalReadSurfaces;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
-        aiSummaryApi, qriOptionIvApi, consumerReadinessApi, changeSummaryApi, morningV5Api);
+        aiSummaryApi, qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi,
+        morningV5Api);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
-    qriOptionIvApi, consumerReadinessApi, changeSummaryApi, morningV5Api) {
+    qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi, morningV5Api) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -747,6 +750,9 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
                     clone(morningV5Projection?.observations || []) } }) || unavailable(
                 "change_summary_builder_unavailable", "optionmap-full-export",
                 { status: "not_applicable", reason: "index_only" });
+            sections.topChanges = topChangesApi?.buildTopChanges?.(sections.changeSummary) ||
+                unavailable("top_changes_builder_unavailable", "optionmap-full-export",
+                    { status: "not_applicable", reason: "index_only" });
             const aiSummary = aiSummaryApi?.buildFullExportAiSummary?.({
                 exportMeta: { generatedAt, timeZone: "Asia/Tokyo", profile: "full",
                     appVersion: options.appVersion || null, readOnly: true },
