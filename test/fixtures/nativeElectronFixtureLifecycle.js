@@ -36,6 +36,28 @@ function assertFixtureExited({ child, profile, childProcess, platform = process.
   return Object.freeze({ method: "posix_process_inventory", exited: true });
 }
 
+function waitForFilesystemRelease(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function removeFixtureTreeAfterExit({ root, child, profile, childProcess, platform = process.platform,
+  filesystem = fs, wait = waitForFilesystemRelease, maxRetries = 20, retryDelayMs = 50 }) {
+  const exit = assertFixtureExited({ child, profile, childProcess, platform });
+  let retries = 0;
+  for (;;) {
+    try {
+      filesystem.rmSync(root, { recursive: true, force: true });
+      if (filesystem.existsSync(root)) throw Error("fixture_cleanup_incomplete");
+      return Object.freeze({ ...exit, removed: true, attempts: retries + 1, retries });
+    } catch (error) {
+      const releasePending = platform === "win32" && (error.code === "EBUSY" || error.code === "EPERM");
+      if (!releasePending || retries >= maxRetries) throw error;
+      retries++;
+      wait(retryDelayMs);
+    }
+  }
+}
+
 function ownerAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; }
@@ -74,4 +96,5 @@ function withNativeElectronLaunchLock(callback, options = {}) {
   }
 }
 
-module.exports = Object.freeze({ shutdown, isIntentionalForcedTermination, assertFixtureExited, withNativeElectronLaunchLock });
+module.exports = Object.freeze({ shutdown, isIntentionalForcedTermination, assertFixtureExited,
+  removeFixtureTreeAfterExit, withNativeElectronLaunchLock });

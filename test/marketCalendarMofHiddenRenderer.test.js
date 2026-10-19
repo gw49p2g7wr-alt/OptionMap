@@ -37,6 +37,34 @@ test("native Electron launch lock recovers stale ownership and fails closed on l
       /native_electron_launch_lock_timeout/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("Windows native fixture cleanup retries only transient executable release after proven exit", () => {
+  const errors = [Object.assign(Error("busy"), { code: "EBUSY" }), Object.assign(Error("permission"), { code: "EPERM" })];
+  let attempts = 0; const waits = [];
+  const result = Lifecycle.removeFixtureTreeAfterExit({ root: "C:\\fixture", profile: "C:\\fixture\\profile",
+    child: { status: 0, signal: null, error: null }, childProcess: {}, platform: "win32",
+    filesystem: { rmSync() { const error = errors[attempts++]; if (error) throw error; }, existsSync() { return false; } },
+    wait: milliseconds => waits.push(milliseconds) });
+  assert.deepEqual(result, { method: "spawnSync_exit", exited: true, removed: true, attempts: 3, retries: 2 });
+  assert.deepEqual(waits, [50, 50]);
+});
+
+test("Windows native fixture cleanup fails closed for live child, unrelated error and retry exhaustion", () => {
+  let removals = 0;
+  assert.throws(() => Lifecycle.removeFixtureTreeAfterExit({ root: "C:\\fixture", profile: "C:\\fixture\\profile",
+    child: { status: null, signal: null, error: null }, childProcess: {}, platform: "win32",
+    filesystem: { rmSync() { removals++; }, existsSync() { return false; } }, wait() {} }), /fixture_child_exit_unresolved/);
+  assert.equal(removals, 0);
+  const unrelated = Object.assign(Error("denied"), { code: "EACCES" });
+  assert.throws(() => Lifecycle.removeFixtureTreeAfterExit({ root: "C:\\fixture", profile: "C:\\fixture\\profile",
+    child: { status: 0, signal: null, error: null }, childProcess: {}, platform: "win32",
+    filesystem: { rmSync() { throw unrelated; }, existsSync() { return true; } }, wait() {} }), error => error === unrelated);
+  let attempts = 0, waits = 0; const busy = Object.assign(Error("busy"), { code: "EBUSY" });
+  assert.throws(() => Lifecycle.removeFixtureTreeAfterExit({ root: "C:\\fixture", profile: "C:\\fixture\\profile",
+    child: { status: 0, signal: null, error: null }, childProcess: {}, platform: "win32", maxRetries: 2,
+    filesystem: { rmSync() { attempts++; throw busy; }, existsSync() { return true; } }, wait() { waits++; } }), error => error === busy);
+  assert.equal(attempts, 3); assert.equal(waits, 2);
+});
 test("X1/X7/X9/X11 exact native renderer: local token, one real transaction, fresh process readback", async () => {
   successful = await Native.nativeCase(); const r = successful.executed.output;
   assert.equal(r.status, "PASS"); assert.equal(r.mainTokenAttempts, 0); assert.equal(r.audit.mainExecutionTokens, 0);

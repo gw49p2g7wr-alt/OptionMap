@@ -207,6 +207,7 @@ async function worker() {
 function run(mode = "isolated") {
   if (!["isolated", "live-readonly"].includes(mode)) throw Error("g2_mode_invalid");
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-g2-boj-"));
+  let child;
   try {
     const pack = path.join(root, "package"); fs.mkdirSync(pack);
     const identity = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -216,7 +217,6 @@ function run(mode = "isolated") {
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
     const stdoutPath = path.join(root, "stdout.log"), stderrPath = path.join(root, "stderr.log");
     const stdout = fs.openSync(stdoutPath, "w", 0o600), stderr = fs.openSync(stderrPath, "w", 0o600);
-    let child;
     try { child = Lifecycle.withNativeElectronLaunchLock(() => {
       const runtime = prepareFixtureElectronRuntime(root);
       return cp.spawnSync(runtime.executable, [pack, `--user-data-dir=${path.join(root, "profile")}`],
@@ -231,7 +231,11 @@ function run(mode = "isolated") {
     }
     const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
     return { ...receipt, processExitCode: child.status, tempDeleted: true };
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    if (child && !child.error && (child.status !== null || child.signal !== null)) {
+      Lifecycle.removeFixtureTreeAfterExit({ root, child, profile: path.join(root, "profile"), childProcess: cp });
+    } else fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 module.exports = Object.freeze({ run, worker, prepareFixtureElectronRuntime });
 if (require.main === module && process.type !== "browser") {
