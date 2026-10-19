@@ -6,6 +6,7 @@ const path = require("node:path");
 const fullExport = require("../js/fullExport.js");
 const { createFullExportCollector } = require("../js/fullExportCollector.js");
 const { contractsMatch } = require("../js/storage/currentPriceLastValidStore.js");
+const CurrentPriceRuntime = require("../js/currentPriceLiveIdentityRuntime.js");
 
 const qriVersion = "qri-options-v2|2026-09|page|sha256:qri-signature";
 const weeklyPrevious = "weekly-futures-v2|2026-08-21|sha256:weekly-old";
@@ -269,6 +270,44 @@ test("stale Mobile投影を使わずQRI option限月とfresh Futures限月を独
     assert.equal(result.sections.marketSnapshot.summary.value, 66480);
     assert.equal(result.sections.marketSnapshot.summary.contract, "2026-12");
     assert.equal(result.sections.qriOptions.summary.contract, "2026-09");
+});
+
+test("beta.11実runtime sequenceのraw Futures限月を同一generationでmarketSnapshotへ昇格", async () => {
+    const runtime = CurrentPriceRuntime.createCurrentPriceLiveIdentityRuntime({
+        now: () => "2026-10-19T19:57:21+09:00"
+    });
+    await runtime.publish({ priceResult: { available: true,
+        source: "qri-nikkei225-futures", mode: "automatic", origin: "live",
+        value: 64860, contract: "26年12月限", quotedAt: "10/19 19:40",
+        fetchedAt: "2026-10-19T10:56:06.930Z" }, activeContract: "26年12月限",
+    pageTradingDate: "2026-10-20", pageUpdatedAt: "2026-10-19T19:40:00+09:00",
+    sourceUrl: "https://svc.qri.jp/jpx/nkopm/",
+    requestId: "marketRefresh-1792407345900-gawqx67h",
+    fetchedAt: "2026-10-19T10:56:06.930Z" }, { isCurrentRequest: () => true,
+        formalCurrentPriceMode: "automatic" });
+    const result = await collect({ getCurrentPriceIdentity: () => runtime.getState() });
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.deepEqual([result.sections.marketSnapshot.summary.value,
+        result.sections.marketSnapshot.summary.contract,
+        result.compactSummary.currentPrice.value,
+        result.compactSummary.currentPrice.contract],
+    [64860, "2026-12", 64860, "2026-12"]);
+});
+
+test("Important Levels availability remains independent from current-price identity", async () => {
+    const result = await collect({ getCurrentPriceIdentity: () => ({
+        status: "unavailable", reason: "contract_mismatch", fact: null }) });
+    assert.equal(result.sections.marketSnapshot.status, "unavailable");
+    assert.equal(result.sections.marketSnapshot.reason, "current_price_identity_mismatch");
+    assert.equal(result.sections.importantLevels.status, "available");
+});
+
+test("QRI formal absence independently makes Important Levels unavailable", async () => {
+    const result = await collect({ getQriFormalIdentity: () => ({
+        status: "unavailable", reason: "open_interest_unavailable", fact: null }) });
+    assert.equal(result.sections.marketSnapshot.status, "available");
+    assert.equal(result.sections.qriOptions.status, "unavailable");
+    assert.equal(result.sections.importantLevels.status, "unavailable");
 });
 
 test("verified live factがあればMobile currentPrice欠落でもmarketSnapshotを昇格", async () => {

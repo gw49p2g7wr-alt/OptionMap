@@ -6046,7 +6046,7 @@ async function fetchQriData({ requestId } = {}) {
                 priceResult
             );
             const livePriceAcquisition = priceResult?.latestQriPrice || priceResult;
-            await window.publishCurrentPriceLiveIdentityFact?.({
+            const currentPricePublication = await window.publishCurrentPriceLiveIdentityFact?.({
                 priceResult: livePriceAcquisition?.success === false ? null : {
                     ...livePriceAcquisition, available: true, origin: "live", mode: "automatic"
                 },
@@ -6062,6 +6062,11 @@ async function fetchQriData({ requestId } = {}) {
                 formalCurrentPriceMode: priceResult?.reason === "manual_mode"
                     ? "manual" : "automatic"
             });
+            const acceptedCurrentPriceIdentity = currentPricePublication?.status === "available"
+                ? window.getCurrentPriceLiveIdentityFact?.() : null;
+            const acceptedCurrentPriceFact = acceptedCurrentPriceIdentity?.status === "available" &&
+                acceptedCurrentPriceIdentity.requestId === activeRequestId
+                ? acceptedCurrentPriceIdentity.fact : null;
             await publishQriReferencePriceShadow({
                 referencePrice: payload.referencePrices?.nikkei225Futures || null,
                 optionContract: payload.canonicalV2?.contract || null,
@@ -6071,7 +6076,8 @@ async function fetchQriData({ requestId } = {}) {
                 requestId: activeRequestId,
                 fetchedAt
             }, () => isCurrentFetchRequest(source, activeRequestId));
-            if (priceResult?.success === true && priceResult.mode === "automatic") {
+            if (priceResult?.success === true && priceResult.mode === "automatic" &&
+                acceptedCurrentPriceFact?.requestId === activeRequestId) {
                 window.OptionMapCurrentPriceBootRestoreShadow
                     ?.markCurrentPriceBootRestoreShadowSuperseded({
                         requestId: activeRequestId,
@@ -6084,14 +6090,14 @@ async function fetchQriData({ requestId } = {}) {
                     localStorage,
                     {
                         price: {
-                            value: priceResult.value,
-                            source: priceResult.source,
-                            mode: priceResult.mode,
-                            contract: priceResult.contract,
-                            quotedAt: priceResult.quotedAt,
-                            fetchedAt: priceResult.fetchedAt
+                            value: acceptedCurrentPriceFact.value,
+                            source: "qri-nikkei225-futures",
+                            mode: "automatic",
+                            contract: acceptedCurrentPriceFact.contract,
+                            quotedAt: acceptedCurrentPriceFact.quotedAtRaw,
+                            fetchedAt: acceptedCurrentPriceFact.fetchedAt
                         },
-                        activeContract: priceResult.contract || null,
+                        activeContract: acceptedCurrentPriceFact.contract,
                         pageTradingDate: payload.canonicalV2?.tradingDate || null,
                         pageUpdatedAt: payload.canonicalV2?.pageUpdatedAt || null,
                         sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl

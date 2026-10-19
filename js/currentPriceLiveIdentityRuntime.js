@@ -42,7 +42,8 @@
         let latestAttempt = 0;
         let state = makeState("empty", "not_published", null, null, 0, null);
 
-        function makeState(status, reason, requestId, fact, generation, formalMode) {
+        function makeState(status, reason, requestId, fact, generation, formalMode,
+            diagnosticOverrides = {}) {
             return deepFreeze({ runtimeVersion: RUNTIME_VERSION, status, reason,
                 publicationGeneration: generation, publishedAt: now(), requestId, fact,
                 diagnostics: { loaded: true, status, reason, requestId,
@@ -53,7 +54,23 @@
                     formalCurrentPriceMode: formalMode || null,
                     formalCurrentPriceMutated: false, storageAccessed: false,
                     fetchTriggered: false, domMutated: false,
-                    overallV2Recalculated: false, morningCollectorInvoked: false } });
+                    overallV2Recalculated: false, morningCollectorInvoked: false,
+                    identityOperands: null, ...diagnosticOverrides } });
+        }
+
+        function identityOperands(input, fact, generation) {
+            const expectedContractRaw = text(input?.activeContract);
+            const expectedContract = factApi?.canonicalContract?.(expectedContractRaw) || null;
+            return { actual: { contract: text(fact?.contract), value: Number.isFinite(
+                Number(fact?.value)) ? Number(fact.value) : null,
+            source: text(fact?.sourceKind), quotedAt: text(fact?.quotedAtNormalized),
+            fetchedAt: text(fact?.fetchedAt), tradingDate: text(fact?.pageTradingDate),
+            requestId: text(fact?.requestId), sourceFingerprint: text(fact?.versionKey),
+            identitySource: "verified_live_futures_fact" },
+            expected: { contractRaw: expectedContractRaw, contract: expectedContract,
+                requestId: text(input?.requestId), generation,
+                identitySource: "current_acquisition_futures_contract" },
+            contractMatched: Boolean(expectedContract && fact?.contract === expectedContract) };
         }
 
         function guardCurrent(isCurrentRequest) {
@@ -93,18 +110,28 @@
                 return deepFreeze({ published: false, reason: "stale_request",
                     publicationGeneration });
             }
+            const nextGeneration = publicationGeneration + 1;
+            const operands = identityOperands(input, fact, nextGeneration);
             const eligible = fact?.available === true && fact.sourceKind === "live" &&
                 fact.origin === "live" && fact.mode === "automatic" &&
                 fact.identityVerified === true && fact.acquisitionVerified === true &&
                 fact.currentRequestVerified === true && fact.requestId === requestId &&
-                fact.contract === input.activeContract;
-            publicationGeneration += 1;
+                operands.contractMatched;
+            publicationGeneration = nextGeneration;
             if (!eligible) {
-                state = makeState("unavailable", fact?.reason || "identity_unavailable",
-                    requestId, null, publicationGeneration, options.formalCurrentPriceMode);
+                const reason = fact?.available === true && !operands.contractMatched
+                    ? "contract_mismatch" : fact?.reason || "identity_unavailable";
+                state = makeState("unavailable", reason, requestId, null,
+                    publicationGeneration, options.formalCurrentPriceMode, {
+                        factAvailable: fact?.available === true,
+                        identityVerified: fact?.identityVerified === true,
+                        acquisitionVerified: fact?.acquisitionVerified === true,
+                        mappingVerified: fact?.qriTradingDateMapping?.mappingVerified === true,
+                        identityOperands: operands });
             } else {
                 state = makeState("available", fact.reason, requestId, clone(fact),
-                    publicationGeneration, options.formalCurrentPriceMode);
+                    publicationGeneration, options.formalCurrentPriceMode,
+                    { identityOperands: operands });
             }
             return deepFreeze({ published: true, status: state.status, reason: state.reason,
                 publicationGeneration, requestId });

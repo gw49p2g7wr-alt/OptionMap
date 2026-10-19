@@ -208,3 +208,14 @@ test("renderer wiring loads restore diagnostics without adding boot restore", ()
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);
     assert.doesNotMatch(html, /readAndRestoreCurrentPriceLastValid\s*\(/);
 });
+test("renderer persists only the accepted same-request canonical live fact", () => {
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    const start = html.indexOf("const currentPricePublication");
+    const end = html.indexOf("}).catch(error =>", start);
+    const wiring = html.slice(start, end);
+    assert.match(wiring, /currentPricePublication\?\.status\s*===\s*"available"/);
+    assert.match(wiring, /acceptedCurrentPriceIdentity\.requestId\s*===\s*activeRequestId/);
+    assert.match(wiring, /acceptedCurrentPriceFact\?\.requestId\s*===\s*activeRequestId/);
+    assert.match(wiring, /activeContract:\s*acceptedCurrentPriceFact\.contract/);
+    assert.doesNotMatch(wiring, /activeContract:\s*priceResult\.contract/);
+});

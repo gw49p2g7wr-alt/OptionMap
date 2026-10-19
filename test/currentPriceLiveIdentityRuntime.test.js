@@ -27,6 +27,25 @@ test("valid live fact is published and returned", async () => {
     assert.deepEqual([result.published, result.status], [true, "available"]);
     assert.equal(runtime.getState().fact.requestId, "request-1");
 });
+test("beta.11 real-runtime raw contract publishes the canonical same-generation fact", async () => {
+    const runtime = make();
+    const input = { ...INPUT, activeContract: "26年9月限" };
+    const result = await publish(runtime, input);
+    const state = runtime.getState();
+    assert.deepEqual([result.status, state.status, state.fact.contract],
+        ["available", "available", "2026-09"]);
+    assert.deepEqual(state.diagnostics.identityOperands, {
+        actual: { contract: "2026-09", value: 66010, source: "live",
+            quotedAt: "2026-08-26T05:30:00+09:00",
+            fetchedAt: "2026-08-26T05:31:00+09:00", tradingDate: "2026-08-26",
+            requestId: "request-1", sourceFingerprint: state.fact.versionKey,
+            identitySource: "verified_live_futures_fact" },
+        expected: { contractRaw: "26年9月限", contract: "2026-09",
+            requestId: "request-1", generation: state.publicationGeneration,
+            identitySource: "current_acquisition_futures_contract" },
+        contractMatched: true
+    });
+});
 test("getter returns a detached clone", async () => {
     const runtime = make(); await publish(runtime); const first = runtime.getState();
     assert.notEqual(first, runtime.getState());
@@ -92,6 +111,32 @@ test("publication generation is monotonic", async () => {
     const runtime = make(); const first = await publish(runtime);
     const second = await publish(runtime, { ...INPUT, requestId: "request-2" });
     assert.ok(second.publicationGeneration > first.publicationGeneration);
+});
+test("different acquisition generations with the same semantic Futures contract remain valid", async () => {
+    const runtime = make();
+    await publish(runtime, { ...INPUT, activeContract: "26年9月限" });
+    const first = runtime.getState();
+    await publish(runtime, { ...INPUT, requestId: "request-2",
+        activeContract: "2026年9月限", priceResult: { ...INPUT.priceResult,
+            quotedAt: "08/26 05:31", fetchedAt: "2026-08-26T05:32:00+09:00" },
+        fetchedAt: "2026-08-26T05:32:00+09:00" });
+    const second = runtime.getState();
+    assert.equal(second.status, "available");
+    assert.equal(second.fact.contract, "2026-09");
+    assert.ok(second.publicationGeneration > first.publicationGeneration);
+    assert.notEqual(second.fact.versionKey, first.fact.versionKey);
+});
+test("unknown expected Futures identity fails closed with exact operands", async () => {
+    const runtime = make();
+    await publish(runtime, { ...INPUT, activeContract: "September futures" });
+    const state = runtime.getState();
+    assert.deepEqual([state.status, state.reason, state.fact],
+        ["unavailable", "contract_mismatch", null]);
+    assert.deepEqual([state.diagnostics.identityOperands.expected.contractRaw,
+        state.diagnostics.identityOperands.expected.contract,
+        state.diagnostics.identityOperands.actual.contract,
+        state.diagnostics.identityOperands.contractMatched],
+    ["September futures", null, null, false]);
 });
 test("cross-date fact is retained unresolved and never promoted", async () => {
     const runtime = make(); await publish(runtime, { ...INPUT,
@@ -203,7 +248,9 @@ test("last-valid writer binds to the acquired futures contract, not the QRI opti
     const start = html.indexOf(
         "OptionMapCurrentPriceLastValidStore?.buildAndSaveCurrentPriceLastValid");
     const publication = html.slice(start, html.indexOf("}).catch(error =>", start));
-    assert.match(publication, /activeContract:\s*priceResult\.contract/);
+    assert.match(publication, /activeContract:\s*acceptedCurrentPriceFact\.contract/);
+    assert.match(publication, /contract:\s*acceptedCurrentPriceFact\.contract/);
+    assert.doesNotMatch(publication, /activeContract:\s*priceResult\.contract/);
     assert.doesNotMatch(publication, /activeContract:\s*payload\.canonicalV2\?\.contract/);
 });
 test("no Morning collector or storage wiring was added", () => {

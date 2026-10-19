@@ -167,5 +167,6 @@
                 crossDateRejected: crossDate }) });
     }
 
-    return Object.freeze({ FACT_VERSION, SOURCE, MODE, buildCurrentPriceLiveIdentityFact });
+    return Object.freeze({ FACT_VERSION, SOURCE, MODE, canonicalContract,
+        buildCurrentPriceLiveIdentityFact });
 });
