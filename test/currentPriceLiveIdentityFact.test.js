@@ -126,6 +126,38 @@ test("cross-date stays available but mapping remains unresolved", async () => {
     assert.equal(result.diagnostics.crossDateRejected, true);
 });
 
+test("Calendar-authorized night session proves the next QRI trading date", async () => {
+    const result = await build({ priceResult: { quotedAt: "08/25 20:00" },
+        pageUpdatedAt: "2026-08-25T20:01:00+09:00",
+        calendarAuthority: { status: "available", authority: "formal_calendar_history_readonly",
+            calendarDate: "2026-08-25", previousValidTradingDate: "2026-08-24",
+            formalTradingDate: "2026-08-25",
+            nextValidTradingDate: "2026-08-26" } });
+    assert.deepEqual([result.available, result.reason,
+        result.qriTradingDateMapping.mappingVerified,
+        result.qriTradingDateMapping.relation],
+    [true, null, true, "night_session_next_trading_date"]);
+    assert.equal(result.qriTradingDateMapping.mappingSource,
+        "formal_calendar_history_readonly+nikkei225_session_v1");
+});
+
+test("Calendar-authorized night mapping rejects wrong future and unresolved authority", async () => {
+    const base = { priceResult: { quotedAt: "08/25 20:00" },
+        pageUpdatedAt: "2026-08-25T20:01:00+09:00" };
+    const mismatch = await build({ ...base, pageTradingDate: "2026-08-27",
+        calendarAuthority: { status: "available", authority: "formal_calendar_history_readonly",
+            calendarDate: "2026-08-25", previousValidTradingDate: "2026-08-24",
+            formalTradingDate: "2026-08-25",
+            nextValidTradingDate: "2026-08-26" } });
+    assert.deepEqual([mismatch.reason, mismatch.qriTradingDateMapping.status,
+        mismatch.qriTradingDateMapping.mappingVerified],
+    ["date_mismatch", "date_mismatch", false]);
+    const unresolved = await build({ ...base,
+        calendarAuthority: { status: "unavailable" } });
+    assert.deepEqual([unresolved.reason, unresolved.qriTradingDateMapping.status],
+        ["date_context_unresolved", "date_context_unresolved"]);
+});
+
 test("pageUpdatedAt resolves quote date but never proves trading-date mapping", async () => {
     const result = await build({ priceResult: { quotedAt: "08/25 23:59" },
         pageUpdatedAt: "2026-08-26T00:01:00+09:00" });

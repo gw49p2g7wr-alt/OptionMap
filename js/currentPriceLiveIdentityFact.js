@@ -1,10 +1,12 @@
 (function (root, factory) {
     const cacheApi = typeof module === "object" && module.exports && !(root && root.document)
         ? require("./currentPriceLastValidCache.js") : root?.OptionMapCurrentPriceLastValidCache;
-    const api = factory(cacheApi);
+    const contextApi = typeof module === "object" && module.exports && !(root && root.document)
+        ? require("./qriTradingDateContext.js") : root?.OptionMapQriTradingDateContext;
+    const api = factory(cacheApi, contextApi);
     if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
     if (root) root.OptionMapCurrentPriceLiveIdentityFact = api;
-})(typeof window !== "undefined" ? window : globalThis, function (cacheApi) {
+})(typeof window !== "undefined" ? window : globalThis, function (cacheApi, contextApi) {
     "use strict";
 
     const FACT_VERSION = 1;
@@ -135,11 +137,26 @@
 
         const sameDate = cache.quoteDate !== null && cache.quoteDate === cache.pageTradingDate;
         const crossDate = cache.quoteDate !== null && cache.quoteDate < cache.pageTradingDate;
-        const relation = sameDate ? "same_date" : crossDate ? "previous_date" :
+        const dateContext = crossDate && input.calendarAuthority
+            ? contextApi?.resolve?.({ observedAt: cache.pageUpdatedAt,
+                payloadTradingDate: cache.pageTradingDate,
+                calendarAuthority: input.calendarAuthority }) || null : null;
+        const quoteSession = crossDate ? contextApi?.sessionOf?.(cache.quotedAtNormalized) || null : null;
+        const sourceSession = crossDate ? contextApi?.sessionOf?.(cache.pageUpdatedAt) || null : null;
+        const crossDateVerified = crossDate && dateContext?.valid === true &&
+            dateContext.relation === "night_session_next_trading_date" &&
+            quoteSession?.kind === "night" && sourceSession?.kind === "night" &&
+            quoteSession.key === sourceSession.key;
+        const mappingVerified = sameDate || crossDateVerified;
+        const relation = sameDate ? "same_date" : crossDateVerified
+            ? "night_session_next_trading_date" : crossDate ? "previous_date" :
             cache.quoteDate ? "future_date" : "unresolved";
-        const mapping = { status: sameDate ? "verified" : "date_context_unresolved",
+        const mapping = { status: mappingVerified ? "verified" : dateContext?.relation === "date_mismatch"
+            ? "date_mismatch" : "date_context_unresolved",
             quoteDate: cache.quoteDate, qriTradingDate: cache.pageTradingDate, relation,
-            mappingVerified: sameDate, mappingSource: sameDate ? "same_date_explicit" : null };
+            mappingVerified, mappingSource: sameDate ? "same_date_explicit" : crossDateVerified
+                ? contextApi.AUTHORITY_SOURCE : null };
+        if (dateContext) mapping.dateContext = dateContext;
         const quoteIdentity = { value: cache.value, contract: cache.contract,
             quotedAtRaw: cache.quotedAtRaw, quoteDate: cache.quoteDate,
             quotedAtNormalized: cache.quotedAtNormalized,
@@ -149,7 +166,7 @@
         const acquisitionIdentity = { requestId, fetchedAt: cache.fetchedAt,
             sourceUrl: cache.sourceUrl, wrapperSignature: cache.signature };
         return deepFreeze({ factVersion: FACT_VERSION, available: true, status: "available",
-            reason: sameDate ? null : "date_context_unresolved", sourceKind: "live",
+            reason: mappingVerified ? null : mapping.status, sourceKind: "live",
             origin: "live", mode: MODE, value: cache.value, contract: cache.contract,
             quotedAtRaw: cache.quotedAtRaw, quoteDate: cache.quoteDate,
             quotedAtNormalized: cache.quotedAtNormalized,
@@ -164,7 +181,7 @@
                 validatorPassed, quoteSignatureVerified, versionKeyVerified,
                 wrapperSignatureVerified, currentRequestVerified: true, identityVerified,
                 acquisitionVerified, sameDateMappingVerified: sameDate,
-                crossDateRejected: crossDate }) });
+                crossDateRejected: crossDate && !crossDateVerified }) });
     }
 
     return Object.freeze({ FACT_VERSION, SOURCE, MODE, canonicalContract,

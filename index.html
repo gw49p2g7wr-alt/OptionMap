@@ -1488,6 +1488,7 @@
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
 <script src="js/formalOptionAvailabilityEvidenceRuntime.js"></script>
 <script src="js/dataFreshness.js"></script>
+<script src="js/qriTradingDateContext.js"></script>
 <script src="js/fullExportFreshness.js"></script>
 <script src="js/qriOptionsLastValidRestore.js"></script>
 <script src="js/storage/qriOptionsLastValidReadOnlyStore.js"></script>
@@ -1869,6 +1870,7 @@ window.OptionMapFullExportUi.configure({
             .resolve({ observedAt, indexedDB, keyRange: IDBKeyRange });
         const freshnessSession = formalDateAuthority?.status === "available" ? {
             formalTradingDate: formalDateAuthority.formalTradingDate,
+            nextValidTradingDate: formalDateAuthority.nextValidTradingDate,
             calendarDate: formalDateAuthority.calendarDate,
             authority: formalDateAuthority.authority
         } : null;
@@ -1877,6 +1879,9 @@ window.OptionMapFullExportUi.configure({
             .createFullExportFreshnessAdapter({
                 now: () => observedAt,
                 getMarketSession: () => freshnessSession,
+                resolveQriTradingDateContext: payloadTradingDate =>
+                    window.OptionMapQriTradingDateContext.resolve({ observedAt,
+                        payloadTradingDate, calendarAuthority: formalDateAuthority }),
                 getCurrentPriceIdentity: () => currentPriceIdentity,
                 getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
                 getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,
@@ -6046,6 +6051,10 @@ async function fetchQriData({ requestId } = {}) {
                 priceResult
             );
             const livePriceAcquisition = priceResult?.latestQriPrice || priceResult;
+            const currentPriceCalendarAuthority = payload.canonicalV2?.pageUpdatedAt
+                ? await window.OptionMapFullExportFormalTradingDateAuthority.resolve({
+                    observedAt: payload.canonicalV2.pageUpdatedAt,
+                    indexedDB, keyRange: IDBKeyRange }) : null;
             const currentPricePublication = await window.publishCurrentPriceLiveIdentityFact?.({
                 priceResult: livePriceAcquisition?.success === false ? null : {
                     ...livePriceAcquisition, available: true, origin: "live", mode: "automatic"
@@ -6056,6 +6065,7 @@ async function fetchQriData({ requestId } = {}) {
                 sourceUrl: payload.canonicalV2?.sourceUrl || sourceUrl,
                 requestId: activeRequestId,
                 fetchedAt,
+                calendarAuthority: currentPriceCalendarAuthority,
                 isCurrentRequest: isCurrentFetchRequest(source, activeRequestId)
             }, {
                 isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId),

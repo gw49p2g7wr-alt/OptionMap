@@ -17,6 +17,8 @@ test("F1 normal weekday resolves current formal trading date", () => {
         calendarResult: result(holiday("2026-01-01")) });
     assert.equal(value.status, "available");
     assert.equal(value.formalTradingDate, "2026-10-15");
+    assert.equal(value.previousValidTradingDate, "2026-10-14");
+    assert.equal(value.nextValidTradingDate, "2026-10-16");
     assert.equal(value.relation, "current_trading_day");
 });
 
@@ -75,6 +77,13 @@ test("malformed or absent exact JPX holiday authority fails closed", () => {
             scope: "JPX_derivatives", referencePeriod: "2026-01-01" } })) }).status, "unavailable");
 });
 
+test("adjacent year without Formal Calendar coverage fails closed", () => {
+    const value = authority.resolveFromCalendar({ observedAt: "2026-12-31T17:00:00+09:00",
+        calendarResult: result(holiday("2026-01-01"), holiday("2026-12-31")) });
+    assert.equal(value.status, "unavailable");
+    assert.equal(value.reason, "adjacent_trading_date_resolution_exhausted");
+});
+
 test("resolver performs one bounded readonly Calendar query", async () => {
     const calls = [];
     const value = await authority.resolve({ observedAt: "2026-10-15T07:46:11+09:00",
@@ -83,7 +92,20 @@ test("resolver performs one bounded readonly Calendar query", async () => {
     assert.equal(value.formalTradingDate, "2026-10-15");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].startDate, "2025-01-01");
-    assert.equal(calls[0].endDate, "2026-12-31");
+    assert.equal(calls[0].endDate, "2027-12-31");
+});
+
+test("next valid trading date uses the same formal weekend and holiday authority", () => {
+    const friday = authority.resolveFromCalendar({ observedAt: "2026-10-16T17:00:00+09:00",
+        calendarResult: result(holiday("2026-01-01"), holiday("2026-10-19"),
+            holiday("2026-10-20")) });
+    assert.equal(friday.formalTradingDate, "2026-10-16");
+    assert.equal(friday.previousValidTradingDate, "2026-10-15");
+    assert.equal(friday.nextValidTradingDate, "2026-10-21");
+    const yearEnd = authority.resolveFromCalendar({ observedAt: "2026-12-30T17:00:00+09:00",
+        calendarResult: result(holiday("2026-01-01"), holiday("2026-12-31"),
+            holiday("2027-01-01")) });
+    assert.equal(yearEnd.nextValidTradingDate, "2027-01-04");
 });
 
 test("module has no write, network, Morning, QRI, or freshness policy authority", () => {

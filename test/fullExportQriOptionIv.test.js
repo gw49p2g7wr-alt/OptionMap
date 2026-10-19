@@ -98,6 +98,21 @@ test("active/next/major-SQ verified live are projected with fixed role and recor
     assert.equal(Security.inspectFullExportSecurity(result).valid, true);
 });
 
+test("IV roles consume their matching QRI date context without independent derivation", async () => {
+    const value = await fixture();
+    value.config.evaluateLiveFreshness = (role, source) => ({ status: "fresh",
+        reason: "current", dataTradingDate: source.canonical.tradingDate,
+        expectedTradingDate: source.canonical.tradingDate,
+        tradingDateContext: { contextVersion: 1, relation: role === "active"
+            ? "same_trading_date" : "night_session_next_trading_date",
+        payloadTradingDate: source.canonical.tradingDate, valid: true } });
+    const result = await ExportIv.collectQriOptionIv(value.config);
+    for (const role of result.details.roles) {
+        assert.equal(role.freshness.dataTradingDate, role.tradingDate);
+        assert.equal(role.freshness.tradingDateContext.payloadTradingDate, role.tradingDate);
+    }
+});
+
 test("verified exact Formal history is used for every role when live is absent or unverified", async () => {
     const { state, config } = await fixture(); state.runtime.active.available = false;
     state.reference.sources.next.available = false;

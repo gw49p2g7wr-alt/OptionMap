@@ -1,10 +1,12 @@
 (function (root, factory) {
     const commonJs = typeof module === "object" && module.exports && !(root && root.document);
     const freshnessApi = commonJs ? require("./dataFreshness.js") : root?.OptionMapDataFreshness;
-    const api = factory(freshnessApi);
+    const contextApi = commonJs ? require("./qriTradingDateContext.js") :
+        root?.OptionMapQriTradingDateContext;
+    const api = factory(freshnessApi, contextApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportFreshness = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (freshnessApi) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (freshnessApi, contextApi) {
     "use strict";
 
     const ADAPTER_VERSION = 1;
@@ -43,7 +45,9 @@
             dataTradingDate: values.dataTradingDate || null,
             expectedTradingDate: values.expectedTradingDate || null,
             expectedTradingDateSource: values.expectedTradingDateSource || null,
-            payloadValidation: values.payloadValidation || "unavailable", staleReason: null });
+            payloadValidation: values.payloadValidation || "unavailable", staleReason: null,
+            ...(values.tradingDateContext ? {
+                tradingDateContext: values.tradingDateContext } : {}) });
     }
 
     function attemptStatus(status) {
@@ -71,32 +75,10 @@
             : unavailable("freshness_api_unavailable");
     }
 
-    function jstParts(value) {
-        if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
-        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo",
-            year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit",
-            minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
-        const part = type => parts.find(item => item.type === type)?.value;
-        const date = `${part("year")}-${part("month")}-${part("day")}`;
-        const minute = Number(part("hour")) * 60 + Number(part("minute"));
-        return /^20\d{2}-\d{2}-\d{2}$/.test(date) && Number.isFinite(minute)
-            ? { date, minute } : null;
-    }
-
-    function previousDate(value) {
-        const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() - 1);
-        return date.toISOString().slice(0, 10);
-    }
-
-    function sessionOf(value) {
-        const parts = jstParts(value);
-        if (!parts) return null;
-        if (parts.minute >= 8 * 60 + 45 && parts.minute <= 15 * 60 + 45)
-            return { kind: "day", key: parts.date };
-        if (parts.minute >= 17 * 60) return { kind: "night", key: parts.date };
-        if (parts.minute <= 6 * 60) return { kind: "night", key: previousDate(parts.date) };
-        return null;
-    }
+    const sessionOf = value => {
+        const session = contextApi?.sessionOf?.(value) || null;
+        return session?.kind === "closed" ? null : session;
+    };
 
     function classifyCurrentPriceSessionFreshness({ fact, observedAt, expectedTradingDate,
         expectedTradingDateSource, fetchState = {} } = {}) {
@@ -113,7 +95,7 @@
             staleSince: null, diagnostics: { policyType: "current_price_session",
                 timeZone: "Asia/Tokyo", expectedTradingDate: expectedTradingDate || null,
                 quoteSession, observedSession, sessionMatched: false } };
-        if (!quoteSession || !jstParts(quotedAt)) return provenance({ ...base, status: "unavailable",
+        if (!quoteSession) return provenance({ ...base, status: "unavailable",
             reason: "quote_timestamp_unavailable", displayEligible: false,
             calculationEligible: "ineligible", staleReason: null });
         if (!observedSession) return provenance({ ...base, status: "stale", reason: "stale_reference",
@@ -138,6 +120,24 @@
         function sessionAuthority() {
             const session = configuration.getMarketSession?.();
             return session?.authority || session?.expectedTradingDateSource || null;
+        }
+
+        function qriDateContext(payloadTradingDate) {
+            return configuration.resolveQriTradingDateContext?.(payloadTradingDate) || null;
+        }
+
+        function qriDaily(values) {
+            const context = qriDateContext(values.dataTradingDate);
+            const expectedTradingDate = context ? context.expectedTradingDate : sessionDate();
+            const expectedTradingDateSource = context
+                ? context.authoritySource : sessionAuthority();
+            if (context?.relation === "date_mismatch") return unavailable("date_mismatch", {
+                origin: values.origin, dataTradingDate: values.dataTradingDate,
+                expectedTradingDate, expectedTradingDateSource, payloadValidation: "valid",
+                tradingDateContext: context });
+            const result = daily({ ...values, expectedTradingDate,
+                expectedTradingDateSource });
+            return context ? provenance({ ...result, tradingDateContext: context }) : result;
         }
 
         function marketSnapshot() {
@@ -170,12 +170,10 @@
                         expectedTradingDateSource: sessionAuthority(),
                         payloadValidation: object(fact) ? "invalid" : "unavailable" });
             const fetchState = configuration.getFetchState?.("qri") || {};
-            return daily({ sourceType: "qri_options", origin: fact.origin, hasData: true,
+            return qriDaily({ sourceType: "qri_options", origin: fact.origin, hasData: true,
                 dataTradingDate: fact.tradingDate || null,
                 sourceUpdatedAt: fact.pageUpdatedAt || null,
                 fetchedAt: fact.fetchedAt || fetchState.fetchedAt || null,
-                expectedTradingDate: sessionDate(),
-                expectedTradingDateSource: sessionAuthority(),
                 lastAttemptedAt: fetchState.fetchedAt || null,
                 lastAttemptStatus: attemptStatus(fetchState.status), mode: "automatic",
                 contract: fact.contract, validation: fact.identityVerified === true,
@@ -196,10 +194,9 @@
                     payloadValidation: object(acquisition) || object(revision)
                         ? "invalid" : "unavailable" });
             }
-            return daily({ sourceType: "qri_options", origin: "history", hasData: true,
+            return qriDaily({ sourceType: "qri_options", origin: "history", hasData: true,
                 dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
-                fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
-                expectedTradingDateSource: sessionAuthority(),
+                fetchedAt: revision.fetchedAt,
                 lastAttemptedAt: acquisition.completedAt || revision.confirmedAt || null,
                 lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
                 validation: true, signatureValid: true, calculationEligible: "eligible" });
@@ -220,10 +217,9 @@
                     payloadValidation: object(locator) || object(revision)
                         ? "invalid" : "unavailable" });
             }
-            return daily({ sourceType: "qri_options", origin: "history", hasData: true,
+            return qriDaily({ sourceType: "qri_options", origin: "history", hasData: true,
                 dataTradingDate: revision.tradingDate, sourceUpdatedAt: revision.pageUpdatedAt,
-                fetchedAt: revision.fetchedAt, expectedTradingDate: sessionDate(),
-                expectedTradingDateSource: sessionAuthority(),
+                fetchedAt: revision.fetchedAt,
                 lastAttemptedAt: locator.completedAt || revision.confirmedAt || null,
                 lastAttemptStatus: "success", mode: "automatic", contract: revision.contract,
                 validation: true, signatureValid: true, calculationEligible: "eligible" });

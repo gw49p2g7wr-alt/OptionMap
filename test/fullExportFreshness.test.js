@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const freshness = require("../js/dataFreshness.js");
+const dateContext = require("../js/qriTradingDateContext.js");
 const { createFullExportFreshnessAdapter } = require("../js/fullExportFreshness.js");
 
 function dependencies(overrides = {}) {
@@ -140,6 +141,75 @@ test("importantLevelsはQRI freshnessを再計算せず投影", () => {
     const qri = adapter.getSectionFreshness("qriOptions");
     assert.deepEqual(adapter.getSectionFreshness("importantLevels"), {
         ...qri, projectionSource: "qriOptions" });
+});
+
+test("night-session QRI active/next/Major-SQ share one formal date context", () => {
+    const observedAt = "2026-10-19T19:45:00+09:00";
+    const calendarAuthority = { status: "available",
+        authority: "formal_calendar_history_readonly", calendarDate: "2026-10-19",
+        previousValidTradingDate: "2026-10-16", formalTradingDate: "2026-10-19",
+        nextValidTradingDate: "2026-10-20" };
+    const deps = dependencies({ now: () => observedAt,
+        getMarketSession: () => ({ formalTradingDate: "2026-10-19",
+            nextValidTradingDate: "2026-10-20",
+            authority: "formal_calendar_history_readonly" }),
+        resolveQriTradingDateContext: payloadTradingDate => dateContext.resolve({ observedAt,
+            payloadTradingDate, calendarAuthority }),
+        getQriFormalIdentity: () => ({ status: "available", fact: {
+            identityVerified: true, acquisitionVerified: true, usingFallback: false,
+            referenceOnly: false, origin: "live", tradingDate: "2026-10-20",
+            pageUpdatedAt: "2026-10-19T19:40:00+09:00",
+            fetchedAt: "2026-10-19T19:41:00+09:00", contract: "2026-11",
+            canonicalSignature: "signature" } }) });
+    const adapter = createFullExportFreshnessAdapter(deps);
+    const revision = { contract: "2026-12", tradingDate: "2026-10-20",
+        pageUpdatedAt: "2026-10-19T19:40:00+09:00",
+        fetchedAt: "2026-10-19T19:41:00+09:00", versionKey: "version", signature: "sig",
+        sourceUrl: "https://svc.qri.jp/jpx/nkopm/202612" };
+    const next = adapter.getSectionFreshness("qriOptionsNextContract", { revision,
+        acquisition: { status: "saved", targetContract: revision.contract,
+            referenceTradingDate: revision.tradingDate, versionKey: revision.versionKey } });
+    const major = adapter.getSectionFreshness("qriOptionsMajorSqNextContract", { revision,
+        locator: { status: "saved", targetContract: revision.contract,
+            referenceTradingDate: revision.tradingDate, targetUrl: revision.sourceUrl,
+            versionKey: revision.versionKey } });
+    const active = adapter.getSectionFreshness("qriOptions");
+    const levels = adapter.getSectionFreshness("importantLevels");
+    for (const value of [active, next, major, levels]) {
+        assert.equal(value.expectedTradingDate, "2026-10-20");
+        assert.equal(value.tradingDateContext.relation,
+            "night_session_next_trading_date");
+    }
+    assert.deepEqual([active.status, next.status, major.status, levels.status],
+        ["fresh", "stale", "stale", "fresh"]);
+    assert.equal(levels.projectionSource, "qriOptions");
+});
+
+test("wrong future QRI date is unavailable and unknown authority remains unverifiable", () => {
+    const observedAt = "2026-10-19T19:45:00+09:00";
+    const formal = { status: "available", authority: "formal_calendar_history_readonly",
+        calendarDate: "2026-10-19", previousValidTradingDate: "2026-10-16",
+        formalTradingDate: "2026-10-19", nextValidTradingDate: "2026-10-20" };
+    const qri = tradingDate => ({ status: "available", fact: { identityVerified: true,
+        acquisitionVerified: true, usingFallback: false, referenceOnly: false, origin: "live",
+        tradingDate, pageUpdatedAt: "2026-10-19T19:40:00+09:00",
+        fetchedAt: "2026-10-19T19:41:00+09:00", contract: "2026-11",
+        canonicalSignature: "signature" } });
+    const mismatch = createFullExportFreshnessAdapter(dependencies({ now: () => observedAt,
+        getQriFormalIdentity: () => qri("2026-10-21"),
+        resolveQriTradingDateContext: payloadTradingDate => dateContext.resolve({ observedAt,
+            payloadTradingDate, calendarAuthority: formal }) }))
+        .getSectionFreshness("qriOptions");
+    assert.deepEqual([mismatch.status, mismatch.reason,
+        mismatch.tradingDateContext.relation], ["unavailable", "date_mismatch", "date_mismatch"]);
+    const unresolved = createFullExportFreshnessAdapter(dependencies({ now: () => observedAt,
+        getQriFormalIdentity: () => qri("2026-10-20"),
+        resolveQriTradingDateContext: payloadTradingDate => dateContext.resolve({ observedAt,
+            payloadTradingDate, calendarAuthority: { status: "unavailable" } }) }))
+        .getSectionFreshness("qriOptions");
+    assert.deepEqual([unresolved.status, unresolved.reason,
+        unresolved.tradingDateContext.relation],
+    ["stale", "date_unverifiable", "date_context_unresolved"]);
 });
 
 test("QRI date mapping unresolved does not replace same-session futures evidence", () => {

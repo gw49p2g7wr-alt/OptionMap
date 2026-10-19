@@ -9,7 +9,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (dates, calendar) {
     "use strict";
 
-    const AUTHORITY_VERSION = 1;
+    const AUTHORITY_VERSION = 2;
     const SOURCE_ID = "jp-jpx-market-holidays";
     const EVENT_TYPE = "JPX_MARKET_HOLIDAY";
     const SCOPE = "JPX_cash_markets";
@@ -33,12 +33,14 @@
 
     function unavailable(reason, calendarDate = null) {
         return freeze({ authorityVersion: AUTHORITY_VERSION, status: "unavailable", reason,
-            calendarDate, formalTradingDate: null, sourceId: SOURCE_ID,
+            calendarDate, previousValidTradingDate: null, formalTradingDate: null,
+            nextValidTradingDate: null, sourceId: SOURCE_ID,
             authority: "formal_calendar_history_readonly" });
     }
 
     function holidayDates(events) {
         const holidays = new Set();
+        const coveredYears = new Set();
         let sourceSeen = false;
         for (const event of events || []) {
             if (event?.sourceId !== SOURCE_ID) continue;
@@ -50,8 +52,9 @@
                 return { valid: false, sourceSeen, holidays };
             }
             holidays.add(event.logical.referencePeriod);
+            coveredYears.add(event.logical.referencePeriod.slice(0, 4));
         }
-        return { valid: true, sourceSeen, holidays };
+        return { valid: true, sourceSeen, holidays, coveredYears };
     }
 
     function resolveFromCalendar({ observedAt, calendarResult } = {}) {
@@ -65,8 +68,35 @@
         let candidate = calendarDate;
         for (let step = 0; step < 14; step += 1) {
             if (weekday(candidate) && !inventory.holidays.has(candidate)) {
+                let previousValidTradingDate = dates.addDays(candidate, -1);
+                let previousResolved = false;
+                for (let previousStep = 0; previousStep < 31; previousStep += 1) {
+                    if (weekday(previousValidTradingDate) &&
+                        !inventory.holidays.has(previousValidTradingDate)) {
+                        previousResolved = true;
+                        break;
+                    }
+                    previousValidTradingDate = dates.addDays(previousValidTradingDate, -1);
+                }
+                let nextValidTradingDate = dates.addDays(candidate, 1);
+                let nextResolved = false;
+                for (let nextStep = 0; nextStep < 31; nextStep += 1) {
+                    if (weekday(nextValidTradingDate) &&
+                        !inventory.holidays.has(nextValidTradingDate)) {
+                        nextResolved = true;
+                        break;
+                    }
+                    nextValidTradingDate = dates.addDays(nextValidTradingDate, 1);
+                }
+                const authorityYearsCovered = [previousValidTradingDate, candidate,
+                    nextValidTradingDate].every(value =>
+                    inventory.coveredYears.has(value.slice(0, 4)));
+                if (!previousResolved || !nextResolved || !authorityYearsCovered) return unavailable(
+                    "adjacent_trading_date_resolution_exhausted", calendarDate);
                 return freeze({ authorityVersion: AUTHORITY_VERSION, status: "available", reason: null,
-                    calendarDate, formalTradingDate: candidate, sourceId: SOURCE_ID,
+                    calendarDate, previousValidTradingDate,
+                    formalTradingDate: candidate, nextValidTradingDate,
+                    sourceId: SOURCE_ID,
                     authority: "formal_calendar_history_readonly",
                     relation: candidate === calendarDate ? "current_trading_day" :
                         "previous_trading_day", calendarStatus: candidate === calendarDate ?
@@ -86,7 +116,7 @@
         const year = Number(calendarDate.slice(0, 4));
         let result;
         try { result = await query({ indexedDB, keyRange,
-            startDate: `${year - 1}-01-01`, endDate: `${year}-12-31` }); }
+            startDate: `${year - 1}-01-01`, endDate: `${year + 1}-12-31` }); }
         catch (_error) { return unavailable("calendar_authority_unavailable", calendarDate); }
         return resolveFromCalendar({ observedAt, calendarResult: result });
     }
