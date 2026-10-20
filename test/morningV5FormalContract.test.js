@@ -58,6 +58,21 @@ test("V2 independent QRI and Futures contracts are Formal eligible", async () =>
     assert.equal(await Observation.validateFormalObservation(result.observation), true);
 });
 
+test("schema v1 session identity stays stable when freshness diagnostics add fields", async () => {
+    const input = fixture({ observedAt: "2026-10-15T20:11:19.694Z",
+        quotedAt: "2026-10-16T04:55:00+09:00" });
+    input.calendarDay = "2026-10-16";
+    input.tradingDate = "2026-10-16";
+    input.qri.tradingDate = "2026-10-16";
+    input.qri.confirmedAt = "2026-10-15T20:11:00.000Z";
+    const result = await build(input);
+    assert.deepEqual(result.observation.freshness.sessionIdentity,
+        { kind: "night", key: "2026-10-15" });
+    assert.deepEqual(Object.keys(result.observation.freshness.sessionIdentity).sort(),
+        ["key", "kind"]);
+    assert.equal(await Observation.validateFormalObservation(result.observation), true);
+});
+
 test("V3 and C8 stale Futures is ineligible and never becomes partial", async () => {
     const stale = fixture({ quotedAt: "2026-10-13T09:04:00+09:00" });
     const authority = await Authority.acceptMorningV5FormalAuthority(stale);

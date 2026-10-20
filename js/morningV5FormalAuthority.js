@@ -124,7 +124,11 @@
             return failure(freshness?.reason === "stale_reference" ? "futures_stale" :
                 "futures_freshness_invalid", relation, freshness);
         }
-        const sessionIdentity = clone(freshness.diagnostics?.observedSession || null);
+        const observedSession = freshness.diagnostics?.observedSession || null;
+        const sessionIdentity = object(observedSession) ? {
+            kind: observedSession.kind,
+            key: observedSession.key
+        } : null;
         if (!object(sessionIdentity) || !["day", "night"].includes(sessionIdentity.kind) ||
             !date(sessionIdentity.key)) return failure("futures_freshness_invalid", relation, freshness);
         const authority = { authorityVersion: AUTHORITY_VERSION,

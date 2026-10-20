@@ -49,7 +49,7 @@
         Object.values(value).forEach(freeze); return Object.freeze(value);
     }
 
-    function readinessFor({ status, reason, freshness }) {
+    function readinessFor({ status, reason, freshness, origin = null }) {
         const freshnessStatus = text(ownScalar(freshness, "status"));
         const freshnessReason = text(ownScalar(freshness, "reason"));
         const payloadValidation = text(ownScalar(freshness, "payloadValidation"));
@@ -62,7 +62,8 @@
             consumerState === "unverified") return "limited";
         if (consumerState === "valid_saved_fallback" ||
             REFERENCE_REASONS.has(freshnessReason) || freshnessStatus === "saved" ||
-            freshnessStatus === "stale" && payloadValidation === "valid") return "reference";
+            freshnessStatus === "stale" && payloadValidation === "valid" ||
+            status === "available" && origin === "history") return "reference";
         if (status === "unavailable" || payloadValidation === "unavailable") return "unavailable";
         if (status === "available" && (consumerState === "valid_current" ||
             ["fresh", "current", "fresh_current"].includes(freshnessStatus))) return "current";
@@ -73,8 +74,12 @@
         const status = text(ownScalar(value, "status")) || "unavailable";
         const reasonValue = ownScalar(value, "reason");
         const reason = text(reasonValue);
+        const freshnessOrigin = ownScalar(freshness, "origin");
+        const valueOrigin = ownScalar(value, "origin");
+        const authorityOrigin = ownScalar(section?.authority, "origin");
+        const origin = freshnessOrigin ?? valueOrigin ?? authorityOrigin;
         const result = { sourcePointer: pointer, status,
-            readiness: readinessFor({ status, reason, freshness }) };
+            readiness: readinessFor({ status, reason, freshness, origin }) };
         if (reasonValue !== undefined) result.reason = reasonValue;
         const field = (target, outputKey, source, sourceKey) => {
             const candidate = ownScalar(source, sourceKey);
@@ -84,10 +89,6 @@
         field(result, "freshnessReason", freshness, "reason");
         field(result, "consumerState", freshness, "consumerState");
         field(result, "payloadValidation", freshness, "payloadValidation");
-        const freshnessOrigin = ownScalar(freshness, "origin");
-        const valueOrigin = ownScalar(value, "origin");
-        const authorityOrigin = ownScalar(section?.authority, "origin");
-        const origin = freshnessOrigin ?? valueOrigin ?? authorityOrigin;
         if (origin !== undefined && origin !== null) result.origin = origin;
         if (contract !== undefined && contract !== null) result.contract = contract;
         if (dataTradingDate !== undefined && dataTradingDate !== null) {

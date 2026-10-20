@@ -142,6 +142,20 @@ test("partial Weekly is limited and unavailable Morning V5 stays unavailable", (
     assert.equal(entries.morningV5Formal.readiness, "unavailable");
 });
 
+test("saved Morning V5 Formal history remains reference even when accepted-time freshness was fresh", () => {
+    const sections = sectionsFixture();
+    sections.morningV5Formal = envelope("morningV5Formal", {
+        authority: { ...envelope("morningV5Formal").authority,
+            sourceClass: "formal_history", origin: "history" },
+        freshness: { status: "fresh", reason: "current_session" },
+        summary: { observationId: "formal-morning-v5|observation-1" }
+    });
+    const entry = Readiness.buildConsumerReadinessIndex(sections).summary.entries.morningV5Formal;
+    assert.deepEqual([entry.status, entry.readiness, entry.freshnessStatus,
+        entry.freshnessReason, entry.origin],
+    ["available", "reference", "fresh", "current_session", "history"]);
+});
+
 test("every index entry copies status, reason, freshness, contract and date from its authority", () => {
     const sections = sectionsFixture();
     const entries = Readiness.buildConsumerReadinessIndex(sections).summary.entries;
