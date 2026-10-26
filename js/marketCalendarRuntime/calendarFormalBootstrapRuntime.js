@@ -242,25 +242,42 @@ function createProductionRuntime(webContents) {
     "document.dispatchEvent(new CustomEvent('optionmap:calendar-formal-updated'))") });
 }
 
-function wrapNormalRuntime(normal, bootstrapRuntime) {
+function wrapNormalRuntime(normal, bootstrapRuntime, partialRuntime = null) {
   if (!normal?.check || !normal?.diagnostics || !bootstrapRuntime?.bootstrap)
     throw new TypeError("calendar_bootstrap_composition_invalid");
+  if (partialRuntime && (!partialRuntime.processGeneration || !partialRuntime.diagnostics))
+    throw new TypeError("calendar_partial_bootstrap_composition_invalid");
   let active = null;
   function check(request = {}) {
     if (active) return active;
     active = Promise.resolve(normal.check(request)).then(async result => {
       const diagnostic = normal.diagnostics().comparison, sources = diagnostic?.sourceResults;
-      let formalPersistence = { status: "not_attempted", reason: "source_cycle_incomplete" };
-      if (result?.state === "success" && Array.isArray(sources) && sources.length === SOURCE_IDS.length)
+      let formalPersistence = { status: "not_attempted", reason: "source_cycle_incomplete" },
+        partial = null;
+      if (partialRuntime && Array.isArray(sources) && sources.length === SOURCE_IDS.length &&
+          Number.isFinite(Date.parse(result?.checkedAt || "")) &&
+          /^[a-f0-9]{64}$/.test(diagnostic?.generationIdentity || ""))
+        partial = await partialRuntime.processGeneration({ sourceResults: sources,
+          acceptedAt: result.checkedAt, generationIdentity: diagnostic.generationIdentity });
+      // Partial source ownership has precedence. The legacy exact13 bootstrap is
+      // retained, but may run only when the partial coordinator proves an absent
+      // DB with zero eligible source-scoped mutations.
+      const legacyAllowed = !partialRuntime || partial?.legacyBootstrapEligible === true;
+      if (legacyAllowed && result?.state === "success" && Array.isArray(sources) &&
+          sources.length === SOURCE_IDS.length)
         formalPersistence = await bootstrapRuntime.bootstrap({ sourceResults: sources,
           checkedAt: result.checkedAt });
+      else if (partial) formalPersistence = partial;
       return { ...result, formalPersistence: { status: formalPersistence.status,
-        reason: formalPersistence.reason || null } };
+        reason: formalPersistence.reason || null,
+        ...(partial ? { writerExecution: partial.writerExecution,
+          committedSourceIds: partial.committedSourceIds } : {}) } };
     }).finally(() => { active = null; });
     return active;
   }
   return Object.freeze({ check, restore: normal.restore,
-    diagnostics: () => ({ ...normal.diagnostics(), formalBootstrap: bootstrapRuntime.diagnostics() }) });
+    diagnostics: () => ({ ...normal.diagnostics(), formalBootstrap: bootstrapRuntime.diagnostics(),
+      ...(partialRuntime ? { formalPartialBootstrap: partialRuntime.diagnostics() } : {}) }) });
 }
 
 module.exports = Object.freeze({ SOURCE_IDS, prepare, executeBootstrapInRenderer, create,

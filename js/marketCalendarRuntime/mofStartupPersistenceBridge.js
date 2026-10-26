@@ -35,8 +35,10 @@ function build(wc,readRuntime,onPersisted,production){
     if(!["ok","absent"].includes(loaded.status)||priorState&&!B1.validateCompatibleRuntimeState(priorState,E.SOURCE).valid||
       A.hash(runtimeStates[E.SOURCE]??null)!==A.hash(priorState))throw Error("startup_runtime_prestate_mismatch");
     phase="acquiring";audit.normalStarts++;}
-  function capture(normal,source){
+  function capture(normal,source,formalOwner=null){
     if(phase!=="acquiring")throw Error("startup_capture_invalid");
+    if(formalOwner==="partial_bootstrap"){
+      phase="skipped";result=A.freeze({status:"PASS",reason:"partial_bootstrap_owner",writerAttempts:0});return null;}
     const own=normal.sources?.find(s=>s.sourceId===E.SOURCE);
     if(own?.acquisitionStatus==="not_attempted"&&own.reasonClass==="already_succeeded_today"){
       phase="skipped";result=A.freeze({status:"PASS",reason:"already_succeeded_today",writerAttempts:0});return null;}

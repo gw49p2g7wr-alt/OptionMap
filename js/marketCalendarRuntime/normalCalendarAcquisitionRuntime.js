@@ -17,6 +17,7 @@ const Cycle = require("./formalShadowCycle.js");
 const Routes = require("./calendarRouteAuthority.js");
 const Network = require("./calendarNetworkPolicy.js");
 const Reader = require("./formalShadowElectronRead.js");
+const Crypto = require("node:crypto");
 const LaborStore = require("./laborRuntimeStateElectron.js");
 const CpiStore = require("./cpiRuntimeStateElectron.js");
 const BlsStore = require("./blsRuntimeStateElectron.js");
@@ -32,8 +33,10 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
   const mof = Mof.create({ acquisitionContract, fetchImpl, now });
   const boj = Boj.createShould({ fetchImpl, now });
   const legacyAcquire = acquire || Acquisition.createCalendarAcquisitionService({ fetchImpl }).acquire;
-  let captures = new Map(), active = null, last = null, mofResult = null;
-  const capture = result => captures.set(result.sourceId, Projection.projectAcquisition(result));
+  let captures = new Map(), active = null, last = null, mofResult = null,
+    generationIdentity = null;
+  const capture = result => captures.set(result.sourceId, Projection.projectAcquisition({ ...result,
+    generationIdentity }));
   const legacy = Manual.createCalendarManualCheckService({ acquisitionContract, now, simulator,
     builder: Mof.builder(Boj.builder(builder)), acquire: async request => {
       if (request.sourceId === Boj.SOURCE_ID && !acquire) return boj.acquire(request);
@@ -58,6 +61,7 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
   function check(request = {}) {
     if (active) return active;
     captures = new Map(); last = null; mofResult = null;
+    generationIdentity = Crypto.createHash("sha256").update(Crypto.randomUUID()).digest("hex");
     active = (async () => {
       const result = await operational.check(request);
       if (!captures.size) { last = { status: "skipped", reason: "no_fresh_acquisition" }; return result; }
@@ -68,17 +72,18 @@ function create({ fetchImpl, store, stores, readFormal, targetEnvironment, now,
           failedRoles: [], absenceAuthority: "none" });
         const before = await read();
         if (before.status !== "ok") { last = { status: "unsafe", reason: before.reason,
-          sourceResults }; return result; }
+          sourceResults, generationIdentity }; return result; }
         cycle = Cycle.create(before.snapshot, before.schemaFingerprint);
         const comparison = await Compare.compare({ sourceResults, formalSnapshot: before.snapshot, cycleContext: cycle });
-        last = { comparison, sourceResults, formalAudit: before.audit,
+        last = { comparison, sourceResults, generationIdentity, formalAudit: before.audit,
           snapshotIdentity: Cycle.get(cycle, before.snapshot).snapshotIdentity,
           performance: structuredClone(Cycle.get(cycle, before.snapshot).metrics),
           writerExecution: 0, writeAllowed: false, permission: "not_approved", absenceAuthority: "none" };
       } catch (_) { last = { status: "unsafe", reason: "normal_comparison_failed" }; }
       finally { if (cycle) Cycle.close(cycle); }
       return result;
-    })().finally(() => { active = null; captures = new Map(); mofResult = null; });
+    })().finally(() => { active = null; captures = new Map(); mofResult = null;
+      generationIdentity = null; });
     return active;
   }
   return Object.freeze({ check, restore: operational.restore,

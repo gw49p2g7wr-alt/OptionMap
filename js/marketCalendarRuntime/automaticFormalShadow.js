@@ -23,9 +23,21 @@ const noResult = sourceId => ({ sourceId, canonicalRecords: [], candidateStatus:
 function projectAcquisition(result) {
   const candidate = result.candidateEnvelope || {};
   return copy({ sourceId: result.sourceId, routeIdentity: result.routeIdentity || null,
+    generationIdentity: result.generationIdentity || null,
     canonicalRecords: candidate.canonicalRecords || [],
     candidateIdentity: candidate.candidateIdentity || null,
     candidateStatus: candidate.candidateStatus || "unavailable",
+    formalEligible: candidate.formalEligible === true,
+    parserStatus: candidate.parserStatus || "not_attempted",
+    structureGuardStatus: candidate.structureGuardStatus ||
+      (candidate.parserStatus === "success" ? "passed" : "failed"),
+    canonicalizationStatus: candidate.canonicalizationStatus ||
+      (candidate.candidateStatus === "available" ? "success" : "not_attempted"),
+    parserDiagnostics: candidate.parserDiagnostics || [],
+    canonicalDiagnostics: candidate.canonicalDiagnostics || [],
+    ambiguityCount: candidate.ambiguityCount ?? result.ambiguityCount ?? 0,
+    duplicateCount: candidate.duplicateCount ?? result.duplicateCount ?? 0,
+    identityCollisionCount: candidate.identityCollisionCount ?? result.identityCollisionCount ?? 0,
     acquisitionOutcome: result.acquisitionOutcome || "failed",
     failedRoles: result.failedRoles || [], documentHealth: (result.documentHealth || []).map(d => ({
       role: d.role, httpStatus: d.httpStatus ?? null, redirectCount: d.redirectCount ?? 0,

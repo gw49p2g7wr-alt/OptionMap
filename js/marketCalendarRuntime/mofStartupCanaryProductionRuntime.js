@@ -37,7 +37,8 @@ function createProductionRuntime(context,wc,normal){
       throw Error("production_startup_scope_invalid");
     await bridge.start(event,ticket,input.runtimeStates);normalResult=await normal.check(input);
     const source=normal.diagnostics().comparison?.sourceResults?.find(s=>s.sourceId===E.SOURCE);
-    const pending=bridge.capture(normalResult,source);
+    const formalOwner=normal.diagnostics().formalPartialBootstrap?.coordinator?.ownershipBySource?.[E.SOURCE]||null;
+    const pending=bridge.capture(normalResult,source,formalOwner);
     return {__mofStartupResult:normalResult,__mofStartupReceipt:pending};
   }
   function claim(event){const loaded=safety.load();

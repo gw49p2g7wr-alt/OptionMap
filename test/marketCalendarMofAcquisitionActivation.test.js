@@ -38,6 +38,8 @@ async function bootstrap({ readFailure = false } = {}) {
     } },
     "./js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js": {
       createProductionRuntime: () => ({ close() {} }), wrapNormalRuntime: normal => normal },
+    "./js/marketCalendarRuntime/calendarPartialBootstrapProductionRuntime.js": {
+      createProductionRuntime: () => ({ close() {} }) },
     "./js/security/networkUrlPolicy.js": {}, "./js/fullExportFileSave.js": { createSaveService: () => ({}) },
     "./js/morningV5FormalStore.js": { createProductionStore() {
       throw Error("morning_v5_store_must_remain_dormant"); } },

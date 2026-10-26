@@ -30,9 +30,13 @@ const calendarAcquisition = require(
 );
 const normalAcquisitionRuntime = require("./js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
 const calendarFormalBootstrap = require("./js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js");
+const calendarPartialBootstrap = require(
+  "./js/marketCalendarRuntime/calendarPartialBootstrapProductionRuntime.js"
+);
 let calendarShadowRuntime = null;
 let calendarCanaryRuntime = null;
 let calendarFormalBootstrapRuntime = null;
+let calendarPartialBootstrapRuntime = null;
 let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
 const morningV5FormalStore = require("./js/morningV5FormalStore.js");
@@ -224,11 +228,11 @@ ipcMain.handle("request-market-calendar-source", async (event, request) => {
 function ensureCalendarRuntime(webContents) {
   if (!calendarShadowRuntime) {
     const normal = normalAcquisitionRuntime.create({ webContents,
-      fetchImpl: (url, options) => net.fetch(url, options), runtimeStateOwner: "renderer",
-      acquire: request => calendarAcquisitionService.acquire(request) });
+      fetchImpl: (url, options) => net.fetch(url, options), runtimeStateOwner: "renderer" });
     calendarFormalBootstrapRuntime = calendarFormalBootstrap.createProductionRuntime(webContents);
+    calendarPartialBootstrapRuntime = calendarPartialBootstrap.createProductionRuntime(webContents);
     calendarShadowRuntime = calendarFormalBootstrap.wrapNormalRuntime(normal,
-      calendarFormalBootstrapRuntime);
+      calendarFormalBootstrapRuntime, calendarPartialBootstrapRuntime);
   }
   return calendarShadowRuntime;
 }
@@ -697,6 +701,7 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
     calendarCanaryRuntime?.close();calendarCanaryRuntime=null;
+    calendarPartialBootstrapRuntime?.close();calendarPartialBootstrapRuntime=null;
     calendarFormalBootstrapRuntime?.close();calendarFormalBootstrapRuntime=null;
     calendarShadowRuntime = null;
   });
