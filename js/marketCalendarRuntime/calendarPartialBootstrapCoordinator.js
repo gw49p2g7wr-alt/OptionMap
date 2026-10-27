@@ -1,8 +1,8 @@
 "use strict";
 
-// Main-owned CAL-PB-B4 coordinator. Acquisition stays with the existing normal
-// runtime; this layer only admits independently eligible, currently missing
-// sources and never enables existing-source revision execution.
+// Main-owned CAL-PB-B4/B5 coordinator. Acquisition stays with the existing
+// normal runtime; this layer admits only independently eligible source-scoped
+// first, missing-source, or immutable existing-source revision mutations.
 const Contract = require("../marketCalendarHistory/calendarPartialBootstrapContract.js");
 const Coverage = require("../marketCalendarHistory/calendarPartialCoverage.js");
 const Preparation = require("../marketCalendarHistory/calendarPartialSourcePreparation.js");
@@ -81,8 +81,6 @@ function createCalendarPartialBootstrapCoordinator({ readFormal, executionAuthor
     for (const sourceId of Contract.EXPECTED_SOURCE_IDS) {
       const eligibility = evaluated.results.find(value => value.sourceId === sourceId),
         present = projected.persistedSourceIds.includes(sourceId);
-      if (present) { rows.push({ sourceId, status: "existing_source_skipped",
-        reason: "existing_source_revision_wiring_disabled", owner: null }); continue; }
       if (!eligible.has(sourceId)) { rows.push({ sourceId, status: eligibility?.classification ||
         "not_attempted", reason: eligibility?.reason || "source_not_attempted", owner: null });
         continue; }
@@ -92,10 +90,16 @@ function createCalendarPartialBootstrapCoordinator({ readFormal, executionAuthor
       const plan = await Preparation.prepareCalendarFormalSourceMutation({ sourceId,
         acquisition: acquisitions.get(sourceId), formalSnapshot: current, acceptedAt,
         generation: generationIdentity, authority: clone(Preparation.AUTHORITY) });
-      if (!["ready_first_source", "ready_append_source"].includes(plan.status)) {
-        rows.push({ sourceId, status: "rejected", reason: plan.status === "ready_new_revision" ||
-          plan.status === "no_semantic_change" ? "existing_source_revision_wiring_disabled" :
-          plan.reason || "source_preparation_failed", owner: "partial_bootstrap" });
+      if (["no_semantic_change", "already_committed"].includes(plan.status)) {
+        rows.push({ sourceId, status: plan.status, reason: null,
+          owner: "partial_bootstrap", operation: plan.operationType,
+          planIdentity: plan.planIdentity });
+        continue;
+      }
+      if (!["ready_first_source", "ready_append_source", "ready_new_revision"].includes(
+        plan.status)) {
+        rows.push({ sourceId, status: "rejected",
+          reason: plan.reason || "source_preparation_failed", owner: "partial_bootstrap" });
         if (current.databaseStatus === "absent") stopped = true;
         continue;
       }
@@ -107,6 +111,20 @@ function createCalendarPartialBootstrapCoordinator({ readFormal, executionAuthor
       }
       const outcome = await executor.executeCalendarFormalSourceMutation({ plan,
         grant: issued.grant });
+      if (outcome.status === "already_committed" &&
+          outcome.durableReceipt?.verified === true) {
+        rows.push({ sourceId, status: "already_committed", reason: null,
+          owner: "partial_bootstrap", operation: outcome.operation,
+          planIdentity: plan.planIdentity,
+          snapshotFingerprint: outcome.durableReceipt.snapshotFingerprint });
+        const fresh = await descriptor(await readFormal());
+        if (!fresh.valid || fresh.value.databaseStatus !== "present") {
+          stopped = true; rows.at(-1).status = "readback_unavailable";
+          rows.at(-1).reason = fresh.reason || "formal_read_failed"; break;
+        }
+        current = fresh.value; projected = compactCoverage(current, failed);
+        continue;
+      }
       if (outcome.status !== "committed" || outcome.committed !== true ||
           outcome.durableReceipt?.verified !== true) {
         rows.push({ sourceId, status: outcome.status || "rejected",

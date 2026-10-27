@@ -1,6 +1,6 @@
 "use strict";
 
-// Fixed production composition for CAL-PB-B4. The hidden renderer receives an
+// Fixed production composition for CAL-PB-B4/B5. The hidden renderer receives an
 // already-authorized source plan only; grant issuance/consumption and durable
 // receipt acceptance remain main-owned.
 const fs = require("node:fs");
@@ -42,7 +42,7 @@ function createExecutor(executionAuthority) {
     const consumed = await executionAuthority.consumeGrant(input.grant, input.plan);
     if (!consumed.valid) return { status: "rejected", reason: consumed.reason, committed: false };
     if (consumed.binding.noOp || !["create_schema_and_commit_first_source",
-      "append_missing_source"].includes(consumed.binding.operation))
+      "append_missing_source", "append_source_revision"].includes(consumed.binding.operation))
       return { status: "rejected", reason: "operation_not_enabled", committed: false };
     const window = await HiddenWindow.createProductionWindow();
     try {

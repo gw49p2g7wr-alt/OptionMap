@@ -93,13 +93,13 @@ test("R5 a later BLS recovery appends only BLS to an existing twelve-source DB",
   assert.equal(result.coverage.formalPersistedSourceCount, 13);
 });
 
-test("R6 existing complete archive is write0 and revisions remain disabled", async () => {
+test("R6 existing complete unchanged archive is semantic write0", async () => {
   const before = await F.SourceFixture.snapshotWithSources(Contract.EXPECTED_SOURCE_IDS), h = runtime();
   await F.seed(h.indexedDB, before);
   const result = await run(h, await Acquisition.allSuccess()), after = await F.read(h.indexedDB);
   assert.equal(result.writerExecution, 0);
   assert.deepEqual(after, Object.fromEntries(Object.keys(after).map(field => [field, before[field]])));
-  assert(result.sourceResults.every(value => value.status === "existing_source_skipped"));
+  assert(result.sourceResults.every(value => value.status === "no_semantic_change"));
 });
 
 test("R7 two missing sources append in canonical order with one transaction each", async () => {

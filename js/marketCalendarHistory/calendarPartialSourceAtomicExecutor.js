@@ -262,7 +262,8 @@ async function executeAuthorizedMutationInRenderer(plan, operation, Core, schema
     }, fail = (status, reason, extra = {}) => ({ status, reason, committed: false,
       operation, sourceId: plan?.sourceId || null, snapshot: null, storeCounts: null,
       metrics: { ...metrics }, ...extra });
-  if (!plan || !["create_schema_and_commit_first_source", "append_missing_source"].includes(operation))
+  if (!plan || !["create_schema_and_commit_first_source", "append_missing_source",
+    "append_source_revision"].includes(operation))
     return fail("rejected", "operation_not_enabled");
   const fresh = await readFresh();
   if (fresh.status === "schema_mismatch") return fail("rejected", "schema_mismatch");
