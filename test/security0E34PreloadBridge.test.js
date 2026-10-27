@@ -20,16 +20,18 @@ const expectedKeys = [
   "getRuntimeMetadata",
   "readMorningV5Formal",
   "requestCalendarSource",
+  "saveCalendarExportJson",
   "saveFullExportJson"
 ];
 const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "getRuntimeMetadata", "readMorningV5Formal", "requestCalendarSource",
-  "saveFullExportJson"].includes(key));
+  "saveCalendarExportJson", "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
   fetchJpxPage: "fetch-daytrading-page",
   fetchOpenInterestListing: "fetch-jpx-open-interest-json",
   fetchParticipantListing: "fetch-jpx-participant-json",
   downloadJpxExcel: "download-daytrading-excel",
+  saveCalendarExportJson: "save-calendar-export-json",
   saveFullExportJson: "save-full-export-json"
 };
 
@@ -91,7 +93,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact eleven-method narrow bridge", () => {
+test("preload publishes only the exact twelve-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -135,8 +137,13 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
   await api.saveFullExportJson(exportRequest);
   assert.deepEqual(calls.at(-1), ["save-full-export-json", exportRequest]);
   assert.equal(calls.length, 1);
-  await api.fetchQriOptionPage("x".repeat(4096));
+  const calendarRequest = { fileName: "OptionMap-Calendar-Export-v1-2026-10-28T071500-JST.json",
+    json: "{}" };
+  await api.saveCalendarExportJson(calendarRequest);
+  assert.deepEqual(calls.at(-1), ["save-calendar-export-json", calendarRequest]);
   assert.equal(calls.length, 2);
+  await api.fetchQriOptionPage("x".repeat(4096));
+  assert.equal(calls.length, 3);
   await api.checkCalendarSources({ sourceIds: ["jp-boj-calendar", "jp-boj-calendar"] });
   assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))), ["check-market-calendar-sources",
     { sourceIds: ["jp-boj-calendar"] }]);

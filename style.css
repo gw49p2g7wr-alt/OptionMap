@@ -422,6 +422,9 @@ h1{
     gap: 2px 16px; margin: 6px 0 0; padding-left: 20px; color: #5b6675; font-size: .82rem; }
 .market-calendar-coverage-sources[hidden] { display: none; }
 .market-calendar-coverage-source { margin: 3px 0; }
+.market-calendar-export-action { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.market-calendar-export-action button { margin: 0; }
+.market-calendar-export-action p { margin: 0; color: #64748b; font-size: .84rem; }
 .market-calendar-coverage[data-state="invalid"],
 .market-calendar-coverage[data-state="unavailable"] { border-left-color: #b84f4f; background: #fff5f5; }
 .market-calendar-toolbar h3 { margin: 0 4px; min-width: 120px; font-size: 1.25rem; white-space: nowrap; }
@@ -530,6 +533,8 @@ h1{
     .market-calendar-update-region button { width: 100%; }
     .market-calendar-coverage { margin: 8px 0; padding: 7px 9px; font-size: .9rem; }
     .market-calendar-coverage-sources { grid-template-columns: minmax(0, 1fr); }
+    .market-calendar-export-action { align-items: stretch; flex-direction: column; gap: 5px; }
+    .market-calendar-export-action button { width: 100%; }
     .market-calendar-toolbar { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px auto;
         gap: 3px; margin: 8px 0 5px; }
     .market-calendar-toolbar button { min-width: 30px; min-height: 30px; padding: 0 4px; }

@@ -10,24 +10,15 @@
         root?.OptionMapMarketEventPresentation;
     const runtimeStore = commonJs ? require("./storage/marketCalendarRuntimeStateStore.js") :
         root?.OptionMapCalendarRuntimeStateStore;
-    const api = factory(consumer, dates, navigation, schedule, presentation, runtimeStore);
+    const sourceLabels = commonJs ? require("./marketCalendar/calendarSourceLabels.js") :
+        root?.OptionMapMarketCalendarSourceLabels;
+    const api = factory(consumer, dates, navigation, schedule, presentation, runtimeStore, sourceLabels);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapMarketCalendarMvp = api;
 })(typeof window !== "undefined" ? window : globalThis, function (consumer, dates, navigation, schedule,
-    presentation, runtimeStore) {
+    presentation, runtimeStore, sourceLabels) {
     "use strict";
-    const SOURCE_NAMES = Object.freeze({
-        "jp-boj-calendar": "日本銀行", "jp-stat-cpi": "総務省統計局・消費者物価指数",
-        "jp-stat-labor": "総務省統計局・労働力調査",
-        "jp-esri-machinery-orders-calendar": "内閣府・機械受注",
-        "jp-esri-sna-calendar": "内閣府・国民経済計算",
-        "us-fed-fomc-calendar": "米連邦準備制度", "us-bls-calendar": "米労働統計局",
-        "us-bea-calendar": "米経済分析局", "us-census-calendar": "米国勢調査局",
-        "jp-jpx-derivatives-calendar": "日本取引所・デリバティブ",
-        "jp-jpx-market-holidays": "日本取引所・休場日",
-        "us-nyse-market-holidays": "ニューヨーク証券取引所",
-        "jp-mof-jgb-auction-calendar": "財務省・国債入札"
-    });
+    const SOURCE_NAMES = sourceLabels.LABELS;
     const IMPORTANCE_NAMES = Object.freeze({ critical: "最重要", high: "重要", medium: "通常" });
     const SHORT_NAMES = Object.freeze({ BOJ_MPM: "日銀会合", BOJ_POLICY_DECISION: "日銀政策決定",
         BOJ_GOVERNOR_PRESS_CONFERENCE: "日銀総裁会見", JP_NATIONAL_CPI: "全国CPI",

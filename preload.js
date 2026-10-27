@@ -43,6 +43,16 @@ function invokeFullExportSave(args) {
   return ipcRenderer.invoke("save-full-export-json", request);
 }
 
+function invokeCalendarExportSave(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).sort().join("|") !== "fileName|json" ||
+      typeof request.fileName !== "string" || typeof request.json !== "string") {
+    return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  }
+  return ipcRenderer.invoke("save-calendar-export-json", request);
+}
+
 function invokeMorningV5Read(args) {
   const request = args[0];
   const current = args.length === 1 && request && typeof request === "object" &&
@@ -123,5 +133,6 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   requestCalendarSource: (...args) => invokeCalendarSource(args),
   evaluateMorningV5Formal: (...args) => invokeMorningV5Evaluation(args),
   readMorningV5Formal: (...args) => invokeMorningV5Read(args),
+  saveCalendarExportJson: (...args) => invokeCalendarExportSave(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)
 }));

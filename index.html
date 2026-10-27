@@ -63,6 +63,10 @@
             <p id="marketCalendarCoverageMessage" class="market-calendar-coverage-message" hidden></p>
             <ul id="marketCalendarCoverageSources" class="market-calendar-coverage-sources" hidden></ul>
         </section>
+        <section class="market-calendar-export-action" aria-labelledby="marketCalendarExportStatus">
+            <button id="marketCalendarExportButton" type="button">Calendar Export</button>
+            <p id="marketCalendarExportStatus" role="status" aria-live="polite">未実行</p>
+        </section>
         <div class="market-calendar-toolbar">
             <button id="marketCalendarPreviousMonth" type="button" aria-label="前月">‹</button>
             <h3 id="marketCalendarMonthTitle"></h3>
@@ -1586,6 +1590,7 @@
 <script src="js/marketCalendar/marketEventPresentation.js"></script>
 <script src="js/marketCalendar/eventTaxonomy.js"></script>
 <script src="js/marketCalendar/sourceRegistry.js"></script>
+<script src="js/marketCalendar/calendarSourceLabels.js"></script>
 <script src="js/marketCalendar/marketEventIdentity.js"></script>
 <script src="js/marketCalendar/authorityPolicy.js"></script>
 <script src="js/marketCalendar/sourceContract.js"></script>
@@ -1596,6 +1601,9 @@
 <script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
 <script src="js/marketCalendarHistory/calendarPartialCoverage.js"></script>
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
+<script src="js/calendarExportV1.js"></script>
+<script src="js/calendarExportRuntime.js"></script>
+<script src="js/calendarExportUi.js"></script>
 <script src="js/fullExportFormalTradingDateAuthority.js"></script>
 <script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>
 <script src="js/optionMapTimeTravelMvp.js"></script>
@@ -1641,6 +1649,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "evaluateMorningV5Formal",
     "requestCalendarSource",
     "readMorningV5Formal",
+    "saveCalendarExportJson",
     "saveFullExportJson"
 ]);
 function hasExactOptionMapBridge(bridge, expectedKeys) {

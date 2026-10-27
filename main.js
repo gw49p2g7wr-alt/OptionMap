@@ -39,6 +39,9 @@ let calendarFormalBootstrapRuntime = null;
 let calendarPartialBootstrapRuntime = null;
 let productionCanaryContext = null;
 const { createSaveService } = require("./js/fullExportFileSave.js");
+const { createSaveService: createCalendarExportSaveService } = require(
+  "./js/calendarExportFileSave.js"
+);
 const morningV5FormalStore = require("./js/morningV5FormalStore.js");
 const morningV5FormalWriterApi = require("./js/morningV5FormalWriter.js");
 const morningV5MainAuthorityBindingApi = require("./js/morningV5MainAuthorityBinding.js");
@@ -49,6 +52,7 @@ require("dotenv").config();
 
 const weeklyListingDiagnostics = createWeeklyListingAcquisitionDiagnostics();
 const fullExportSaveService = createSaveService({ dialog, fs, path, randomUUID });
+const calendarExportSaveService = createCalendarExportSaveService({ dialog, fs, path, randomUUID });
 const calendarAcquisitionService = calendarAcquisition.createCalendarAcquisitionService({
   fetchImpl: (url, options) => net.fetch(url, options)
 });
@@ -260,6 +264,14 @@ ipcMain.handle("save-full-export-json", (event, request) => {
     return { success: false, cancelled: false, reason: "invalid_export_window" };
   }
   return fullExportSaveService.save(owner, request);
+});
+
+ipcMain.handle("save-calendar-export-json", (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) {
+    return { success: false, cancelled: false, reason: "invalid_export_window" };
+  }
+  return calendarExportSaveService.save(owner, request);
 });
 
 ipcMain.handle("read-formal-morning-v5", async (event, request) => {
