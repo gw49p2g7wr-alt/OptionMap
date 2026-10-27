@@ -57,6 +57,12 @@
             <button id="marketCalendarUpdateButton" type="button">公式データを確認</button>
             <pre id="marketCalendarUpdateDetails" class="market-calendar-update-details" hidden></pre>
         </section>
+        <section id="marketCalendarCoverage" class="market-calendar-coverage"
+            aria-labelledby="marketCalendarCoverageStatus">
+            <p id="marketCalendarCoverageStatus" role="status" aria-live="polite">保存済みカレンダーを確認中…</p>
+            <p id="marketCalendarCoverageMessage" class="market-calendar-coverage-message" hidden></p>
+            <ul id="marketCalendarCoverageSources" class="market-calendar-coverage-sources" hidden></ul>
+        </section>
         <div class="market-calendar-toolbar">
             <button id="marketCalendarPreviousMonth" type="button" aria-label="前月">‹</button>
             <h3 id="marketCalendarMonthTitle"></h3>
@@ -1588,6 +1594,7 @@
 <script src="js/marketCalendarHistory/historyContract.js"></script>
 <script src="js/marketCalendarHistory/historyIntegrity.js"></script>
 <script src="js/marketCalendarHistory/productionSchemaV1.js"></script>
+<script src="js/marketCalendarHistory/calendarPartialCoverage.js"></script>
 <script src="js/marketCalendarHistory/readOnlyCalendarConsumer.js"></script>
 <script src="js/fullExportFormalTradingDateAuthority.js"></script>
 <script src="js/timeTravel/optionMapHistoricalReadModel.js"></script>

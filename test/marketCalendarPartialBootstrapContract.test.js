@@ -265,7 +265,7 @@ test("PB9 schema v1, production writer authority and exact13 bootstrap remain un
   assert.equal(Bootstrap.SOURCE_IDS.length, 13);
 });
 
-test("PB10 contract layer has no DB/writer/IPC and is not wired to bootstrap, UI or exports", () => {
+test("PB10 contract stays writer-free while the pure coverage projection is available to readonly UI", () => {
   const root = path.join(__dirname, ".."), contractSource = fs.readFileSync(path.join(root,
     "js/marketCalendarHistory/calendarPartialBootstrapContract.js"), "utf8"), coverageSource =
     fs.readFileSync(path.join(root, "js/marketCalendarHistory/calendarPartialCoverage.js"), "utf8");
@@ -273,10 +273,16 @@ test("PB10 contract layer has no DB/writer/IPC and is not wired to bootstrap, UI
     assert.doesNotMatch(source, /indexedDB|ipcMain|ipcRenderer|executeBootstrap|readwrite/);
     assert.doesNotMatch(source, /require\([^)]*(?:Writer|Executor|main\.js|preload\.js)/i);
   }
-  for (const file of ["main.js", "preload.js", "index.html",
-    "js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js", "js/marketCalendarMvp.js",
-    "js/fullExportCollector.js"]) {
+  for (const file of ["main.js", "preload.js",
+    "js/marketCalendarRuntime/calendarFormalBootstrapRuntime.js", "js/fullExportCollector.js"]) {
     const source = fs.readFileSync(path.join(root, file), "utf8");
     assert.doesNotMatch(source, /calendarPartialBootstrapContract|calendarPartialCoverage/, file);
   }
+  assert.doesNotMatch(fs.readFileSync(path.join(root, "js/marketCalendarMvp.js"), "utf8"),
+    /calendarPartialBootstrapContract/);
+  assert.match(fs.readFileSync(path.join(root, "index.html"), "utf8"),
+    /js\/marketCalendarHistory\/calendarPartialCoverage\.js/);
+  assert.match(fs.readFileSync(path.join(root,
+    "js/marketCalendarHistory/readOnlyCalendarConsumer.js"), "utf8"),
+    /calendarPartialCoverage\.js/);
 });

@@ -13,11 +13,13 @@ function fixture({ enabled = true, check } = {}) {
     marketCalendarUpdateRegion: node(), marketCalendarUpdateStatus: node(),
     marketCalendarUpdateButton: node(), marketCalendarUpdateDetails: node(),
     marketCalendarUpdateQualifier: node(), marketCalendarGrid: { sentinel: "grid" },
-    marketCalendarTimeTravelButton: { sentinel: "time-travel" } }, document = {
-    getElementById: id => nodes[id] || null }, bridge = { checkCalendarSources: check ||
+    marketCalendarTimeTravelButton: { sentinel: "time-travel" } }, events = [], document = {
+    getElementById: id => nodes[id] || null,
+    defaultView: { CustomEvent: class { constructor(type) { this.type = type; } } },
+    dispatchEvent: event => { events.push(event.type); return true; } }, bridge = { checkCalendarSources: check ||
       (async () => ({ state: "success", checkedAt: "2026-09-25T05:32:00.000Z",
         requestedSourceCount: 12, successfulSourceCount: 12, sources: [], failedSourceIds: [] })) };
-  return { nodes, controller: Controller.mount({ document, bridge }) };
+  return { nodes, events, controller: Controller.mount({ document, bridge }) };
 }
 
 test("idle→checking→12/12 successをbackground表示しgrid/Time Travelを保持", async () => {
@@ -33,6 +35,7 @@ test("idle→checking→12/12 successをbackground表示しgrid/Time Travelを�
   release(); await pending;
   assert.match(f.nodes.marketCalendarUpdateStatus.textContent, /12 \/ 12 source/);
   assert.equal(f.nodes.marketCalendarUpdateButton.disabled, false);
+  assert.deepEqual(f.events, ["optionmap:calendar-runtime-state-updated"]);
 });
 
 test("checking中の連打はcontrollerでも同一Promiseを共有", async () => {

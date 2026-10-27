@@ -414,6 +414,16 @@ h1{
 .market-calendar-update-details { grid-column: 1 / -1; margin: 4px 0 0; padding: 8px;
     white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: #fff;
     color: #7c2d2d; font: inherit; font-size: .82rem; }
+.market-calendar-coverage { margin: 10px 0 12px; padding: 8px 12px; border-left: 3px solid #6b8db8;
+    border-radius: 6px; background: #f6f9fd; color: #263a55; overflow-wrap: anywhere; }
+.market-calendar-coverage p { margin: 0; }
+.market-calendar-coverage-message { margin-top: 3px !important; color: #5b6675; font-size: .84rem; }
+.market-calendar-coverage-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 16px; margin: 6px 0 0; padding-left: 20px; color: #5b6675; font-size: .82rem; }
+.market-calendar-coverage-sources[hidden] { display: none; }
+.market-calendar-coverage-source { margin: 3px 0; }
+.market-calendar-coverage[data-state="invalid"],
+.market-calendar-coverage[data-state="unavailable"] { border-left-color: #b84f4f; background: #fff5f5; }
 .market-calendar-toolbar h3 { margin: 0 4px; min-width: 120px; font-size: 1.25rem; white-space: nowrap; }
 .market-calendar-toolbar button { min-width: 38px; min-height: 38px; margin: 0; }
 .market-calendar-toolbar #marketCalendarToday { margin-left: auto; padding: 0 14px; }
@@ -518,6 +528,8 @@ h1{
     .market-calendar-panel { padding: 10px; }
     .market-calendar-update-region { grid-template-columns: minmax(0, 1fr); }
     .market-calendar-update-region button { width: 100%; }
+    .market-calendar-coverage { margin: 8px 0; padding: 7px 9px; font-size: .9rem; }
+    .market-calendar-coverage-sources { grid-template-columns: minmax(0, 1fr); }
     .market-calendar-toolbar { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px auto;
         gap: 3px; margin: 8px 0 5px; }
     .market-calendar-toolbar button { min-width: 30px; min-height: 30px; padding: 0 4px; }

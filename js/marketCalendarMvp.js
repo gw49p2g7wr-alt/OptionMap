@@ -8,11 +8,13 @@
     const schedule = commonJs ? require("./marketCalendar/marketEventSchedule.js") : root?.OptionMapMarketEventSchedule;
     const presentation = commonJs ? require("./marketCalendar/marketEventPresentation.js") :
         root?.OptionMapMarketEventPresentation;
-    const api = factory(consumer, dates, navigation, schedule, presentation);
+    const runtimeStore = commonJs ? require("./storage/marketCalendarRuntimeStateStore.js") :
+        root?.OptionMapCalendarRuntimeStateStore;
+    const api = factory(consumer, dates, navigation, schedule, presentation, runtimeStore);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapMarketCalendarMvp = api;
 })(typeof window !== "undefined" ? window : globalThis, function (consumer, dates, navigation, schedule,
-    presentation) {
+    presentation, runtimeStore) {
     "use strict";
     const SOURCE_NAMES = Object.freeze({
         "jp-boj-calendar": "日本銀行", "jp-stat-cpi": "総務省統計局・消費者物価指数",
@@ -95,6 +97,48 @@
         return events.filter(event => event.calendarDateStart <= calendarDate &&
             calendarDate <= event.calendarDateEnd);
     }
+    function coverageViewModel(result) {
+        const unavailable = (state, statusText) => Object.freeze({ state, statusText, issues: [] });
+        if (result?.status === "absent")
+            return unavailable("absent", "保存済みカレンダー：まだありません");
+        if (["schema_mismatch", "invalid"].includes(result?.status))
+            return unavailable("invalid", "保存済みカレンダーを確認できません（形式または整合性エラー）");
+        if (result?.status !== "available" || !result.coverage)
+            return unavailable("unavailable", "保存済みカレンダーを読み込めませんでした");
+        const projected = result.coverage;
+        if (projected.completeness === "invalid")
+            return unavailable("invalid", "保存済みカレンダーを確認できません（形式または整合性エラー）");
+        if (projected.formalAvailability === "absent")
+            return unavailable("absent", "保存済みカレンダー：まだありません");
+        const issues = projected.sources.flatMap(source => {
+            const label = SOURCE_NAMES[source.sourceId] || "不明なsource";
+            if (source.formalState === "formal_absent") return [source.runtimeState === "runtime_failed" ?
+                `${label}：現在確認できません` : `${label}：未保存`];
+            if (source.formalState === "formal_present" && source.runtimeState === "runtime_failed")
+                return [`${label}：保存済みデータあり／最新取得は失敗`];
+            return [];
+        });
+        return Object.freeze({ state: projected.completeness === "complete" ? "full" : "partial",
+            statusText: `保存済みカレンダー：${projected.coverageCount} / ${projected.expectedCount} source`,
+            issues: Object.freeze(issues) });
+    }
+    function renderCoverage(panel, result) {
+        const region = panel.querySelector("#marketCalendarCoverage"), status = panel.querySelector(
+            "#marketCalendarCoverageStatus"), message = panel.querySelector(
+            "#marketCalendarCoverageMessage"), list = panel.querySelector("#marketCalendarCoverageSources"),
+            view = coverageViewModel(result);
+        if (!region || !status || !message || !list) return view;
+        region.dataset.state = view.state; status.textContent = view.statusText;
+        message.hidden = true; message.textContent = ""; list.hidden = true;
+        list.replaceChildren();
+        if (view.issues.length === 1) {
+            message.textContent = view.issues[0]; message.hidden = false;
+        } else if (view.issues.length > 1) {
+            for (const issue of view.issues) appendText(list, "li", "market-calendar-coverage-source", issue);
+            list.hidden = false;
+        }
+        return view;
+    }
     function renderMonth(panel, result, grid, selectedDate, today, onSelect) {
         const status = panel.querySelector("#marketCalendarStatus"), container = panel.querySelector(
             "#marketCalendarGrid");
@@ -168,11 +212,28 @@
         }
     }
     function mount({ document = globalThis.document, indexedDB = globalThis.indexedDB,
-        keyRange = globalThis.IDBKeyRange } = {}) {
+        keyRange = globalThis.IDBKeyRange, readRuntimeStates } = {}) {
         const panel = document?.getElementById("marketCalendarPanel"); if (!panel) return null;
         let selectedDate = todayJst(), year = Number(selectedDate.slice(0, 4)),
             month = Number(selectedDate.slice(5, 7)), monthSequence = 0, daySequence = 0,
-            currentGrid = null, monthResult = null;
+            coverageSequence = 0, currentGrid = null, monthResult = null;
+        if (typeof readRuntimeStates !== "function") {
+            try { const store = runtimeStore.createRuntimeStateStore({ indexedDB,
+                targetEnvironment: "browser_runtime" }); readRuntimeStates = () => store.readAll(); }
+            catch (_error) { readRuntimeStates = async () => ({ status: "unavailable", value: [] }); }
+        }
+        async function refreshCoverage() {
+            const requestId = ++coverageSequence, status = panel.querySelector(
+                "#marketCalendarCoverageStatus");
+            if (status) status.textContent = "保存済みカレンダーを確認中…";
+            let runtimeStates = [];
+            try { const runtime = await readRuntimeStates();
+                if (runtime?.status === "ok" && Array.isArray(runtime.value)) runtimeStates = runtime.value; }
+            catch (_error) {}
+            const result = await consumer.readCoverage({ indexedDB, runtimeStates });
+            if (requestId === coverageSequence) renderCoverage(panel, result);
+            return result;
+        }
         async function refreshSelected() {
             const requestId = ++daySequence, date = selectedDate;
             panel.querySelector("#marketCalendarDetailStatus").textContent = "経済イベントを読み込み中…";
@@ -201,6 +262,7 @@
             if (requestId !== monthSequence) return;
             monthResult = result;
             renderMonth(panel, result, grid, selectedDate, todayJst(), selectDate);
+            refreshCoverage();
             refreshSelected();
         }
         function move(offset) { const next = shiftMonth(year, month, offset);
@@ -213,12 +275,14 @@
             selectedDate = todayJst(); year = Number(selectedDate.slice(0, 4));
             month = Number(selectedDate.slice(5, 7)); refreshMonth(); });
         document.addEventListener("optionmap:calendar-formal-updated", refreshMonth);
-        refreshMonth(); return Object.freeze({ refreshMonth, selectDate });
+        document.addEventListener("optionmap:calendar-runtime-state-updated", refreshCoverage);
+        refreshMonth(); return Object.freeze({ refreshMonth, refreshCoverage, selectDate });
     }
     if (typeof document !== "undefined") {
         if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => mount());
         else mount();
     }
     return Object.freeze({ SOURCE_NAMES, IMPORTANCE_NAMES, todayJst, monthGrid, monthRange,
-        shiftMonth, selectedDateHeading, eventsForDate, viewModel, renderMonth, renderDetail, mount });
+        shiftMonth, selectedDateHeading, eventsForDate, viewModel, coverageViewModel,
+        renderCoverage, renderMonth, renderDetail, mount });
 });

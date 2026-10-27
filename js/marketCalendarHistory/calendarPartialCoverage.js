@@ -1,9 +1,17 @@
+(function (root, factory) {
+  const node = typeof module === "object" && module.exports && !root?.document,
+    api = factory(node ? require("../marketCalendar/sourceRegistry.js") :
+      root.OptionMapMarketEventSourceRegistry,
+    node ? require("./productionSchemaV1.js") : root.OptionMapMarketCalendarProductionSchemaV1);
+  if (node) module.exports = api;
+  if (root) root.OptionMapMarketCalendarPartialCoverage = api;
+})(typeof window !== "undefined" ? window : globalThis, function (Registry, Schema) {
 "use strict";
 
 // Pure read-only projection. Formal archive state and mutable Runtime State
 // remain separate authorities in every per-source row.
-const Contract = require("./calendarPartialBootstrapContract.js");
-const Schema = require("./productionSchemaV1.js");
+const SOURCE_SET_ID = "calendar-source-set-v2", SOURCE_SET_VERSION = 2,
+  EXPECTED_SOURCE_IDS = Object.freeze([...Registry.getSourceSet(SOURCE_SET_VERSION).sourceIds]);
 
 const STATES = Object.freeze(["formal_present", "formal_absent", "formal_invalid",
   "runtime_success", "runtime_failed", "runtime_not_attempted", "runtime_unknown"]);
@@ -69,7 +77,7 @@ function projectPartialCoverage({ formalSnapshot, runtimeStates = [], schemaVers
     else runtimeBySource.set(value?.sourceId, value);
   }
   const schemaValid = validSnapshot && schemaVersion === Schema.VERSION,
-    sources = Contract.EXPECTED_SOURCE_IDS.map(sourceId => {
+    sources = EXPECTED_SOURCE_IDS.map(sourceId => {
       const formal = formalProjection(sourceId, snapshot, schemaValid),
         runtimeState = duplicateRuntime.has(sourceId) ? { state: "runtime_unknown",
           reason: "runtime_state_duplicate", authority: "runtime_state",
@@ -78,7 +86,7 @@ function projectPartialCoverage({ formalSnapshot, runtimeStates = [], schemaVers
         runtimeState: runtimeState.state, coverageState: formal.state,
         reason: formal.reason || runtimeState.reason || null,
         formal: freeze(formal), runtime: freeze(runtimeState) });
-    }), expected = new Set(Contract.EXPECTED_SOURCE_IDS), unexpectedSourceIds = [...new Set([
+    }), expected = new Set(EXPECTED_SOURCE_IDS), unexpectedSourceIds = [...new Set([
       ...fields.flatMap(field => snapshot[field].map(value => value?.sourceId)),
       ...runtime.map(value => value?.sourceId)
     ].filter(sourceId => typeof sourceId === "string" && !expected.has(sourceId)))].sort(),
@@ -87,14 +95,16 @@ function projectPartialCoverage({ formalSnapshot, runtimeStates = [], schemaVers
       value.formalState === "formal_absent").map(value => value.sourceId),
     invalidSourceIds = [...sources.filter(value => value.formalState === "formal_invalid")
       .map(value => value.sourceId), ...unexpectedSourceIds], coverageCount = persistedSourceIds.length,
-    expectedCount = Contract.EXPECTED_SOURCE_IDS.length, completeness = invalidSourceIds.length
+    expectedCount = EXPECTED_SOURCE_IDS.length, completeness = invalidSourceIds.length
       ? "invalid" : coverageCount === expectedCount ? "complete" : coverageCount ? "partial" : "none",
     formalAvailability = coverageCount ? "available" : invalidSourceIds.length ? "invalid" : "absent";
-  return freeze({ sourceSetIdentity: Contract.SOURCE_SET_ID,
-    sourceSetVersion: Contract.SOURCE_SET_VERSION,
-    expectedSourceIds: [...Contract.EXPECTED_SOURCE_IDS], persistedSourceIds, absentSourceIds,
+  return freeze({ sourceSetIdentity: SOURCE_SET_ID,
+    sourceSetVersion: SOURCE_SET_VERSION,
+    expectedSourceIds: [...EXPECTED_SOURCE_IDS], persistedSourceIds, absentSourceIds,
     invalidSourceIds, unexpectedSourceIds, coverageCount, expectedCount, completeness,
     formalAvailability, sources });
 }
 
-module.exports = Object.freeze({ STATES, projectPartialCoverage });
+return Object.freeze({ STATES, SOURCE_SET_ID, SOURCE_SET_VERSION, EXPECTED_SOURCE_IDS,
+  projectPartialCoverage });
+});

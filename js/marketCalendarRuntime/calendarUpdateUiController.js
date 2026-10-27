@@ -19,6 +19,11 @@
         nodes.qualifier.textContent = view.writerQualifier;
         return view;
     }
+    function notifyRuntimeStateUpdated(document) {
+        const CustomEvent = document?.defaultView?.CustomEvent;
+        if (typeof document?.dispatchEvent === "function" && typeof CustomEvent === "function")
+            document.dispatchEvent(new CustomEvent("optionmap:calendar-runtime-state-updated"));
+    }
     function mount({ document = globalThis.document, bridge = globalThis.optionMapBridge,
         enabled, restoreState, autoStartup = false, runtime } = {}) {
         const panel = document?.getElementById("marketCalendarPanel"), region =
@@ -44,9 +49,11 @@
         }
         render(nodes, state);
         const ready = typeof restoreState === "function" ? Promise.resolve().then(restoreState)
-            .then(restored => { if (!manualStarted && restored) { state = restored; render(nodes, state); } },
+            .then(restored => { if (!manualStarted && restored) { state = restored; render(nodes, state);
+                notifyRuntimeStateUpdated(document); } },
                 () => { if (!manualStarted) { state = { ...state,
-                    runtimeStateDiagnostics: ["runtime_state_restore_failed"] }; render(nodes, state); } })
+                    runtimeStateDiagnostics: ["runtime_state_restore_failed"] }; render(nodes, state);
+                    notifyRuntimeStateUpdated(document); } })
             : Promise.resolve();
         const startupReady = ready.then(() => {
             if (!autoStartup || manualStarted) return;
@@ -54,7 +61,8 @@
             activePromise = Promise.resolve().then(() => runtime.startup())
                 .then(result => { state = result || { state: "unavailable" }; }, () => {
                     state = { state: "failed", runtimeStateDiagnostics: ["runtime_state_restore_failed"] };
-                }).finally(() => { activePromise = null; render(nodes, state); });
+                }).finally(() => { activePromise = null; render(nodes, state);
+                    notifyRuntimeStateUpdated(document); });
             return activePromise;
         });
         function check(sourceIds) {
@@ -67,7 +75,8 @@
                 return state; }, () => { state = { state: "failed", mode: "writer_disabled",
                     requestedSourceCount: sourceIds?.length || 0, successfulSourceCount: 0,
                     sources: [], failedSourceIds: sourceIds || [] }; return state; })
-                .finally(() => { activePromise = null; render(nodes, state); });
+                .finally(() => { activePromise = null; render(nodes, state);
+                    notifyRuntimeStateUpdated(document); });
             return activePromise;
         }
         nodes.button.addEventListener("click", () => check(state.state === "partial"
