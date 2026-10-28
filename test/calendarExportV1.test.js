@@ -1,6 +1,7 @@
 "use strict";
 
-const test = require("node:test"), assert = require("node:assert/strict");
+const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"),
+  path = require("node:path"), vm = require("node:vm");
 const { IDBFactory } = require("fake-indexeddb");
 const Export = require("../js/calendarExportV1.js");
 const Coverage = require("../js/marketCalendarHistory/calendarPartialCoverage.js");
@@ -10,6 +11,8 @@ const Schema = require("../js/marketCalendarHistory/productionSchemaV1.js");
 const Fixture = require("./fixtures/marketCalendar/partialSourcePreparationFixture.js");
 const Preparation = require("../js/marketCalendarHistory/calendarPartialSourcePreparation.js");
 const Canonicalizer = require("../js/marketCalendar/marketEventCanonicalizer.js");
+const Importance = require("../js/marketCalendar/importancePolicy.js");
+const Labels = require("../js/marketCalendar/calendarSourceLabels.js");
 
 const BLS = "us-bls-calendar", MOF = "jp-mof-jgb-auction-calendar",
   GENERATED = "2026-10-28T00:00:00.000Z", APP = "1.1.0-beta.15";
@@ -22,6 +25,32 @@ function archive(snapshot, runtimeStates = []) {
 }
 const create = (archiveResult, runtimeStates = []) => Export.create({ appVersion: APP,
   generatedAt: GENERATED, archiveResult, runtimeStates });
+
+function loadBrowser(context, relative) {
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", relative), "utf8"), context,
+    { filename: relative });
+}
+async function browserRuntime({ indexedDB = new IDBFactory(), sourceIds = ["jp-boj-calendar", BLS] } = {}) {
+  const snapshot = await Fixture.snapshotWithSources(sourceIds), context = vm.createContext({
+    console, document: {}, indexedDB, structuredClone, setTimeout, clearTimeout, URL, Intl, Date,
+    OptionMapMarketCalendarPartialCoverage: Coverage,
+    OptionMapMarketEventImportancePolicy: Importance,
+    OptionMapMarketCalendarSourceLabels: Labels
+  });
+  context.window = context; context.globalThis = context;
+  context.OptionMapMarketCalendarReadOnlyConsumer = { readArchive: async ({ runtimeStates }) =>
+    archive(snapshot, runtimeStates) };
+  loadBrowser(context, "js/calendarExportV1.js");
+  loadBrowser(context, "js/calendarExportRuntime.js");
+  const eagerlyCapturedStore = context.OptionMapCalendarRuntimeStateStore;
+  loadBrowser(context, "js/marketCalendar/sourceRegistry.js");
+  loadBrowser(context, "js/marketCalendarRuntime/sourceUpdateState.js");
+  loadBrowser(context, "js/storage/marketCalendarRuntimeStateStore.js");
+  return { context, indexedDB, snapshot, eagerlyCapturedStore };
+}
+const runtimeState = (sourceId, at, changes = {}) => ({ sourceId, lastAttemptAt: at,
+  lastSuccessAt: at, lastOutcome: "success", retryAfter: null, lastHttpStatus: 200,
+  lastDiagnosticClass: null, coordinatorVersion: 1, ...changes });
 
 test("E1 13/13 full export has exact schema, populated events and deterministic order", async () => {
   const snapshot = await Fixture.snapshotWithSources(Coverage.EXPECTED_SOURCE_IDS), first = create(archive(snapshot)),
@@ -210,4 +239,75 @@ test("export runtime performs read-only projection and creates no Runtime State 
   assert.equal(value.events.length, 1);
   assert.deepEqual(after, before);
   assert.equal(after.some(item => item.name === "optionMapMarketCalendarRuntimeState"), false);
+  assert.equal(value.calendarSourceStatus.every(row => row.runtimeAvailability === "absent"), true);
+});
+
+test("C2 browser load order late-resolves the existing Runtime Store and exports BOJ/BLS state", async () => {
+  const fixture = await browserRuntime(), Store = fixture.context.OptionMapCalendarRuntimeStateStore,
+    originalCreate = Store.createRuntimeStateStore, seed = originalCreate({ indexedDB: fixture.indexedDB,
+      targetEnvironment: "browser_runtime" }), bojAt = "2026-10-27T20:42:37.859Z",
+    blsSuccess = "2026-10-20T20:27:04.238Z", blsAttempt = "2026-10-27T11:06:01.003Z";
+  assert.equal(fixture.eagerlyCapturedStore, undefined);
+  assert.equal((await seed.write("jp-boj-calendar", runtimeState("jp-boj-calendar", bojAt))).status, "ok");
+  assert.equal((await seed.write(BLS, runtimeState(BLS, blsSuccess))).status, "ok");
+  assert.equal((await seed.write(BLS, runtimeState(BLS, blsAttempt, { lastSuccessAt: blsSuccess,
+    lastOutcome: "failure", retryAfter: null, lastHttpStatus: 403,
+    lastDiagnosticClass: "parser_structure_change" }))).status, "ok");
+  let reads = 0;
+  fixture.context.OptionMapCalendarRuntimeStateStore = Object.freeze({ ...Store,
+    createRuntimeStateStore: options => { const store = originalCreate(options); return Object.freeze({
+      ...store, readAll: async () => { reads++; return store.readAll(); } }); } });
+  const value = await fixture.context.OptionMapCalendarExportRuntime.create({ indexedDB: fixture.indexedDB })
+    .exportCurrent({ appVersion: APP, generatedAt: GENERATED }), boj = value.calendarSourceStatus
+      .find(row => row.sourceId === "jp-boj-calendar"), bls = value.calendarSourceStatus
+      .find(row => row.sourceId === BLS);
+  assert.equal(reads, 1);
+  assert.deepEqual([boj.formalAvailability, boj.runtimeAvailability, boj.latestAcquisition,
+    boj.lastAttemptAt, boj.lastSuccessAt], ["available", "available", "success", bojAt, bojAt]);
+  assert.deepEqual([bls.formalAvailability, bls.runtimeAvailability, bls.latestAcquisition,
+    bls.lastAttemptAt, bls.lastSuccessAt, bls.reason], ["available", "available", "failed",
+    blsAttempt, blsSuccess, "parser_structure_change"]);
+  assert.equal(value.events.some(event => event.identity.sourceId === BLS), true);
+});
+
+test("C2 browser runtime keeps absent Runtime DB as legitimate unknown without creating it", async () => {
+  const fixture = await browserRuntime({ sourceIds: [BLS] }), before = await fixture.indexedDB.databases(),
+    value = await fixture.context.OptionMapCalendarExportRuntime.create({ indexedDB: fixture.indexedDB })
+      .exportCurrent({ appVersion: APP, generatedAt: GENERATED }), after = await fixture.indexedDB.databases(),
+    bls = value.calendarSourceStatus.find(row => row.sourceId === BLS);
+  assert.deepEqual(after, before);
+  assert.equal(after.some(row => row.name === "optionMapMarketCalendarRuntimeState"), false);
+  assert.deepEqual([bls.formalAvailability, bls.runtimeAvailability, bls.latestAcquisition,
+    bls.lastAttemptAt, bls.lastSuccessAt], ["available", "absent", "unknown", null, null]);
+  assert.equal(value.events.some(event => event.identity.sourceId === BLS), true);
+});
+
+test("C2 invalid Runtime schema is explicit and never downgrades Formal BLS history", async () => {
+  const factory = new IDBFactory();
+  await new Promise((resolve, reject) => { const request = factory.open(
+    "optionMapMarketCalendarRuntimeState", 2);
+    request.onupgradeneeded = () => request.result.createObjectStore("unexpected", { keyPath: "id" });
+    request.onerror = () => reject(request.error); request.onsuccess = () => {
+      request.result.close(); resolve(); };
+  });
+  const fixture = await browserRuntime({ indexedDB: factory, sourceIds: [BLS] }), value =
+    await fixture.context.OptionMapCalendarExportRuntime.create({ indexedDB: factory }).exportCurrent({
+      appVersion: APP, generatedAt: GENERATED }), bls = value.calendarSourceStatus
+      .find(row => row.sourceId === BLS), catalog = await factory.databases();
+  assert.deepEqual(catalog.find(row => row.name === "optionMapMarketCalendarRuntimeState"),
+    { name: "optionMapMarketCalendarRuntimeState", version: 2 });
+  assert.deepEqual([bls.formalAvailability, bls.runtimeAvailability, bls.latestAcquisition,
+    bls.reason], ["available", "invalid", "invalid", "schema_mismatch"]);
+  assert.equal(value.events.some(event => event.identity.sourceId === BLS), true);
+});
+
+test("C2 Runtime read failure is unavailable rather than a silent legitimate unknown", async () => {
+  const broken = { databases: async () => { throw new Error("private detail"); }, open() {} },
+    fixture = await browserRuntime({ indexedDB: broken, sourceIds: [BLS] }), value =
+      await fixture.context.OptionMapCalendarExportRuntime.create({ indexedDB: broken }).exportCurrent({
+        appVersion: APP, generatedAt: GENERATED }), bls = value.calendarSourceStatus
+        .find(row => row.sourceId === BLS);
+  assert.deepEqual([bls.formalAvailability, bls.runtimeAvailability, bls.latestAcquisition,
+    bls.reason], ["available", "unavailable", "unavailable", "runtime_state_access_failed"]);
+  assert.equal(value.events.some(event => event.identity.sourceId === BLS), true);
 });

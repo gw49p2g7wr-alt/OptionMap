@@ -122,15 +122,23 @@ function (Coverage, Importance, SourceLabels) {
             readiness: Object.freeze({ status: "formal_reference_limited",
                 reason: "economic_values_not_acquired" }) });
     }
-    function sourceStatuses(archiveResult, runtimeStates) {
+    function sourceStatuses(archiveResult, runtimeStates, runtimeStateRead) {
         const rows = archiveResult?.coverage?.sources || [], bySource = new Map(rows.map(row =>
             [row.sourceId, row])), runtimeBySource = new Map((runtimeStates || []).map(value =>
-            [value.sourceId, value]));
+            [value.sourceId, value])), readStatus = runtimeStateRead?.status || "ok",
+            readReason = runtimeStateRead?.reason || null, invalidSources = new Set(
+                (runtimeStateRead?.invalidSources || []).map(value => value.sourceId).filter(Boolean));
         return Object.freeze(Coverage.EXPECTED_SOURCE_IDS.map(sourceId => {
             const row = bySource.get(sourceId), runtime = row?.runtime,
                 rawRuntime = runtimeBySource.get(sourceId), rawOutcome = rawRuntime?.lastOutcome ||
                     rawRuntime?.status || rawRuntime?.acquisitionStatus,
-                latestAcquisition = runtime?.state === "runtime_success" ? "success" :
+                runtimeAvailability = invalidSources.has(sourceId) ? "invalid" :
+                    readStatus === "absent" || readStatus === "ok" && !rawRuntime ? "absent" :
+                    readStatus === "ok" ? "available" : readReason === "schema_mismatch" ? "invalid" :
+                    "unavailable",
+                latestAcquisition = runtimeAvailability === "invalid" ? "invalid" :
+                    runtimeAvailability === "unavailable" ? "unavailable" :
+                    runtime?.state === "runtime_success" ? "success" :
                     runtime?.state === "runtime_failed" ? "failed" :
                     runtime?.state === "runtime_not_attempted" ? "not_attempted" :
                     ["success", "available"].includes(rawOutcome) ? "success" :
@@ -140,8 +148,10 @@ function (Coverage, Importance, SourceLabels) {
                     "unavailable"].includes(archiveResult?.status), formalAvailability = invalid ? "invalid" :
                     row?.formalState === "formal_present" ? "available" : "absent";
             return Object.freeze({ sourceId, label: SourceLabels.getLabel(sourceId), formalAvailability,
-                latestAcquisition,
+                runtimeAvailability, latestAcquisition,
                 reason: invalid ? archiveResult.reason || "formal_read_failed" :
+                    runtimeAvailability === "invalid" ? readReason || "runtime_state_invalid" :
+                    runtimeAvailability === "unavailable" ? readReason || "runtime_state_access_failed" :
                     runtime?.reason || rawRuntime?.reason || rawRuntime?.reasonClass ||
                     rawRuntime?.lastDiagnosticClass || row?.formal?.reason || null,
                 lastAttemptAt: runtime?.lastAttemptAt || rawRuntime?.lastAttemptAt || null,
@@ -151,7 +161,7 @@ function (Coverage, Importance, SourceLabels) {
         }));
     }
     function create({ appVersion, generatedAt, selection = { mode: "current" }, archiveResult,
-        runtimeStates = [] } = {}) {
+        runtimeStates = [], runtimeStateRead = null } = {}) {
         if (typeof appVersion !== "string" || !appVersion.trim() ||
             !Number.isFinite(Date.parse(generatedAt || "")) || selection?.mode !== "current")
             throw new TypeError("calendar_export_input_invalid");
@@ -163,7 +173,7 @@ function (Coverage, Importance, SourceLabels) {
                 readOnly: true, artifactType: "calendar_formal_export", schemaVersion: SCHEMA_VERSION }),
             selection: Object.freeze({ mode: "current" }), coverage: projectCoverage(archiveResult),
             events: Object.freeze(events),
-            calendarSourceStatus: sourceStatuses(archiveResult, runtimeStates) });
+            calendarSourceStatus: sourceStatuses(archiveResult, runtimeStates, runtimeStateRead) });
     }
     function validate(value) {
         const errors = [];
@@ -182,6 +192,10 @@ function (Coverage, Importance, SourceLabels) {
                 errors.push("content_invalid");
             if (Array.isArray(value.calendarSourceStatus) && value.calendarSourceStatus.some((row, index) =>
                 row.sourceId !== Coverage.EXPECTED_SOURCE_IDS[index])) errors.push("source_order_invalid");
+            if (Array.isArray(value.calendarSourceStatus) && value.calendarSourceStatus.some(row =>
+                !["available", "absent", "invalid", "unavailable"].includes(row.runtimeAvailability) ||
+                !["success", "failed", "not_attempted", "unknown", "invalid", "unavailable"]
+                    .includes(row.latestAcquisition))) errors.push("runtime_status_invalid");
         }
         return Object.freeze({ valid: errors.length === 0, errors: Object.freeze(errors) });
     }

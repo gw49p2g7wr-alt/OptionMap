@@ -9,7 +9,7 @@ const artifact = () => ({ schemaVersion: "optionmap-calendar-export-v1",
     timeZone: "Asia/Tokyo", readOnly: true, artifactType: "calendar_formal_export",
     schemaVersion: "optionmap-calendar-export-v1" }, selection: { mode: "current" },
   coverage: {}, events: [], calendarSourceStatus: Coverage.EXPECTED_SOURCE_IDS.map(sourceId =>
-    ({ sourceId })) });
+    ({ sourceId, runtimeAvailability: "absent", latestAcquisition: "unknown" })) });
 
 test("Calendar Export filename is dedicated and JST deterministic", () => {
   assert.equal(Ui.createFileName("2026-10-27T22:15:09.000Z"),
