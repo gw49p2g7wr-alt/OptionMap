@@ -15,7 +15,7 @@ const Importance = require("../js/marketCalendar/importancePolicy.js");
 const Labels = require("../js/marketCalendar/calendarSourceLabels.js");
 
 const BLS = "us-bls-calendar", MOF = "jp-mof-jgb-auction-calendar",
-  GENERATED = "2026-10-28T00:00:00.000Z", APP = "1.1.0-beta.15";
+  GENERATED = "2026-10-28T00:00:00.000Z", APP = "1.1.0-beta.16";
 const failed = sourceId => ({ sourceId, lastOutcome: "failure", reason: "transport_failed",
   lastAttemptAt: "2026-10-28T00:00:00.000Z", lastSuccessAt: null });
 function archive(snapshot, runtimeStates = []) {
@@ -57,6 +57,7 @@ test("E1 13/13 full export has exact schema, populated events and deterministic 
     second = create(archive(structuredClone(snapshot)));
   assert.equal(first.coverage.completeness, "full");
   assert.equal(first.coverage.persistedSourceCount, 13);
+  assert.equal(first.exportMeta.appVersion, "1.1.0-beta.16");
   assert.equal(first.calendarSourceStatus.length, 13);
   assert.ok(first.events.length >= 13);
   assert.deepEqual(Object.keys(first).sort(), [...Export.TOP_LEVEL_KEYS].sort());

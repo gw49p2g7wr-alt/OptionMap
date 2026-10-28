@@ -46,7 +46,7 @@ test("separate presentation semantics and release identity remain protected", ()
   assert.match(style, /\.call-wall\s*{[\s\S]*#1769c2/);
   assert.match(style, /\.put-wall\s*{[\s\S]*#d81b45/);
   assert.match(html, /濃色：日中　淡色：夜間/);
-  assert.equal(packageJson.version, "1.1.0-beta.15");
+  assert.equal(packageJson.version, "1.1.0-beta.16");
   assert.equal(packageJson.build.appId, "com.natsu.optionmap");
   assert.equal(packageJson.build.productName, "OptionMap");
 });

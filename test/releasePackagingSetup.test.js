@@ -19,7 +19,7 @@ const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
 
 test("private beta package metadata preserves application identity", () => {
   assert.equal(packageJson.name, "optionmap");
-  assert.equal(packageJson.version, "1.1.0-beta.15");
+  assert.equal(packageJson.version, "1.1.0-beta.16");
   assert.equal(packageJson.main, "main.js");
   assert.equal(packageJson.build.appId, "com.natsu.optionmap");
   assert.equal(packageJson.build.productName, "OptionMap");

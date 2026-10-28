@@ -5,7 +5,7 @@ const test = require("node:test"), assert = require("node:assert/strict"), path 
 const Ui = require("../js/calendarExportUi.js"), Save = require("../js/calendarExportFileSave.js");
 const Coverage = require("../js/marketCalendarHistory/calendarPartialCoverage.js");
 const artifact = () => ({ schemaVersion: "optionmap-calendar-export-v1",
-  exportMeta: { appVersion: "1.1.0-beta.15", generatedAt: "2026-10-28T00:00:00.000Z",
+  exportMeta: { appVersion: "1.1.0-beta.16", generatedAt: "2026-10-28T00:00:00.000Z",
     timeZone: "Asia/Tokyo", readOnly: true, artifactType: "calendar_formal_export",
     schemaVersion: "optionmap-calendar-export-v1" }, selection: { mode: "current" },
   coverage: {}, events: [], calendarSourceStatus: Coverage.EXPECTED_SOURCE_IDS.map(sourceId =>
@@ -18,7 +18,7 @@ test("Calendar Export filename is dedicated and JST deterministic", () => {
 
 test("Calendar Export runs only after explicit controller action and uses dedicated save", async () => {
   const calls = [], statuses = [], controller = Ui.createController({
-    metadata: async () => ({ success: true, appVersion: "1.1.0-beta.15" }),
+    metadata: async () => ({ success: true, appVersion: "1.1.0-beta.16" }),
     collect: async input => { calls.push(["collect", input]); return artifact(); },
     save: async request => { calls.push(["save", request]); return { success: true }; },
     setStatus: (...args) => statuses.push(args), setBusy: value => calls.push(["busy", value])
