@@ -43,16 +43,27 @@ test("dedicated save validates exact filename, schema, read-only flag and reques
 });
 
 test("dedicated save uses dialog-selected path and atomic temporary rename", async () => {
-  const writes = [], service = Save.createSaveService({
-    dialog: { showSaveDialog: async () => ({ canceled: false, filePath: "/chosen/export.json" }) },
-    fs: { writeFile: async (...args) => writes.push(["write", ...args]),
-      rename: async (...args) => writes.push(["rename", ...args]), rm: async () => {} },
-    path, randomUUID: () => "fixed"
-  }), request = { fileName: "OptionMap-Calendar-Export-v1-2026-10-28T071509-JST.json",
-    json: JSON.stringify(artifact()) }, result = await service.save({}, request);
-  assert.equal(result.success, true);
-  assert.deepEqual(writes[0].slice(0, 3), ["write", "/chosen/.export.json.fixed.tmp", request.json]);
-  assert.deepEqual(writes[1], ["rename", "/chosen/.export.json.fixed.tmp", "/chosen/export.json"]);
+  const request = { fileName: "OptionMap-Calendar-Export-v1-2026-10-28T071509-JST.json",
+    json: JSON.stringify(artifact()) }, cases = [
+    { pathApi: path.posix, selectedPath: "/chosen/export.json" },
+    { pathApi: path.win32, selectedPath: "\\chosen\\export.json" }
+  ];
+  for (const { pathApi, selectedPath } of cases) {
+    const writes = [], expectedTemporaryPath = pathApi.join(pathApi.dirname(selectedPath),
+      `.${pathApi.basename(selectedPath)}.fixed.tmp`), service = Save.createSaveService({
+        dialog: { showSaveDialog: async () => ({ canceled: false, filePath: selectedPath }) },
+        fs: { writeFile: async (...args) => writes.push(["write", ...args]),
+          rename: async (...args) => writes.push(["rename", ...args]), rm: async () => {} },
+        path: pathApi, randomUUID: () => "fixed"
+      }), result = await service.save({}, request);
+    assert.equal(result.success, true);
+    assert.deepEqual(writes, [
+      ["write", expectedTemporaryPath, request.json, { encoding: "utf8", flag: "wx" }],
+      ["rename", expectedTemporaryPath, selectedPath]
+    ]);
+    assert.equal(pathApi.dirname(expectedTemporaryPath), pathApi.dirname(selectedPath));
+    assert.equal(pathApi.basename(expectedTemporaryPath), ".export.json.fixed.tmp");
+  }
 });
 
 test("UI and main expose only a dedicated user-initiated Calendar save path", () => {
