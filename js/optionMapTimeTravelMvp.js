@@ -142,6 +142,7 @@
         const observation = panel.querySelector("#timeTravelObservation"), morning = panel.querySelector(
             "#timeTravelMorning"), qri = panel.querySelector("#timeTravelQriStatus");
         const morningV5 = panel.querySelector("#timeTravelMorningV5");
+        const overallTrace = panel.querySelector("#timeTravelOverallTrace");
         const status = panel.querySelector("#timeTravelArchiveStatus");
         if (status) status.textContent = result.status === "partial" ? "一部保存済み（partial）：category別の保存状況を確認してください" :
             result.available ? "保存済みの履歴・現在値ではありません" :
@@ -150,6 +151,27 @@
         if (morningV5) globalThis.OptionMapMorningV5FormalReadSurfaces?.render?.(morningV5,
             globalThis.OptionMapMorningV5FormalReadSurfaces.project(result.morningV5Formal,
                 "calendar_day"), { historical: true });
+        if (overallTrace) {
+            overallTrace.replaceChildren();
+            append(panel.ownerDocument, overallTrace, "h3", "", "Overall V2 保存trace");
+            const traces = Array.isArray(result.overallV2Trace?.records) ?
+                result.overallV2Trace.records : [];
+            if (!traces.length) append(panel.ownerDocument, overallTrace, "p", "time-travel-empty",
+                "trace unavailable / not recorded");
+            for (const trace of traces) {
+                const current = trace.current, change = trace.change;
+                append(panel.ownerDocument, overallTrace, "p", "",
+                    `${current.sessionIdentity.kind} ／ ${jstTime(current.observedAt)} JST ／ ` +
+                    `${current.directionLabel} ${current.direction} ／ confidence ${current.confidence}% ／ ` +
+                    `coverage ${current.coverage}%`);
+                append(panel.ownerDocument, overallTrace, "p", "optionmap-historical-note",
+                    `logic ${current.logicIdentityHash} ／ input ${current.inputSetIdentityHash}`);
+                append(panel.ownerDocument, overallTrace, "p", "optionmap-historical-note",
+                    `前回 ${trace.previous?.observationId || "none"} ／ ` +
+                    `${change?.classification || "not_comparable"} ／ direction Δ ` +
+                    `${change?.outputDelta?.direction?.delta ?? "—"}`);
+            }
+        }
         if (result.status === "schema_mismatch") {
             append(panel.ownerDocument, observation, "p", "time-travel-empty", "保存データの形式が一致しません");
         } else if (result.status === "unavailable") {
@@ -262,7 +284,7 @@
         }
         function clearHistorical() {
             ++viewGeneration; priceChart?.destroy?.(); priceChart = null; panel.hidden = true; button.disabled = false;
-            for (const id of ["timeTravelObservation", "timeTravelMorning", "timeTravelMorningV5", "timeTravelTimeline", "timeTravelCalendar"]) {
+            for (const id of ["timeTravelObservation", "timeTravelMorning", "timeTravelMorningV5", "timeTravelOverallTrace", "timeTravelTimeline", "timeTravelCalendar"]) {
                 panel.querySelector(`#${id}`)?.replaceChildren();
             }
             for (const id of ["timeTravelSelectedDate", "timeTravelArchiveStatus", "timeTravelQriStatus",

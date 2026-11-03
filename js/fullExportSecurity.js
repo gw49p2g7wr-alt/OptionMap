@@ -31,8 +31,9 @@
             !path.startsWith("$.sections.consumerReadiness.") &&
             !path.startsWith("$.sections.changeSummary.") &&
             !path.startsWith("$.sections.topChanges.") &&
+            !path.startsWith("$.sections.overallV2Trace.") &&
             !path.startsWith("$.summary.") && !path.startsWith("$.details.")) return false;
-        return value === "/sections" || /^\/sections\/(?:marketSnapshot|overallV2|qriOptions|qriOptionsNextContract|qriOptionsMajorSqNextContract|qriOptionIv|qriHistoryComparison|weeklyFutures|weeklyOptions|participants|morning|morningV5Formal|importantLevels|intelligence|consumerReadiness|changeSummary|topChanges)(?:\/freshness)?$/.test(value) ||
+        return value === "/sections" || /^\/sections\/(?:marketSnapshot|overallV2|overallV2Trace|qriOptions|qriOptionsNextContract|qriOptionsMajorSqNextContract|qriOptionIv|qriHistoryComparison|weeklyFutures|weeklyOptions|participants|morning|morningV5Formal|importantLevels|intelligence|consumerReadiness|changeSummary|topChanges)(?:\/freshness)?$/.test(value) ||
             /^\/sections\/(?:qriHistoryComparison\/details\/comparison|weeklyFutures\/summary|weeklyOptions\/details\/comparison|morning\/details\/comparison|morningV5Formal\/details\/comparison)$/.test(value) ||
             /^\/(?:warnings|compactSummary\/freshnessIssues)\/\d+$/.test(value);
     };

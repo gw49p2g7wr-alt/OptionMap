@@ -20,11 +20,12 @@ const expectedKeys = [
   "fetchQriOptionPage",
   "getRuntimeMetadata",
   "readMorningV5Formal",
+  "readOverallV2Trace",
   "requestCalendarSource",
   "saveCalendarExportJson",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "getRuntimeMetadata", "readMorningV5Formal", "requestCalendarSource",
+const urlKeys = expectedKeys.filter(key => !["checkCalendarSources", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "getRuntimeMetadata", "readOverallV2Trace", "readMorningV5Formal", "requestCalendarSource",
   "saveCalendarExportJson", "saveFullExportJson"].includes(key));
 const mapping = {
   fetchQriOptionPage: "fetch-option-page",
@@ -94,7 +95,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.js"), true);
 });
 
-test("preload publishes only the exact thirteen-method narrow bridge", () => {
+test("preload publishes only the exact fourteen-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -161,6 +162,15 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
     { scope: "current", calendarDate: "2026-10-15" }])
     assert.equal((await api.readMorningV5Formal(value)).errorCode, "invalid_argument");
   assert.equal(calls.length, readCount);
+  await api.readOverallV2Trace({ scope: "calendar_day", calendarDate: "2026-10-15" });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),
+    ["read-formal-overall-trace", { scope: "calendar_day", calendarDate: "2026-10-15" }]);
+  const traceReadCount = calls.length;
+  for (const value of [null, {}, { scope: "other" },
+    { scope: "calendar_day", calendarDate: "2026-99-99" },
+    { scope: "current", calendarDate: "2026-10-15" }])
+    assert.equal((await api.readOverallV2Trace(value)).errorCode, "invalid_argument");
+  assert.equal(calls.length, traceReadCount);
   await api.evaluateMorningV5Formal();
   assert.deepEqual(calls.at(-1), ["evaluate-formal-morning-v5", undefined]);
   const evaluationCount = calls.length;
@@ -202,6 +212,7 @@ test("renderer bridge verification normalizes order but rejects missing extra an
   assert.equal(verify({ ...bridge, unexpectedMethod() {} }, expectedKeys), false);
   assert.equal(verify(bridge, [...expectedKeys.slice(0, -1), expectedKeys[0]]), false);
   assert.equal(verify({ ...bridge, readMorningV5Formal: null }, expectedKeys), false);
+  assert.equal(verify({ ...bridge, readOverallV2Trace: null }, expectedKeys), false);
 });
 
 test("all 20 renderer callsites use the narrow bridge with no raw Electron access", () => {

@@ -60,13 +60,15 @@ let morningV5FormalWriter = null;
 let morningV5MainAuthorityBinding = null;
 let overallTraceMainWriter = null;
 let overallTraceMainAuthorityBinding = null;
+let overallTraceReadService = null;
 
 function ensureOverallTraceRuntime() {
-  if (overallTraceMainWriter && overallTraceMainAuthorityBinding) return;
+  if (overallTraceMainWriter && overallTraceMainAuthorityBinding && overallTraceReadService) return;
   const overallTraceHistoryStore = require("./js/overallTraceHistoryStore.js");
   const overallTraceMainWriterApi = require("./js/overallTraceMainWriter.js");
   const overallTraceMainAuthorityBindingApi =
     require("./js/overallTraceMainAuthorityBinding.js");
+  const overallTraceReadSurfaces = require("./js/overallTraceReadSurfaces.js");
   const authority = Object.freeze({ getUserDataPath: () => app.getPath("userData") });
   const storeFactory = () => overallTraceHistoryStore.createProductionStore(authority);
   const getFreshSnapshot = async () => {
@@ -84,6 +86,8 @@ function ensureOverallTraceRuntime() {
   overallTraceMainWriter = overallTraceMainWriterApi.createMainOwnedWriter({ storeFactory,
     getCurrentAuthorityBinding: () =>
       overallTraceMainAuthorityBinding.currentAuthorityBinding() });
+  overallTraceReadService = overallTraceReadSurfaces.createReadService({ storeFactory,
+    evaluateCurrent: () => overallTraceMainAuthorityBinding.evaluate() });
 }
 
 const SAFE_ERROR_MESSAGES = Object.freeze({
@@ -372,6 +376,20 @@ ipcMain.handle("evaluate-formal-overall-trace", async event => {
     return overallTraceMainWriter.commitAcceptedObservation(ticket);
   } catch (error) {
     return { status: "failed", reason: error?.message || "overall_trace_persistence_failed" };
+  }
+});
+
+ipcMain.handle("read-formal-overall-trace", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { status: "unavailable", reason: "invalid_sender",
+    persistenceStatus: "trace_unavailable", scope: null, calendarDate: null, records: [] };
+  try {
+    ensureOverallTraceRuntime();
+    return overallTraceReadService.read(request);
+  } catch (_error) {
+    return { status: "unavailable", reason: "trace_read_unavailable",
+      persistenceStatus: "trace_unavailable", scope: request?.scope || null,
+      calendarDate: request?.calendarDate || null, records: [] };
   }
 });
 

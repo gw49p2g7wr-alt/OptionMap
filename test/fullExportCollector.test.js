@@ -188,7 +188,7 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     assert.equal(fullExport.validateFullExport(result).valid, true);
     assert.deepEqual(Object.keys(result.sections),
         [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "changeSummary", "consumerReadiness",
-            "morningV5Formal", "qriOptionIv", "topChanges"]);
+            "morningV5Formal", "overallV2Trace", "qriOptionIv", "topChanges"]);
     assert.equal(result.sections.participants.status, "partial");
     assert.equal(result.sections.aiSummary.status, "available");
     assert.equal(result.sections.aiSummary.authority.sourceClass, "derived_index");
@@ -229,6 +229,30 @@ test("全section available/partial fixtureからvalid Full Exportを構築", asy
     assert.equal(JSON.stringify(result.compactSummary).includes("qriOptionIv"), false);
     assert.equal(result.compactSummary.freshnessIssues.some(issue =>
         issue.section === "qriOptionIv"), false);
+});
+
+test("Overall V2 trace is an additive bounded Full Export and AI summary section", async () => {
+    const current = { observationId: "overall-trace-1", observedAt: "2026-09-06T00:30:00Z",
+        acceptedAt: "2026-09-06T00:30:01Z", calendarDay: "2026-09-06",
+        sessionIdentity: { kind: "day", key: "2026-09-06" },
+        observationSlot: { calendarDay: "2026-09-06",
+            sessionIdentity: { kind: "day", key: "2026-09-06" } },
+        logicIdentityHash: "logic-hash", inputSetIdentityHash: "input-hash",
+        status: "complete", direction: 20, directionLabel: "買い優勢", confidence: 70,
+        coverage: 100, coverageSemantic: "componentAvailabilityCoveragePercent",
+        componentSnapshots: { option: { readiness: "available", effectiveWeight: .5,
+            weightedContribution: .2 }, weekly: { readiness: "available",
+            effectiveWeight: .5, weightedContribution: .1 } },
+        versionKey: "trace-version", signature: "trace-signature" };
+    const result = await collect({ readOverallV2Trace: async () => ({ status: "available",
+        persistenceStatus: "trace_saved", current, previous: null, change: {
+            classification: "first_observation", comparability: "first_observation",
+            reason: "no_previous_trace" } }) });
+    assert.equal(result.sections.overallV2Trace.status, "available");
+    assert.equal(result.sections.overallV2Trace.summary.classification, "first_observation");
+    assert.equal(result.sections.aiSummary.summary.overallV2Trace.sourcePointer,
+        "/sections/overallV2Trace");
+    assert.equal(fullExport.validateFullExport(result).valid, true);
 });
 
 test("production形状のsourceなしlive current-price factを正常受理", async () => {
@@ -649,6 +673,6 @@ test("reader例外でも全必須sectionを保持してsecurity validatorを通�
     assert.equal(result.sections.participants.reason, "participant_read_failed");
     assert.deepEqual(Object.keys(result.sections),
         [...fullExport.REQUIRED_SECTION_KEYS, "aiSummary", "changeSummary", "consumerReadiness",
-            "morningV5Formal", "qriOptionIv", "topChanges"]);
+            "morningV5Formal", "overallV2Trace", "qriOptionIv", "topChanges"]);
     assert.equal(fullExport.validateFullExport(result).valid, true);
 });

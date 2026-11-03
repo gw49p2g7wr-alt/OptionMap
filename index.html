@@ -123,6 +123,7 @@
             <section id="timeTravelTimeline" class="optionmap-historical-card"></section>
             <section id="timeTravelMorning" class="optionmap-historical-card"></section>
             <section id="timeTravelMorningV5" class="optionmap-historical-card"></section>
+            <section id="timeTravelOverallTrace" class="optionmap-historical-card"></section>
             <section id="timeTravelCalendar" class="optionmap-historical-card"></section>
             <section class="optionmap-historical-card">
                 <h3>保存時点のQRI情報</h3>
@@ -1623,6 +1624,7 @@
 <script src="js/fullExportV2.js"></script>
 <script src="js/fullExportSourceFaithfulCanonical.js"></script>
 <script src="js/fullExportAiSummary.js"></script>
+<script src="js/overallTraceReadProjection.js"></script>
 <script src="js/fullExportQriOptionIv.js"></script>
 <script src="js/fullExportConsumerReadiness.js"></script>
 <script src="js/fullExportChangeSummary.js"></script>
@@ -1648,6 +1650,7 @@ const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "getRuntimeMetadata",
     "evaluateMorningV5Formal",
     "evaluateOverallV2Trace",
+    "readOverallV2Trace",
     "requestCalendarSource",
     "readMorningV5Formal",
     "saveCalendarExportJson",
@@ -1969,6 +1972,7 @@ window.OptionMapFullExportUi.configure({
             readIntelligenceSnapshots: () => JSON.parse(
                 localStorage.getItem("optionMapJpxSnapshots") || "[]"),
             readMorningV5Formal: request => optionMapBridge.readMorningV5Formal(request),
+            readOverallV2Trace: request => optionMapBridge.readOverallV2Trace(request),
             getSectionFreshness: freshnessAdapter.getSectionFreshness
         });
         return collector.collect({ appVersion: runtimeMetadata.appVersion,

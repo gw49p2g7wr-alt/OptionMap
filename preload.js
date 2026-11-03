@@ -66,6 +66,19 @@ function invokeMorningV5Read(args) {
       scope: "calendar_day", calendarDate: request.calendarDate }));
 }
 
+function invokeOverallTraceRead(args) {
+  const request = args[0];
+  const current = args.length === 1 && request && typeof request === "object" &&
+    !Array.isArray(request) && Object.keys(request).length === 1 && request.scope === "current";
+  const day = args.length === 1 && request && typeof request === "object" &&
+    !Array.isArray(request) && Object.keys(request).sort().join("|") === "calendarDate|scope" &&
+    request.scope === "calendar_day" && validCalendarDay(request.calendarDate);
+  if (!current && !day) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("read-formal-overall-trace", current ?
+    Object.freeze({ scope: "current" }) : Object.freeze({
+      scope: "calendar_day", calendarDate: request.calendarDate }));
+}
+
 function invokeMorningV5Evaluation(args) {
   if (args.length !== 0) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
   return ipcRenderer.invoke("evaluate-formal-morning-v5");
@@ -138,6 +151,7 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   requestCalendarSource: (...args) => invokeCalendarSource(args),
   evaluateMorningV5Formal: (...args) => invokeMorningV5Evaluation(args),
   evaluateOverallV2Trace: (...args) => invokeOverallTraceEvaluation(args),
+  readOverallV2Trace: (...args) => invokeOverallTraceRead(args),
   readMorningV5Formal: (...args) => invokeMorningV5Read(args),
   saveCalendarExportJson: (...args) => invokeCalendarExportSave(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)

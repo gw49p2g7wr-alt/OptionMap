@@ -150,6 +150,15 @@
                     { status: "unavailable", value: null };
         } catch (_error) { return { status: "unavailable", value: null }; }
     }
+    async function overallTraceFor(reader, calendarDate) {
+        if (typeof reader !== "function") return { status: "absent", value: null };
+        try {
+            const value = await reader({ scope: "calendar_day", calendarDate });
+            return value?.status === "available" ? { status: "available", value } :
+                value?.persistenceStatus === "trace_not_saved" ? { status: "absent", value } :
+                    { status: "unavailable", reason: value?.reason || "trace_read_unavailable", value };
+        } catch (_error) { return { status: "unavailable", value: null }; }
+    }
     function section(part, count) {
         return { status: part.status !== "available" && part.status !== "absent" ? "unavailable" :
             count ? "saved" : "missing", storageStatus: part.status, count,
@@ -157,12 +166,14 @@
     }
     async function read({ calendarDate, indexedDB = root?.indexedDB,
         localStorage = root?.localStorage,
-        readMorningV5 = root?.optionMapBridge?.readMorningV5Formal } = {}) {
+        readMorningV5 = root?.optionMapBridge?.readMorningV5Formal,
+        readOverallTrace = root?.optionMapBridge?.readOverallV2Trace } = {}) {
         if (!validDate(calendarDate)) return Object.freeze({ status: "invalid", calendarDate,
             available: false });
-        const [observations, morning, morningV5, qri, prices, calendar] = await Promise.all([
+        const [observations, morning, morningV5, overallTrace, qri, prices, calendar] = await Promise.all([
             observationsFor(indexedDB, calendarDate), morningFor(localStorage, calendarDate),
             morningV5For(readMorningV5, calendarDate),
+            overallTraceFor(readOverallTrace, calendarDate),
             qriFor(indexedDB, calendarDate), priceSnapshotsFor(indexedDB, calendarDate),
             calendarFor(indexedDB, calendarDate)
         ]);
@@ -173,6 +184,7 @@
         const sections = { observation: section(observations, observationList.length),
             morning: section(morning, morningList.length),
             morningV5Formal: section(morningV5, morningV5.value?.records?.length || 0),
+            overallV2Trace: section(overallTrace, overallTrace.value?.records?.length || 0),
             qri: section(qri, qriEntries.length),
             priceSnapshots: section(prices, priceSnapshots.length), calendar: section(calendar, calendarEvents.length) };
         const available = Object.values(sections).some(item => item.status === "saved"),
@@ -185,14 +197,18 @@
             morningBaselines: clone(morningList), priceSnapshots: clone(priceSnapshots), calendarEvents: clone(calendarEvents),
             morningV5Formal: clone(morningV5.value || { status: "missing", reason: null,
                 scope: "calendar_day", calendarDate, records: [] }),
+            overallV2Trace: clone(overallTrace.value || { status: "unavailable",
+                persistenceStatus: "trace_not_saved", reason: "trace_not_recorded",
+                scope: "calendar_day", calendarDate, records: [] }),
             qri: Object.freeze({ available: contracts.length > 0,
                 contracts, selectedContract: contracts[0] || null, revisions: clone(qriEntries) }),
             availability: Object.freeze({ observation: observations.status, morning: morning.status,
                 qri: qri.status, priceSnapshots: prices.status, calendar: calendar.status,
                 morningV5Formal: morningV5.status,
+                overallV2Trace: overallTrace.status,
                 weeklyOptions: "not_queried", weeklyFutures: "not_queried",
                 participant: "not_queried", jpxSnapshot: "not_queried" }) });
     }
     return Object.freeze({ DATABASES, read, observationsFor, priceSnapshotsFor, qriFor, morningFor,
-        calendarFor, morningV5For, observedOn, knowledgeAtFor });
+        calendarFor, morningV5For, overallTraceFor, observedOn, knowledgeAtFor });
 });

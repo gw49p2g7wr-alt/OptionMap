@@ -19,17 +19,19 @@
         root?.OptionMapFullExportTopChanges;
     const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
         root?.OptionMapMorningV5FormalReadSurfaces;
+    const overallTraceApi = commonJs ? require("./overallTraceReadProjection.js") :
+        root?.OptionMapOverallTraceReadProjection;
     const contributorApi = commonJs ? require("./overallV2ContributorView.js") :
         root?.OptionMapOverallV2ContributorView;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
         aiSummaryApi, qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi,
-        morningV5Api, contributorApi);
+        morningV5Api, overallTraceApi, contributorApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
     qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi, morningV5Api,
-    contributorApi) {
+    overallTraceApi, contributorApi) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -713,14 +715,22 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             const morningV5Formal = morningV5Api?.exportSection?.(morningV5Response, {
                 currentCalendarDate: jstDate(generatedAt) }) ||
                 unavailable("formal_morning_v5_reader_unavailable", "formal-morning-v5");
+            let overallTraceResponse;
+            try { overallTraceResponse = await configuration.readOverallV2Trace?.({ scope: "current" }); }
+            catch (_error) { overallTraceResponse = { status: "unavailable",
+                persistenceStatus: "trace_unavailable", reason: "trace_read_unavailable" }; }
+            const overallV2Trace = overallTraceApi?.exportSection?.(overallTraceResponse) ||
+                unavailable("overall_trace_reader_unavailable", "overall-v2-trace");
             const coreSections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,
                 qriOptionsNextContract,
                 qriOptionsMajorSqNextContract,
                 qriHistoryComparison: qri.qriHistoryComparison,
-                weeklyFutures, weeklyOptions, participants, intelligence, morningV5Formal };
+                weeklyFutures, weeklyOptions, participants, intelligence, morningV5Formal,
+                overallV2Trace };
             const freshnessIssues = Object.entries(coreSections)
-                .filter(([, section]) => section.freshness?.status !== "fresh")
+                .filter(([, section]) => !["fresh", "not_applicable"].includes(
+                    section.freshness?.status))
                 .map(([section, value]) => compactFreshnessIssue(section,
                     value.freshness || {}));
             const sourceWarnings = Array.isArray(mobile?.warnings) ? clone(mobile.warnings) : [];

@@ -12,13 +12,14 @@
     const SUMMARY_VERSION = 1;
     const PURPOSE = "index_only_not_authoritative_data";
     const SECTION_ORDER = Object.freeze([
-        "marketSnapshot", "overallV2", "qriOptions", "qriOptionsNextContract",
+        "marketSnapshot", "overallV2", "overallV2Trace", "qriOptions", "qriOptionsNextContract",
         "qriOptionsMajorSqNextContract", "qriOptionIv", "qriHistoryComparison", "weeklyFutures",
         "weeklyOptions", "participants", "morning", "morningV5Formal", "importantLevels", "intelligence"
     ]);
     const READING_PURPOSES = Object.freeze({
         marketSnapshot: "current_market_snapshot",
         overallV2: "existing_overall_assessment",
+        overallV2Trace: "saved_overall_why_changed_trace",
         qriOptions: "active_contract_formal_details",
         qriOptionsNextContract: "next_contract_formal_details",
         qriOptionsMajorSqNextContract: "major_sq_contract_formal_details",
@@ -120,6 +121,27 @@
         return { ...sourceBase(section, "overallV2"),
             direction: field(summary, "direction"), confidence: field(summary, "confidence"),
             coverage: field(summary, "coverage"), availableComponents, unavailableComponents };
+    }
+
+    function overallTrace(sections) {
+        const name = "overallV2Trace", section = sectionAt(sections, name);
+        if (!section) return null;
+        const summary = object(section.summary) ? section.summary : null;
+        return { sourceSection: name, sourcePointer: pointer(name), status: status(section),
+            reason: reason(section), persistenceStatus: field(summary, "persistenceStatus"),
+            observationId: field(summary, "observationId"),
+            previousObservationId: field(summary, "previousObservationId"),
+            classification: field(summary, "classification"),
+            explanation: field(summary, "explanation"),
+            directionDelta: field(summary, "directionDelta"),
+            confidenceDelta: field(summary, "confidenceDelta"),
+            coverageDelta: field(summary, "coverageDelta"),
+            logicChanged: field(summary, "logicChanged"),
+            inputChanged: field(summary, "inputChanged"),
+            readinessChanged: field(summary, "readinessChanged"),
+            fallbackChanged: field(summary, "fallbackChanged"),
+            additiveAttributionAvailable: field(summary, "additiveAttributionAvailable"),
+            additiveAttributionReason: field(summary, "additiveAttributionReason") };
     }
 
     function qriSource(sections, name) {
@@ -234,7 +256,7 @@
                 add({ section: name, sourcePointer: pointer(name), issueType: "section_status",
                     status: status(section), reason: reason(section) });
             }
-            if (freshnessStatus(section) !== "fresh") {
+            if (!["fresh", "not_applicable"].includes(freshnessStatus(section))) {
                 const provenance = freshnessProvenance(section?.freshness) || {};
                 add({ section: name, sourcePointer: `${pointer(name)}/freshness`,
                     issueType: "freshness", status: freshnessStatus(section),
@@ -303,9 +325,11 @@
         const readiness = consumerReadiness(source.sections);
         const changes = changeSummary(source.sections);
         const top = topChanges(source.sections);
+        const trace = overallTrace(source.sections);
         const summary = {
             summaryVersion: SUMMARY_VERSION, purpose: PURPOSE, generatedAt,
             market: market(source.sections), overallV2: overall(source.sections),
+            ...(trace ? { overallV2Trace: trace } : {}),
             qriContracts: {
                 active: qriSource(source.sections, "qriOptions"),
                 next: qriSource(source.sections, "qriOptionsNextContract"),
