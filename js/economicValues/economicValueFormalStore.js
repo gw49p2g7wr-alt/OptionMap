@@ -3,6 +3,8 @@
 const Canonical = require("./economicValueCanonical.js");
 const Schema = require("./economicValueSchemaV1.js");
 const Cpi = require("./blsCpiFormal.js");
+const Employment = require("./blsEmploymentFormal.js");
+const Sources = require("./economicValueSourceRegistry.js");
 
 const FIELD_STORE = Object.freeze({ runs: "economicSourceRuns", releases: "economicReleaseOccurrences",
   definitions: "economicSeriesDefinitions", entries: "economicValueEntries",
@@ -33,7 +35,7 @@ async function audit(snapshot) {
       errors.push(`${field}_identity_invalid`);
   };
   for (const [field, key] of Object.entries(KEY)) unique(field, key);
-  if (snapshot.definitions.some(value => !Cpi.validateDefinition(value))) errors.push("series_definition_invalid");
+  if (snapshot.definitions.some(value => !Sources.validateDefinition(value))) errors.push("series_definition_invalid");
   const definitions = new Map(snapshot.definitions.map(value => [value.seriesDefinitionKey, value])),
     releases = new Map(snapshot.releases.map(value => [value.releaseOccurrenceKey, value])),
     revisions = new Map(snapshot.revisions.map(value => [value.revisionKey, value])),
@@ -46,7 +48,11 @@ async function audit(snapshot) {
       seasonalAdjustment: revision.seasonalAdjustment, measure: revision.measure,
       officialStatus: revision.officialStatus };
     const hash = Canonical.sha256(fact);
-    if (!definitions.has(revision.seriesDefinitionKey) || !Canonical.hash(revision.factHash) ||
+    const definition = definitions.get(revision.seriesDefinitionKey);
+    if (!definition || !Sources.validateValue({ seriesDefinitionKey: revision.seriesDefinitionKey,
+        referencePeriod: revision.referencePeriod, decimalValue: revision.decimalValue, unit: revision.unit,
+        seasonalAdjustment: revision.seasonalAdjustment, measure: revision.measure }, [...definitions.values()]) ||
+        !Canonical.hash(revision.factHash) ||
         revision.factHash !== hash || revision.revisionKey !== `${revision.valueKey}|sha256:${hash}` ||
         !Canonical.timestamp(revision.validFrom) || revision.validTo !== null && !Canonical.timestamp(revision.validTo) ||
         revision.validTo !== null && revision.validFrom >= revision.validTo ||
@@ -70,6 +76,7 @@ async function audit(snapshot) {
       parserId: evidence.parserId, parserVersion: evidence.parserVersion,
       rawContentHash: evidence.rawContentHash, httpMetadata: evidence.httpMetadata };
     if (!revisions.has(evidence.revisionKey) || !documents.has(evidence.sourceDocumentKey) ||
+        !releases.has(evidence.releaseOccurrenceKey) ||
         !runs.has(`${evidence.sourceId}|${evidence.runId}`) ||
         evidence.acquisitionEvidenceHash !== Canonical.sha256(material) ||
         evidence.evidenceKey !== `${evidence.revisionKey}|${evidence.sourceDocumentKey}|${evidence.runId}`)
@@ -78,22 +85,25 @@ async function audit(snapshot) {
   for (const cursor of snapshot.cursors) if (!runs.has(cursor.runKey) || !Canonical.timestamp(cursor.acceptedAt))
     errors.push("source_cursor_invalid");
   for (const release of snapshot.releases) if (!documents.has(release.sourceDocumentKey) ||
+      !Sources.CONTRACTS.some(contract => contract.AUTHORITY === release.authority &&
+        contract.PROGRAM === release.releaseProgram) ||
       !Canonical.timestamp(release.publishedAt) || !Canonical.timestamp(release.fetchedAt) ||
       !Canonical.timestamp(release.acceptedAt)) errors.push("release_occurrence_invalid");
   return Canonical.freeze({ valid: errors.length === 0, errors: [...new Set(errors)] });
 }
 
 function validateCandidate(candidate) {
-  if (!candidate || candidate.sourceId !== Cpi.SOURCE_ID || !Canonical.timestamp(candidate.acceptedAt) ||
+  const contract = Sources.get(candidate?.sourceId);
+  if (!contract || !Canonical.timestamp(candidate.acceptedAt) ||
       !Canonical.hash(candidate.candidateHash) || !Canonical.hash(candidate.acquisitionEvidenceHash) ||
-      !Array.isArray(candidate.definitions) || candidate.definitions.length !== 4 ||
-      candidate.definitions.some(value => !Cpi.validateDefinition(value)) || !Array.isArray(candidate.values) ||
-      candidate.values.length < 4 || candidate.values.some(value => {
+      !Array.isArray(candidate.definitions) || candidate.definitions.length !== contract.SERIES.length ||
+      candidate.definitions.some(value => !contract.validateDefinition(value)) || !Array.isArray(candidate.values) ||
+      candidate.values.length < contract.SERIES.length || candidate.values.some(value => {
         const fact = { valueKey: value.valueKey, seriesDefinitionKey: value.seriesDefinitionKey,
           referencePeriod: value.referencePeriod, decimalValue: value.decimalValue, unit: value.unit,
           seasonalAdjustment: value.seasonalAdjustment, measure: value.measure,
           officialStatus: value.officialStatus }, factHash = Canonical.sha256(fact);
-        return !Cpi.validateValue({ seriesDefinitionKey: value.seriesDefinitionKey,
+        return !contract.validateValue({ seriesDefinitionKey: value.seriesDefinitionKey,
           referencePeriod: value.referencePeriod, decimalValue: value.decimalValue, unit: value.unit,
           seasonalAdjustment: value.seasonalAdjustment, measure: value.measure }, candidate.definitions) ||
           value.valueKey !== `${value.seriesDefinitionKey}|${value.referencePeriod}` ||
@@ -108,15 +118,19 @@ function validateCandidate(candidate) {
       fetchedAt: candidate.release.fetchedAt, sourceDocumentKey: candidate.document.sourceDocumentKey,
       parserId: candidate.document.parserId, parserVersion: candidate.document.parserVersion }),
     expectedEvidenceHash = Canonical.sha256(candidate.evidenceMaterial);
-  if (current.length !== 4 || new Set(current.map(value => value.seriesDefinitionKey)).size !== 4 ||
+  if (current.length !== contract.SERIES.length ||
+      new Set(current.map(value => value.seriesDefinitionKey)).size !== contract.SERIES.length ||
+      contract.SERIES.some(definition => !current.some(value =>
+        value.seriesDefinitionKey === definition.seriesDefinitionKey)) ||
       new Set(candidate.values.map(value => value.valueKey)).size !== candidate.values.length ||
-      candidate.release.authority !== Cpi.AUTHORITY || candidate.release.releaseProgram !== Cpi.PROGRAM ||
-      candidate.release.releaseOccurrenceKey !== `US|BLS|CPI|${candidate.release.officialReleaseDate}` ||
+      candidate.release.authority !== contract.AUTHORITY || candidate.release.releaseProgram !== contract.PROGRAM ||
+      !contract.validateReleaseOccurrenceKey(candidate.release.releaseOccurrenceKey,
+        candidate.release.officialReleaseDate, candidate.document.rawContentHash) ||
       !Canonical.date(candidate.release.officialReleaseDate) || !Canonical.month(candidate.release.referencePeriod) ||
       !Canonical.timestamp(candidate.release.publishedAt) || !Canonical.timestamp(candidate.release.fetchedAt) ||
       candidate.release.acceptedAt !== candidate.acceptedAt || candidate.document.sourceId !== candidate.sourceId ||
       candidate.document.role !== "official_release" || candidate.document.sourceUrl !== candidate.release.sourceUrl ||
-      candidate.document.parserId !== Cpi.PARSER_ID || candidate.document.parserVersion !== Cpi.PARSER_VERSION ||
+      candidate.document.parserId !== contract.PARSER_ID || candidate.document.parserVersion !== contract.PARSER_VERSION ||
       !Canonical.hash(candidate.document.rawContentHash) || candidate.runId !== expectedRunId ||
       candidate.runKey !== `${candidate.sourceId}|${expectedRunId}` ||
       candidate.acquisitionEvidenceHash !== expectedEvidenceHash ||
@@ -314,18 +328,29 @@ function selectAt(snapshot, at) {
   return revisions;
 }
 async function readCurrentCpi(indexedDB) {
+  return readCurrentSource(indexedDB, Cpi.SOURCE_ID);
+}
+async function readCurrentEmployment(indexedDB) {
+  return readCurrentSource(indexedDB, Employment.SOURCE_ID);
+}
+async function readCurrentSource(indexedDB, sourceId) {
+  const contract = Sources.get(sourceId);
+  if (!contract) error("economic_source_unknown");
   const result = await readSnapshot(indexedDB);
   if (result.status === "absent") return Canonical.freeze({ status: "unavailable", reason: "database_absent" });
-  const snapshot = result.snapshot, release = [...snapshot.releases].sort((a, b) =>
+  const snapshot = result.snapshot, release = snapshot.releases.filter(value =>
+    value.authority === contract.AUTHORITY && value.releaseProgram === contract.PROGRAM).sort((a, b) =>
     a.acceptedAt.localeCompare(b.acceptedAt)).at(-1);
   if (!release) return Canonical.freeze({ status: "unavailable", reason: "release_absent" });
-  const values = snapshot.entries.map(entry => snapshot.revisions.find(value =>
+  const seriesKeys = new Set(contract.SERIES.map(value => value.seriesDefinitionKey)),
+    values = snapshot.entries.filter(entry => seriesKeys.has(entry.seriesDefinitionKey)).map(entry => snapshot.revisions.find(value =>
     value.revisionKey === entry.activeRevisionKey)).filter(Boolean).sort((a, b) =>
     a.seriesDefinitionKey.localeCompare(b.seriesDefinitionKey) || a.referencePeriod.localeCompare(b.referencePeriod)),
     revisionKeys = new Set(values.map(value => value.revisionKey));
   return Canonical.freeze({ status: "available", readiness: "formal_reference", releaseOccurrence: release,
-    seriesDefinitions: snapshot.definitions, officialValues: values,
-    provenance: snapshot.evidence.filter(value => revisionKeys.has(value.revisionKey)) });
+    seriesDefinitions: snapshot.definitions.filter(value => seriesKeys.has(value.seriesDefinitionKey)),
+    officialValues: values, provenance: snapshot.evidence.filter(value => value.sourceId === sourceId &&
+      revisionKeys.has(value.revisionKey)) });
 }
 async function readAsKnownAt(indexedDB, at) {
   const result = await readSnapshot(indexedDB);
@@ -336,4 +361,5 @@ async function readAsKnownAt(indexedDB, at) {
 }
 
 module.exports = Canonical.freeze({ FIELD_STORE, KEY, emptySnapshot, audit, validateCandidate, plan, apply,
-  readSnapshot, createFormalRuntime, selectAt, readCurrentCpi, readAsKnownAt });
+  readSnapshot, createFormalRuntime, selectAt, readCurrentSource, readCurrentCpi, readCurrentEmployment,
+  readAsKnownAt });

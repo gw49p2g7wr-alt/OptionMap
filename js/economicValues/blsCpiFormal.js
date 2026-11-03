@@ -5,6 +5,7 @@ const Canonical = require("./economicValueCanonical.js");
 const SOURCE_ID = "us-bls-cpi-values";
 const AUTHORITY = "BLS";
 const PROGRAM = "CPI";
+const RELEASE_KEY_PREFIX = "US|BLS|CPI|";
 const PARSER_ID = "bls-cpi-release-values";
 const PARSER_VERSION = 1;
 const MONTHS = Object.freeze({ January: "01", February: "02", March: "03", April: "04",
@@ -119,7 +120,7 @@ function validateValue(value, definitions = SERIES) {
     !Canonical.decimal(value.decimalValue)) return false;
   const definition = definitions.find(item => item.seriesDefinitionKey === value.seriesDefinitionKey);
   return !!definition && value.unit === definition.unit && value.seasonalAdjustment === definition.seasonalAdjustment &&
-    value.measure === definition.measure;
+    value.measure === definition.measure && /^-?(?:0|[1-9]\d{0,2})\.\d$/.test(value.decimalValue);
 }
 function calendarLink(value, referencePeriod) {
   if (value == null) return null;
@@ -151,7 +152,7 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
     if (duplicate.has(key)) throw new Error("bls_cpi_duplicate_value");
     duplicate.add(key);
   }
-  const releaseOccurrenceKey = `US|BLS|CPI|${parsed.releaseDate}`;
+  const releaseOccurrenceKey = `${RELEASE_KEY_PREFIX}${parsed.releaseDate}`;
   const sourceDocumentKey = `${releaseOccurrenceKey}|sha256:${acquisition.document.rawContentHash}`;
   const runId = Canonical.sha256({ sourceId: SOURCE_ID, fetchedAt: acquisition.fetchedAt,
     sourceDocumentKey, parserId: PARSER_ID, parserVersion: PARSER_VERSION });
@@ -187,6 +188,8 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
       sourceDocumentKey, acquisitionEvidenceHash }) });
 }
 
-module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, PARSER_ID, PARSER_VERSION,
+const validateReleaseOccurrenceKey = (value, releaseDate) => value === `${RELEASE_KEY_PREFIX}${releaseDate}`;
+
+module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, RELEASE_KEY_PREFIX, PARSER_ID, PARSER_VERSION,
   SERIES, DEFINITION_FIELDS, parseReleaseHtml, validateDefinition, validateValue, createAcceptedCandidate,
-  zonedInstant });
+  validateReleaseOccurrenceKey, zonedInstant });

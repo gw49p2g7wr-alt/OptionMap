@@ -27,6 +27,6 @@ const date = value => typeof value === "string" && /^20\d{2}-\d{2}-\d{2}$/.test(
   new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
 const month = value => typeof value === "string" && /^20\d{2}-(?:0[1-9]|1[0-2])$/.test(value);
 const hash = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-const decimal = value => typeof value === "string" && /^-?(?:0|[1-9]\d{0,2})\.\d$/.test(value);
+const decimal = value => typeof value === "string" && /^-?(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/.test(value);
 
 module.exports = freeze({ stable, sha256, clone, freeze, exact, timestamp, date, month, hash, decimal });
