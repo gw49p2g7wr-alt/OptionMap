@@ -19,14 +19,17 @@
         root?.OptionMapFullExportTopChanges;
     const morningV5Api = commonJs ? require("./morningV5FormalReadSurfaces.js") :
         root?.OptionMapMorningV5FormalReadSurfaces;
+    const contributorApi = commonJs ? require("./overallV2ContributorView.js") :
+        root?.OptionMapOverallV2ContributorView;
     const api = factory(fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi,
         aiSummaryApi, qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi,
-        morningV5Api);
+        morningV5Api, contributorApi);
     if (commonJs) module.exports = api;
     if (root) root.OptionMapFullExportCollector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this,
 function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSummaryApi,
-    qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi, morningV5Api) {
+    qriOptionIvApi, consumerReadinessApi, changeSummaryApi, topChangesApi, morningV5Api,
+    contributorApi) {
     "use strict";
 
     const clone = value => value == null ? value : typeof structuredClone === "function"
@@ -35,6 +38,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
     const text = value => typeof value === "string" && value.trim() ? value.trim() : null;
     const validTimestamp = value => text(value) && Number.isFinite(Date.parse(value));
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+    const jstDate = value => validTimestamp(value) ?
+        new Date(Date.parse(value) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) : null;
     const CURRENT_PRICE_SOURCE = "qri-nikkei225-futures";
 
     function asOf(values = {}) {
@@ -170,6 +175,18 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             ? result.status === "complete" ? "available" : "partial" : "invalid";
         if (status === "invalid") return unavailable("formal_overall_invalid", "overall-v2",
             freshnessFor(configuration, "overallV2"), "invalid");
+        const contribution = contributorApi?.derive?.(result) || { status: "unavailable" };
+        const option = result.components?.option, weekly = result.components?.weekly;
+        const optionAvailable = option?.available === true &&
+            Number.isFinite(option.effectiveWeight) && option.effectiveWeight > 0;
+        const weeklyAvailable = weekly?.available === true &&
+            Number.isFinite(weekly.effectiveWeight) && weekly.effectiveWeight > 0;
+        const inputBasis = { resultAvailability: result.status, basis: contribution.status,
+            optionContributionAvailable: optionAvailable,
+            optionEffectiveWeight: optionAvailable ? option.effectiveWeight : 0,
+            weeklyContributionAvailable: weeklyAvailable,
+            weeklyEffectiveWeight: weeklyAvailable ? weekly.effectiveWeight : 0,
+            qriFallbackUsed: envelopeValue.diagnostics?.fallbackUsed === true };
         return envelope({ status, reason: status === "partial" ? "overall_v2_partial" : null,
             authority: { source: "overall-v2", sourceClass: "formal_envelope",
                 origin: "runtime", formalStatus: "verified",
@@ -179,7 +196,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             summary: { status: result.status, direction: result.direction,
                 directionLabel: result.directionLabel, confidence: result.confidence,
                 coverage: result.metadata?.coverage ?? null,
-                interpretation: fullExportApi.SAFE_INTERPRETATION },
+                interpretation: fullExportApi.SAFE_INTERPRETATION,
+                inputBasis },
             details: { evaluatedAt: envelopeValue.evaluatedAt || null,
                 result: clone(result), optionSourceIdentity: clone(envelopeValue.optionSourceIdentity || null),
                 weeklySourceIdentity: clone(envelopeValue.weeklySourceIdentity || null) } });
@@ -692,7 +710,8 @@ function (fullExportApi, qriHistoryApi, qriComparisonApi, qriOptionsApi, aiSumma
             let morningV5Response;
             try { morningV5Response = await configuration.readMorningV5Formal?.({ scope: "current" }); }
             catch (_error) { morningV5Response = { status: "unavailable", records: [] }; }
-            const morningV5Formal = morningV5Api?.exportSection?.(morningV5Response) ||
+            const morningV5Formal = morningV5Api?.exportSection?.(morningV5Response, {
+                currentCalendarDate: jstDate(generatedAt) }) ||
                 unavailable("formal_morning_v5_reader_unavailable", "formal-morning-v5");
             const coreSections = { marketSnapshot, overallV2, morning, importantLevels,
                 qriOptions: qri.qriOptions,

@@ -47,7 +47,9 @@ test("F4/F5 Full Export wiring uses formal authority independently of Morning V4
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const wiring = html.slice(html.indexOf("window.OptionMapFullExportUi.configure"),
         html.indexOf("const qriOptionsHistoryPersistence"));
-    assert.match(wiring, /OptionMapFullExportFormalTradingDateAuthority[\s\S]*?\.resolve\(/);
+    assert.match(wiring,
+        /OptionMapFullExportFormalTradingDateAuthority[\s\S]*?\.createSourceTimeResolver\(/);
+    assert.match(wiring, /formalDateResolver\.resolve\(qriPageUpdatedAt\)/);
     assert.match(wiring, /getMarketSession:\s*\(\)\s*=>\s*freshnessSession/);
     assert.match(wiring, /getMarketSession:\s*\(\)\s*=>\s*session\s*\?/);
     assert.doesNotMatch(wiring, /createFullExportFreshnessAdapter\(\{[\s\S]*?getMarketSession:\s*\(\)\s*=>\s*session,/);
@@ -93,6 +95,20 @@ test("resolver performs one bounded readonly Calendar query", async () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].startDate, "2025-01-01");
     assert.equal(calls[0].endDate, "2027-12-31");
+});
+
+test("source-time resolver reuses one readonly Calendar snapshot without export-time reinterpretation", async () => {
+    const calls = [];
+    const resolver = await authority.createSourceTimeResolver({
+        observedAt: "2026-11-03T07:46:00+09:00", indexedDB: {}, keyRange: {},
+        query: async input => { calls.push(input); return result(holiday("2026-01-01"),
+            holiday("2026-11-03"), holiday("2027-01-01")); } });
+    assert.equal(calls.length, 1);
+    assert.equal(resolver.resolve("2026-11-02T18:00:00+09:00").formalTradingDate,
+        "2026-11-02");
+    const holidayMorning = resolver.resolve("2026-11-03T07:46:00+09:00");
+    assert.deepEqual([holidayMorning.formalTradingDate, holidayMorning.nextValidTradingDate],
+        ["2026-11-02", "2026-11-04"]);
 });
 
 test("next valid trading date uses the same formal weekend and holiday authority", () => {

@@ -437,6 +437,26 @@ test("OverallV2 formal resultを不変転記し独自scoreを追加しない", a
     assert.equal("tradeSignal" in result.sections.overallV2.summary, false);
 });
 
+test("OverallV2 Weekly-only partial basis exposes zero QRI contribution without fallback", async () => {
+    const result = await collect({ getOverallV2FormalEnvelope: () => ({ status: "available",
+        envelope: { formalApplied: true, identityVerified: true,
+            logicVersion: "overall-v2-weights-55-45-v1", evaluatedAt: "2026-11-03T09:00:00Z",
+            inputFingerprint: "weekly-only", optionSourceIdentity: null,
+            weeklySourceIdentity: { currentVersionKey: weeklyCurrent },
+            diagnostics: { optionAvailable: false, weeklyAvailable: true, fallbackUsed: false },
+            result: { status: "partial", direction: 18, directionLabel: "買い優勢",
+                confidence: 60, metadata: { coverage: 50, warnings: [] }, components: {
+                    option: { available: false }, weekly: { available: true,
+                        effectiveWeight: 45, weightedContribution: 8.1 } } } } }) });
+    const basis = result.sections.overallV2.summary.inputBasis;
+    assert.deepEqual(basis, { resultAvailability: "partial", basis: "weekly_only",
+        optionContributionAvailable: false, optionEffectiveWeight: 0,
+        weeklyContributionAvailable: true, weeklyEffectiveWeight: 45,
+        qriFallbackUsed: false });
+    assert.deepEqual(result.compactSummary.overallV2.inputBasis, basis);
+    assert.equal(result.sections.overallV2.details.optionSourceIdentity, null);
+});
+
 test("OverallV2 unavailable時にMobile Summaryの過去値へfallbackしない", async () => {
     const result = await collect({ getOverallV2FormalEnvelope: () => ({ status: "unavailable",
         reason: "source_binding_mismatch", envelope: null }) });

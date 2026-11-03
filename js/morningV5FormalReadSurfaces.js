@@ -11,16 +11,36 @@
     const records = response => Array.isArray(response?.records) ? response.records.filter(record =>
         record?.observation && record.observationId === record.observation.observationId) : [];
     const observation = record => record?.observation || null;
-    function project(response, expectedScope = null) {
+    const jstDate = value => { const instant = Date.parse(value);
+        if (!Number.isFinite(instant)) return null;
+        return new Date(instant + 9 * 60 * 60 * 1000).toISOString().slice(0, 10); };
+    function currentProjection(latest, currentCalendarDate, expectedScope) {
+        if (expectedScope !== "current") return { currentAvailability: null,
+            latestSavedReference: null };
+        const latestSavedReference = latest ? { status: "available",
+            observationId: latest.observationId, observedAt: latest.observedAt,
+            calendarDay: latest.calendarDay, tradingDate: latest.tradingDate } :
+            { status: "unavailable", observationId: null, observedAt: null,
+                calendarDay: null, tradingDate: null };
+        const current = Boolean(latest && currentCalendarDate &&
+            latest.calendarDay === currentCalendarDate);
+        return { currentAvailability: { status: current ? "available" : "unavailable",
+            reason: current ? null : latest ? "latest_saved_reference_only" :
+                "formal_morning_v5_not_saved", calendarDate: currentCalendarDate || null,
+            observationId: current ? latest.observationId : null }, latestSavedReference };
+    }
+    function project(response, expectedScope = null, options = {}) {
         const values = records(response).slice().sort((left, right) =>
             Date.parse(observation(left).observedAt) - Date.parse(observation(right).observedAt) ||
             left.observationId.localeCompare(right.observationId));
+        const currentCalendarDate = options.currentCalendarDate || jstDate(new Date().toISOString());
         if (response?.status !== "available" || !values.length) return freeze({
             status: response?.status === "unavailable" ? "unavailable" : "missing",
             reason: response?.reason || (response?.status === "unavailable" ?
                 "formal_morning_v5_read_failed" : "formal_morning_v5_not_saved"),
             scope: expectedScope, calendarDate: response?.calendarDate || null,
-            observations: [], latest: null, timeline: [], supersedesChain: [] });
+            observations: [], latest: null, timeline: [], supersedesChain: [],
+            ...currentProjection(null, currentCalendarDate, expectedScope) });
         const latestRecord = values.at(-1), latest = clone(observation(latestRecord));
         const byId = new Map(values.map(record => [record.observationId, observation(record)]));
         for (const baseline of Array.isArray(response?.baselines) ? response.baselines : []) {
@@ -40,10 +60,11 @@
             calendarDate: response.calendarDate || latest.calendarDay,
             observations: values.map(record => clone(observation(record))), latest,
             baselineObservedAt: baselineId ? byId.get(baselineId)?.observedAt || null : null,
-            timeline, supersedesChain: chain });
+            timeline, supersedesChain: chain,
+            ...currentProjection(latest, currentCalendarDate, expectedScope) });
     }
-    function exportSection(response) {
-        const value = project(response, "current"), latest = value.latest;
+    function exportSection(response, options = {}) {
+        const value = project(response, "current", options), latest = value.latest;
         if (!latest) return freeze({ status: "unavailable",
             reason: value.reason || "formal_morning_v5_not_saved",
             authority: { source: "formal-morning-v5", sourceClass: "formal_history",
@@ -66,7 +87,9 @@
                 tradingDate: latest.tradingDate, qriContract: latest.contractContext.qriContract,
                 futuresContract: latest.contractContext.futuresContract,
                 contractRelation: latest.contractContext.relation,
-                aggregateComparison: latest.comparison.aggregateClass },
+                aggregateComparison: latest.comparison.aggregateClass,
+                currentAvailability: clone(value.currentAvailability),
+                latestSavedReference: clone(value.latestSavedReference) },
             details: { sourceIdentities: clone(latest.sourceIdentities),
                 contractContext: clone(latest.contractContext), freshness: clone(latest.freshness),
                 baselineSelection: clone(latest.baselineSelection), comparison: clone(latest.comparison),
@@ -81,6 +104,11 @@
             historical ? "Formal Morning V5 保存なし" : "Formal Morning V5：利用不可（保存なし）",
             "time-travel-empty"); return value; }
         const latest = value.latest, baseline = latest.baselineSelection;
+        if (!historical && value.currentAvailability) {
+            text(container.ownerDocument, container, "p", value.currentAvailability.status === "available" ?
+                "現在のMorning：利用可能" : "現在のMorning：利用不可");
+            text(container.ownerDocument, container, "p", `最新保存：${latest.calendarDay}`);
+        }
         text(container.ownerDocument, container, "p", `status：available ／ observedAt：${latest.observedAt}`);
         text(container.ownerDocument, container, "p", `calendarDay：${latest.calendarDay} ／ tradingDate：${latest.tradingDate}`);
         text(container.ownerDocument, container, "p", `QRI：${latest.contractContext.qriContract} ／ Futures：${latest.contractContext.futuresContract}`);
@@ -98,7 +126,7 @@
         const container = root.document?.getElementById?.("morningV5FormalCurrent");
         if (!container || typeof root.optionMapBridge?.readMorningV5Formal !== "function") return null;
         try { return render(container, project(await root.optionMapBridge.readMorningV5Formal({
-            scope: "current" }), "current")); }
+            scope: "current" }), "current", { currentCalendarDate: jstDate(new Date().toISOString()) })); }
         catch (_error) { return render(container, project({ status: "unavailable", records: [] }, "current")); }
     }
     root.document?.addEventListener?.("DOMContentLoaded", initialize);

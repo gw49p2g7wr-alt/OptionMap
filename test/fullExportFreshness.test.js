@@ -185,6 +185,60 @@ test("night-session QRI active/next/Major-SQ share one formal date context", () 
     assert.equal(levels.projectionSource, "qriOptions");
 });
 
+function holidayAuthority(observedAt) {
+    const calendarDate = new Date(Date.parse(observedAt) + 9 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+    const open = date => ({ authority: "formal_calendar_history_readonly", status: "available",
+        calendarDate: date, previousValidTradingDate: date === "2026-11-04" ? "2026-11-02" :
+            "2026-10-30", formalTradingDate: date === "2026-11-03" ? "2026-11-02" : date,
+        nextValidTradingDate: date === "2026-11-02" || date === "2026-11-03" ?
+            "2026-11-04" : "2026-11-05" });
+    return open(calendarDate);
+}
+
+function holidayQriFreshness({ exportObservedAt, pageUpdatedAt, tradingDate = "2026-11-04" }) {
+    return createFullExportFreshnessAdapter(dependencies({ now: () => exportObservedAt,
+        getMarketSession: () => ({ formalTradingDate: "2026-11-02",
+            nextValidTradingDate: "2026-11-04",
+            authority: "formal_calendar_history_readonly" }),
+        resolveQriTradingDateContext: (payloadTradingDate, sourceObservedAt) =>
+            dateContext.resolve({ observedAt: sourceObservedAt, payloadTradingDate,
+                calendarAuthority: holidayAuthority(sourceObservedAt) }),
+        getQriFormalIdentity: () => ({ status: "available", fact: {
+            identityVerified: true, acquisitionVerified: true, usingFallback: false,
+            referenceOnly: false, origin: "live", tradingDate, pageUpdatedAt,
+            fetchedAt: pageUpdatedAt, contract: "2026-11", canonicalSignature: "signature" } })
+    })).getSectionFreshness("qriOptions");
+}
+
+test("H1-H5 QRI P17 binds to source time across the 11/3 holiday", () => {
+    const daytime = holidayQriFreshness({ exportObservedAt: "2026-11-02T12:00:00+09:00",
+        pageUpdatedAt: "2026-11-02T12:00:00+09:00" });
+    assert.deepEqual([daytime.status, daytime.reason, daytime.tradingDateContext.relation],
+        ["unavailable", "date_mismatch", "date_mismatch"]);
+
+    const night = holidayQriFreshness({ exportObservedAt: "2026-11-02T18:00:00+09:00",
+        pageUpdatedAt: "2026-11-02T18:00:00+09:00" });
+    assert.equal(night.tradingDateContext.relation, "night_session_next_trading_date");
+
+    const nextMorning = holidayQriFreshness({
+        exportObservedAt: "2026-11-03T07:46:00+09:00",
+        pageUpdatedAt: "2026-11-02T18:00:00+09:00" });
+    assert.equal(nextMorning.tradingDateContext.relation,
+        "night_session_next_trading_date");
+
+    const holidayNight = holidayQriFreshness({
+        exportObservedAt: "2026-11-03T18:00:00+09:00",
+        pageUpdatedAt: "2026-11-03T18:00:00+09:00" });
+    assert.deepEqual([holidayNight.status, holidayNight.reason,
+        holidayNight.tradingDateContext.relation],
+    ["stale", "date_unverifiable", "date_context_unresolved"]);
+
+    const nextDay = holidayQriFreshness({ exportObservedAt: "2026-11-04T12:00:00+09:00",
+        pageUpdatedAt: "2026-11-04T12:00:00+09:00" });
+    assert.equal(nextDay.tradingDateContext.relation, "same_trading_date");
+});
+
 test("wrong future QRI date is unavailable and unknown authority remains unverifiable", () => {
     const observedAt = "2026-10-19T19:45:00+09:00";
     const formal = { status: "available", authority: "formal_calendar_history_readonly",

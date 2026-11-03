@@ -126,6 +126,29 @@ test("E1-E3 export is separate, complete, and missing never falls back", async (
     assert.deepEqual([missing.status, missing.summary, missing.details], ["unavailable", null, null]);
 });
 
+test("holiday consumer separates current Morning availability from latest saved reference", async () => {
+    const first = await build({ observedAt: "2026-11-02T09:05:00+09:00",
+        calendarDay: "2026-11-02", tradingDate: "2026-11-02",
+        qriConfirmedAt: "2026-11-02T08:58:00+09:00",
+        quotedAt: "2026-11-02T09:04:00+09:00" });
+    const projected = Surfaces.project(response([record(first)]), "current",
+        { currentCalendarDate: "2026-11-03" });
+    assert.deepEqual(projected.currentAvailability, { status: "unavailable",
+        reason: "latest_saved_reference_only", calendarDate: "2026-11-03",
+        observationId: null });
+    assert.deepEqual(projected.latestSavedReference, { status: "available",
+        observationId: first.observationId, observedAt: first.observedAt,
+        calendarDay: "2026-11-02", tradingDate: "2026-11-02" });
+    const section = Surfaces.exportSection(response([record(first)]),
+        { currentCalendarDate: "2026-11-03" });
+    assert.equal(section.status, "available");
+    assert.equal(section.summary.currentAvailability.status, "unavailable");
+    assert.equal(section.summary.latestSavedReference.calendarDay, "2026-11-02");
+    const container = dom(); Surfaces.render(container, projected);
+    assert.match(text(container), /現在のMorning：利用不可/);
+    assert.match(text(container), /最新保存：2026-11-02/);
+});
+
 test("security and isolation: one fixed read bridge, no writer/storage/network in surfaces", () => {
     const root = path.join(__dirname, "..");
     const source = fs.readFileSync(path.join(root, "js/morningV5FormalReadSurfaces.js"), "utf8");

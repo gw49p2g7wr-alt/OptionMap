@@ -122,12 +122,13 @@
             return session?.authority || session?.expectedTradingDateSource || null;
         }
 
-        function qriDateContext(payloadTradingDate) {
-            return configuration.resolveQriTradingDateContext?.(payloadTradingDate) || null;
+        function qriDateContext(payloadTradingDate, sourceUpdatedAt) {
+            return configuration.resolveQriTradingDateContext?.(
+                payloadTradingDate, sourceUpdatedAt) || null;
         }
 
         function qriDaily(values) {
-            const context = qriDateContext(values.dataTradingDate);
+            const context = qriDateContext(values.dataTradingDate, values.sourceUpdatedAt);
             const expectedTradingDate = context ? context.expectedTradingDate : sessionDate();
             const expectedTradingDateSource = context
                 ? context.authoritySource : sessionAuthority();

@@ -1883,8 +1883,9 @@ window.OptionMapFullExportUi.configure({
         const collectorState = window.getMorningBaselineV4RuntimeCollectorState?.() || null;
         const session = collectorState?.facts?.marketSession || null;
         const observedAt = new Date().toISOString();
-        const formalDateAuthority = await window.OptionMapFullExportFormalTradingDateAuthority
-            .resolve({ observedAt, indexedDB, keyRange: IDBKeyRange });
+        const formalDateResolver = await window.OptionMapFullExportFormalTradingDateAuthority
+            .createSourceTimeResolver({ observedAt, indexedDB, keyRange: IDBKeyRange });
+        const formalDateAuthority = formalDateResolver.resolve(observedAt);
         const freshnessSession = formalDateAuthority?.status === "available" ? {
             formalTradingDate: formalDateAuthority.formalTradingDate,
             nextValidTradingDate: formalDateAuthority.nextValidTradingDate,
@@ -1896,9 +1897,12 @@ window.OptionMapFullExportUi.configure({
             .createFullExportFreshnessAdapter({
                 now: () => observedAt,
                 getMarketSession: () => freshnessSession,
-                resolveQriTradingDateContext: payloadTradingDate =>
-                    window.OptionMapQriTradingDateContext.resolve({ observedAt,
-                        payloadTradingDate, calendarAuthority: formalDateAuthority }),
+                resolveQriTradingDateContext: (payloadTradingDate, qriPageUpdatedAt) => {
+                    const qriCalendarAuthority = formalDateResolver.resolve(qriPageUpdatedAt);
+                    return window.OptionMapQriTradingDateContext.resolve({
+                        observedAt: qriPageUpdatedAt, payloadTradingDate,
+                        calendarAuthority: qriCalendarAuthority });
+                },
                 getCurrentPriceIdentity: () => currentPriceIdentity,
                 getQriFormalIdentity: () => window.getQriFormalIdentityFact?.() || null,
                 getOverallV2FormalEnvelope: () => window.getOverallV2FormalEnvelope?.() || null,

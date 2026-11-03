@@ -121,6 +121,29 @@
         return resolveFromCalendar({ observedAt, calendarResult: result });
     }
 
+    async function createSourceTimeResolver({ observedAt, indexedDB,
+        keyRange = globalThis.IDBKeyRange, query = calendar?.query } = {}) {
+        const calendarDate = jstDate(observedAt);
+        if (!calendarDate || typeof query !== "function") {
+            const reason = calendarDate ? "calendar_authority_unavailable" :
+                "observation_time_invalid";
+            return freeze({ status: "unavailable", reason,
+                resolve: sourceObservedAt => unavailable(reason, jstDate(sourceObservedAt)) });
+        }
+        const year = Number(calendarDate.slice(0, 4));
+        let calendarResult;
+        try { calendarResult = await query({ indexedDB, keyRange,
+            startDate: `${year - 1}-01-01`, endDate: `${year + 1}-12-31` }); }
+        catch (_error) {
+            return freeze({ status: "unavailable", reason: "calendar_authority_unavailable",
+                resolve: sourceObservedAt => unavailable("calendar_authority_unavailable",
+                    jstDate(sourceObservedAt)) });
+        }
+        return freeze({ status: "available", reason: null,
+            resolve: sourceObservedAt => resolveFromCalendar({ observedAt: sourceObservedAt,
+                calendarResult }) });
+    }
+
     return Object.freeze({ AUTHORITY_VERSION, SOURCE_ID, EVENT_TYPE, SCOPE,
-        jstDate, resolveFromCalendar, resolve });
+        jstDate, resolveFromCalendar, resolve, createSourceTimeResolver });
 });
