@@ -5,6 +5,7 @@ const Schema = require("./economicValueSchemaV1.js");
 const Cpi = require("./blsCpiFormal.js");
 const Employment = require("./blsEmploymentFormal.js");
 const JapanCpi = require("./jpCpiFormal.js");
+const Pce = require("./beaPceFormal.js");
 const Sources = require("./economicValueSourceRegistry.js");
 
 const FIELD_STORE = Object.freeze({ runs: "economicSourceRuns", releases: "economicReleaseOccurrences",
@@ -338,6 +339,9 @@ async function readCurrentEmployment(indexedDB) {
 async function readCurrentJapanCpi(indexedDB) {
   return readCurrentSource(indexedDB, JapanCpi.SOURCE_ID);
 }
+async function readCurrentPce(indexedDB) {
+  return readCurrentSource(indexedDB, Pce.SOURCE_ID);
+}
 async function readCurrentSource(indexedDB, sourceId) {
   const contract = Sources.get(sourceId);
   if (!contract) error("economic_source_unknown");
@@ -368,4 +372,4 @@ async function readAsKnownAt(indexedDB, at) {
 
 module.exports = Canonical.freeze({ FIELD_STORE, KEY, emptySnapshot, audit, validateCandidate, plan, apply,
   readSnapshot, createFormalRuntime, selectAt, readCurrentSource, readCurrentCpi, readCurrentEmployment,
-  readCurrentJapanCpi, readAsKnownAt });
+  readCurrentJapanCpi, readCurrentPce, readAsKnownAt });

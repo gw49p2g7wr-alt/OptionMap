@@ -4,8 +4,9 @@ const Canonical = require("./economicValueCanonical.js");
 const Cpi = require("./blsCpiFormal.js");
 const Employment = require("./blsEmploymentFormal.js");
 const JapanCpi = require("./jpCpiFormal.js");
+const Pce = require("./beaPceFormal.js");
 
-const CONTRACTS = Object.freeze([Cpi, Employment, JapanCpi]);
+const CONTRACTS = Object.freeze([Cpi, Employment, JapanCpi, Pce]);
 const get = sourceId => CONTRACTS.find(contract => contract.SOURCE_ID === sourceId) || null;
 const definitionContract = definition => CONTRACTS.find(contract => contract.validateDefinition(definition)) || null;
 const validateDefinition = definition => !!definitionContract(definition);
