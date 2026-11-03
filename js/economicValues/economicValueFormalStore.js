@@ -4,6 +4,7 @@ const Canonical = require("./economicValueCanonical.js");
 const Schema = require("./economicValueSchemaV1.js");
 const Cpi = require("./blsCpiFormal.js");
 const Employment = require("./blsEmploymentFormal.js");
+const JapanCpi = require("./jpCpiFormal.js");
 const Sources = require("./economicValueSourceRegistry.js");
 
 const FIELD_STORE = Object.freeze({ runs: "economicSourceRuns", releases: "economicReleaseOccurrences",
@@ -94,11 +95,12 @@ async function audit(snapshot) {
 
 function validateCandidate(candidate) {
   const contract = Sources.get(candidate?.sourceId);
+  const expectedCount = contract ? Sources.seriesCount(contract) : 0;
   if (!contract || !Canonical.timestamp(candidate.acceptedAt) ||
       !Canonical.hash(candidate.candidateHash) || !Canonical.hash(candidate.acquisitionEvidenceHash) ||
-      !Array.isArray(candidate.definitions) || candidate.definitions.length !== contract.SERIES.length ||
-      candidate.definitions.some(value => !contract.validateDefinition(value)) || !Array.isArray(candidate.values) ||
-      candidate.values.length < contract.SERIES.length || candidate.values.some(value => {
+      !Array.isArray(candidate.definitions) || !Sources.validateDefinitionSet(candidate.sourceId,
+        candidate.definitions) || !Array.isArray(candidate.values) ||
+      candidate.values.length < expectedCount || candidate.values.some(value => {
         const fact = { valueKey: value.valueKey, seriesDefinitionKey: value.seriesDefinitionKey,
           referencePeriod: value.referencePeriod, decimalValue: value.decimalValue, unit: value.unit,
           seasonalAdjustment: value.seasonalAdjustment, measure: value.measure,
@@ -118,9 +120,9 @@ function validateCandidate(candidate) {
       fetchedAt: candidate.release.fetchedAt, sourceDocumentKey: candidate.document.sourceDocumentKey,
       parserId: candidate.document.parserId, parserVersion: candidate.document.parserVersion }),
     expectedEvidenceHash = Canonical.sha256(candidate.evidenceMaterial);
-  if (current.length !== contract.SERIES.length ||
-      new Set(current.map(value => value.seriesDefinitionKey)).size !== contract.SERIES.length ||
-      contract.SERIES.some(definition => !current.some(value =>
+  if (current.length !== expectedCount ||
+      new Set(current.map(value => value.seriesDefinitionKey)).size !== expectedCount ||
+      candidate.definitions.some(definition => !current.some(value =>
         value.seriesDefinitionKey === definition.seriesDefinitionKey)) ||
       new Set(candidate.values.map(value => value.valueKey)).size !== candidate.values.length ||
       candidate.release.authority !== contract.AUTHORITY || candidate.release.releaseProgram !== contract.PROGRAM ||
@@ -333,6 +335,9 @@ async function readCurrentCpi(indexedDB) {
 async function readCurrentEmployment(indexedDB) {
   return readCurrentSource(indexedDB, Employment.SOURCE_ID);
 }
+async function readCurrentJapanCpi(indexedDB) {
+  return readCurrentSource(indexedDB, JapanCpi.SOURCE_ID);
+}
 async function readCurrentSource(indexedDB, sourceId) {
   const contract = Sources.get(sourceId);
   if (!contract) error("economic_source_unknown");
@@ -342,13 +347,14 @@ async function readCurrentSource(indexedDB, sourceId) {
     value.authority === contract.AUTHORITY && value.releaseProgram === contract.PROGRAM).sort((a, b) =>
     a.acceptedAt.localeCompare(b.acceptedAt)).at(-1);
   if (!release) return Canonical.freeze({ status: "unavailable", reason: "release_absent" });
-  const seriesKeys = new Set(contract.SERIES.map(value => value.seriesDefinitionKey)),
+  const definitions = Sources.definitionsForSource(snapshot.definitions, sourceId),
+    seriesKeys = new Set(definitions.map(value => value.seriesDefinitionKey)),
     values = snapshot.entries.filter(entry => seriesKeys.has(entry.seriesDefinitionKey)).map(entry => snapshot.revisions.find(value =>
     value.revisionKey === entry.activeRevisionKey)).filter(Boolean).sort((a, b) =>
     a.seriesDefinitionKey.localeCompare(b.seriesDefinitionKey) || a.referencePeriod.localeCompare(b.referencePeriod)),
     revisionKeys = new Set(values.map(value => value.revisionKey));
   return Canonical.freeze({ status: "available", readiness: "formal_reference", releaseOccurrence: release,
-    seriesDefinitions: snapshot.definitions.filter(value => seriesKeys.has(value.seriesDefinitionKey)),
+    seriesDefinitions: definitions,
     officialValues: values, provenance: snapshot.evidence.filter(value => value.sourceId === sourceId &&
       revisionKeys.has(value.revisionKey)) });
 }
@@ -362,4 +368,4 @@ async function readAsKnownAt(indexedDB, at) {
 
 module.exports = Canonical.freeze({ FIELD_STORE, KEY, emptySnapshot, audit, validateCandidate, plan, apply,
   readSnapshot, createFormalRuntime, selectAt, readCurrentSource, readCurrentCpi, readCurrentEmployment,
-  readAsKnownAt });
+  readCurrentJapanCpi, readAsKnownAt });

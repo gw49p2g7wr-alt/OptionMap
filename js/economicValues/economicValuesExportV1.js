@@ -31,7 +31,8 @@ function create({ appVersion, generatedAt, selection = { mode: "current" }, snap
     evidence = snapshot.evidence.filter(value => (!at || value.acceptedAt <= at) &&
       official.some(revision => revision.revisionKey === value.revisionKey)),
     sourceStatuses = Sources.CONTRACTS.map(contract => {
-      const seriesKeys = new Set(contract.SERIES.map(value => value.seriesDefinitionKey)),
+      const seriesKeys = new Set(Sources.definitionsForSource(snapshot.definitions,
+        contract.SOURCE_ID).map(value => value.seriesDefinitionKey)),
         count = official.filter(value => seriesKeys.has(value.seriesDefinitionKey)).length;
       return { sourceId: contract.SOURCE_ID, readiness: count ? "formal_reference" : "unavailable",
         reason: snapshotResult.status === "absent" ? "database_absent" : count ? null : "value_absent",
