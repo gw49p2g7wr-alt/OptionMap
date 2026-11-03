@@ -71,6 +71,11 @@ function invokeMorningV5Evaluation(args) {
   return ipcRenderer.invoke("evaluate-formal-morning-v5");
 }
 
+function invokeOverallTraceEvaluation(args) {
+  if (args.length !== 0) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("evaluate-formal-overall-trace");
+}
+
 function invokeRuntimeMetadata(args) {
   if (args.length !== 0) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
   return ipcRenderer.invoke("get-runtime-metadata");
@@ -132,6 +137,7 @@ contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   checkCalendarSources: (...args) => invokeCalendarCheck(args),
   requestCalendarSource: (...args) => invokeCalendarSource(args),
   evaluateMorningV5Formal: (...args) => invokeMorningV5Evaluation(args),
+  evaluateOverallV2Trace: (...args) => invokeOverallTraceEvaluation(args),
   readMorningV5Formal: (...args) => invokeMorningV5Read(args),
   saveCalendarExportJson: (...args) => invokeCalendarExportSave(args),
   saveFullExportJson: (...args) => invokeFullExportSave(args)

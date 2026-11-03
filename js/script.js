@@ -4849,7 +4849,7 @@ async function publishFormalIdentityEnvelopesV2(result) {
         );
         renderWeeklyTwelveGroupReference();
     }
-    await window.publishOverallV2FormalEnvelope?.({
+    const overallPublication = await window.publishOverallV2FormalEnvelope?.({
         logicVersion: window.OptionMapOverallV2FormalEnvelopeRuntime
             ?.OVERALL_V2_LOGIC_VERSION,
         requestId, result, qriFact, weeklyFact
@@ -4859,6 +4859,22 @@ async function publishFormalIdentityEnvelopesV2(result) {
         return latestQri?.canonicalVersionKey === qriFact?.canonicalVersionKey &&
             latestWeekly?.currentVersionKey === weeklyFact?.currentVersionKey;
     } });
+    if (overallPublication?.published === true && overallPublication.status === "available" &&
+        typeof window.optionMapBridge?.evaluateOverallV2Trace === "function") {
+        window.optionMapBridge.evaluateOverallV2Trace().then(result => {
+            window.OptionMapOverallTracePersistenceDiagnostics = Object.freeze({
+                attempted: true, status: result?.status || "failed",
+                reason: result?.reason || null,
+                observationId: result?.observationId || null
+            });
+        }).catch(error => {
+            window.OptionMapOverallTracePersistenceDiagnostics = Object.freeze({
+                attempted: true, status: "failed",
+                reason: error?.message || "overall_trace_persistence_failed",
+                observationId: null
+            });
+        });
+    }
     await window.evaluateMorningBaselineV4Applicability?.();
     if (!window.isMarketRefreshInProgress?.()) {
         await window.publishMorningComparisonV4Runtime?.();
@@ -5036,6 +5052,12 @@ window.getWeeklyCandidateState = function () {
             ? structuredClone(optionMapJudgmentStateV2.weeklyCandidate)
             : JSON.parse(JSON.stringify(optionMapJudgmentStateV2.weeklyCandidate)))
         : null;
+};
+window.getWeeklyFormalTraceContractExpiries = function () {
+    const data = weeklyTwelveGroupFormalPairContext?.current?.canonicalData;
+    const values = data?.products?.["日経225先物"]?.expiryKeys;
+    return Array.isArray(values) ? [...new Set(values.filter(value =>
+        typeof value === "string" && /^20\d{2}-(0[1-9]|1[0-2])$/.test(value)))].sort() : [];
 };
 
 function invalidateOptionMarketJudgment() {
