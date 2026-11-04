@@ -2,6 +2,7 @@
 
 const Canonical = require("./economicValueCanonical.js");
 const { zonedInstant } = require("./blsCpiFormal.js");
+const SourceEvidence = require("../sourceEvidence/sourceEvidenceContract.js");
 
 const SOURCE_ID = "us-bls-employment-situation-values";
 const AUTHORITY = "BLS";
@@ -202,6 +203,24 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
       sourceDocumentKey, acquisitionEvidenceHash }) });
 }
 
+function bindSourceEvidence(candidate, sourceEvidence) {
+  if (!candidate || candidate.sourceId !== SOURCE_ID || !candidate.document ||
+      Object.hasOwn(candidate.document, "sourceEvidence") ||
+      !SourceEvidence.validateSourceEvidenceRef(sourceEvidence) || sourceEvidence.state !== "available" ||
+      sourceEvidence.sourceFamily !== "economic_values" || sourceEvidence.sourceId !== SOURCE_ID ||
+      sourceEvidence.contentSha256 !== candidate.document.rawContentHash)
+    throw new Error("bls_employment_source_evidence_invalid");
+  const document = { ...Canonical.clone(candidate.document),
+    sourceEvidence: Canonical.clone(sourceEvidence) }, evidenceMaterial = {
+      ...Canonical.clone(candidate.evidenceMaterial), sourceEvidence: Canonical.clone(sourceEvidence) },
+    acquisitionEvidenceHash = Canonical.sha256(evidenceMaterial), result = {
+      ...Canonical.clone(candidate), document, evidenceMaterial, acquisitionEvidenceHash };
+  result.candidateHash = Canonical.sha256({ release: result.release,
+    values: result.values.map(value => value.revisionKey).sort(),
+    sourceDocumentKey: result.document.sourceDocumentKey, acquisitionEvidenceHash });
+  return Canonical.freeze(result);
+}
+
 function validateReleaseOccurrenceKey(value, releaseDate, rawContentHash) {
   return value === `${RELEASE_KEY_PREFIX}${releaseDate}|initial` ||
     value === `${RELEASE_KEY_PREFIX}${releaseDate}|correction|sha256:${rawContentHash}`;
@@ -209,4 +228,5 @@ function validateReleaseOccurrenceKey(value, releaseDate, rawContentHash) {
 
 module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, RELEASE_KEY_PREFIX, PARSER_ID,
   PARSER_VERSION, SERIES, DEFINITION_FIELDS, parseReleaseHtml, validateDefinition, validateValue,
-  createAcceptedCandidate, validateReleaseOccurrenceKey, addMonths, payrollDecimal, correctionPublishedAt });
+  createAcceptedCandidate, bindSourceEvidence, validateReleaseOccurrenceKey, addMonths, payrollDecimal,
+  correctionPublishedAt });

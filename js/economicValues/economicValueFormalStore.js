@@ -44,11 +44,12 @@ function candidateEvidenceValid(candidate) {
     Canonical.stable(candidate.document.sourceEvidence) ===
       Canonical.stable(candidate.evidenceMaterial.sourceEvidence));
 }
-function compatibleCpiReleaseReobservation(prior, candidate) {
-  if (candidate.sourceId !== Cpi.SOURCE_ID) return false;
+function compatibleReleaseReobservation(prior, candidate) {
+  if (![Cpi.SOURCE_ID, Employment.SOURCE_ID].includes(candidate.sourceId)) return false;
   const fields = ["releaseOccurrenceKey", "authority", "releaseProgram", "officialReleaseDate",
     "referencePeriod", "publishedAt", "sourceUrl", "calendarEventKey"];
-  return fields.every(field => Canonical.stable(prior[field]) === Canonical.stable(candidate.release[field]));
+  return fields.every(field => Canonical.stable(prior[field]) === Canonical.stable(candidate.release[field])) &&
+    (candidate.sourceId !== Employment.SOURCE_ID || prior.occurrenceType === candidate.release.occurrenceType);
 }
 
 async function audit(snapshot) {
@@ -198,7 +199,7 @@ function plan(candidate, snapshot) {
   const priorRelease = snapshot.releases.find(value => value.releaseOccurrenceKey ===
     candidate.release.releaseOccurrenceKey);
   if (priorRelease && !same(priorRelease, candidate.release) &&
-      !compatibleCpiReleaseReobservation(priorRelease, candidate))
+      !compatibleReleaseReobservation(priorRelease, candidate))
     error("economic_release_identity_conflict");
   if (!priorRelease) operations.releases.add.push(Canonical.clone(candidate.release));
   const priorDocument = snapshot.documents.find(value => value.sourceDocumentKey === candidate.document.sourceDocumentKey);
