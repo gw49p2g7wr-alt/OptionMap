@@ -15,13 +15,14 @@ function html({ referencePeriod = "2026-09", releaseDate = "2026-10-29",
     releaseNumber = RELEASE_NUMBERS[releaseDate] || "26–99", headlineMom = "0.5", headlineYoy = "3.6",
     coreMom = "0.3", coreYoy = "3.1", priorHeadlineMom = "0.3", priorCoreMom = "0.3",
     duplicateNarrative = false, omitArchive = false, coreAlso = false, tableCurrentHeadline = headlineMom,
-    tableCurrentCore = coreMom } = {}) {
+    tableCurrentCore = coreMom, corrected = false, correctionTime = "9:00 a.m." } = {}) {
   const [referenceYear, referenceMonth] = referencePeriod.split("-"), prior = previousMonth(referencePeriod),
     [releaseYear, releaseMonth, releaseDay] = releaseDate.split("-"), currentName = MONTHS[referenceMonth],
     priorName = MONTHS[prior.slice(5)], code = `${referenceMonth}${referenceYear.slice(-2)}`,
     narrative = `<p>From the preceding month, the PCE price index for ${currentName} increased ${headlineMom} percent. ` +
       `Excluding food and energy, the PCE price index ${coreAlso ? "also " : ""}increased ${coreMom} percent.</p>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>BEA release</title></head><body>
+    ${corrected ? `<h2>CORRECTED</h2><p>Corrected: ${MONTHS[releaseMonth]} ${Number(releaseDay)}, ${releaseYear} at ${correctionTime} (ET)</p>` : ""}
     <div>EMBARGOED UNTIL RELEASE AT 8:30 a.m. EDT, ${WEEKDAYS[releaseDate] || "Thursday"},
       ${MONTHS[releaseMonth]} ${Number(releaseDay)}, ${releaseYear}</div>
     <div>BEA ${releaseNumber}</div>

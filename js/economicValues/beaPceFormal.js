@@ -2,6 +2,7 @@
 
 const Canonical = require("./economicValueCanonical.js");
 const { zonedInstant } = require("./blsCpiFormal.js");
+const SourceEvidence = require("../sourceEvidence/sourceEvidenceContract.js");
 
 const SOURCE_ID = "us-bea-pce-values";
 const AUTHORITY = "BEA";
@@ -88,6 +89,18 @@ function requireReleaseLinks(html, releaseDate, referencePeriod) {
     historicalComparisonsUrl: `https://www.bea.gov${comparisons}`, dataArchiveUrl: archive,
     tableIdentities: ["BEA_NIPA_TABLE_2_8_7", "BEA_NIPA_TABLE_2_8_11"] };
 }
+function correctionPublishedAt(body, releaseDate) {
+  if (!/\bCORRECTED\b/i.test(body)) return null;
+  const match = body.match(/Corrected:\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s*(20\d{2})\s+at\s+(\d{1,2}):(\d{2})\s+(a\.m\.|p\.m\.)\s*\(ET\)/i);
+  if (!match) throw new Error("bea_pce_correction_time_unverifiable");
+  const correctedDate = `${match[3]}-${MONTHS[match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()]}-${pad(match[2])}`;
+  if (correctedDate !== releaseDate) throw new Error("bea_pce_correction_date_mismatch");
+  let hour = Number(match[4]); const minute = Number(match[5]);
+  if (hour < 1 || hour > 12 || minute > 59) throw new Error("bea_pce_correction_time_invalid");
+  if (/p\.m\./i.test(match[6]) && hour !== 12) hour += 12;
+  if (/a\.m\./i.test(match[6]) && hour === 12) hour = 0;
+  return zonedInstant(releaseDate, hour, minute, "America/New_York");
+}
 function parseReleaseHtml(bytesOrText, context = {}) {
   let html;
   try { html = typeof bytesOrText === "string" ? bytesOrText :
@@ -128,9 +141,11 @@ function parseReleaseHtml(bytesOrText, context = {}) {
     .map(([definition, period, decimalValue]) => ({ seriesDefinitionKey: definition.seriesDefinitionKey,
       referencePeriod: period, decimalValue, unit: definition.unit,
       seasonalAdjustment: definition.seasonalAdjustment, measure: definition.measure }));
+  const correctedAt = correctionPublishedAt(body, releaseDate);
   return Canonical.freeze({ parserId: PARSER_ID, parserVersion: PARSER_VERSION, releaseDate,
-    referencePeriod, releaseNumber, occurrenceType: "initial", publishedAt: zonedInstant(releaseDate,
-      8, 30, "America/New_York"), values, vintage: requireReleaseLinks(html, releaseDate, referencePeriod) });
+    referencePeriod, releaseNumber, occurrenceType: correctedAt ? "correction" : "initial",
+    publishedAt: correctedAt || zonedInstant(releaseDate, 8, 30, "America/New_York"), values,
+    vintage: requireReleaseLinks(html, releaseDate, referencePeriod) });
 }
 function validateDefinition(value) {
   return Canonical.exact(value, DEFINITION_FIELDS) && SERIES.some(definition =>
@@ -147,9 +162,9 @@ function validateValue(value, definitions = SERIES) {
   return !!definition && validateDefinition(definition) && value.unit === definition.unit &&
     value.seasonalAdjustment === definition.seasonalAdjustment && value.measure === definition.measure;
 }
-function calendarLink(value, referencePeriod) {
+function calendarLink(value, referencePeriod, occurrenceType) {
   if (value == null) return null;
-  const expected = `US|US_BEA|US_PCE|${referencePeriod}|initial|national`;
+  const expected = `US|US_BEA|US_PCE|${referencePeriod}|${occurrenceType}|national`;
   if (value !== expected) throw new Error("calendar_event_link_invalid");
   return value;
 }
@@ -166,7 +181,9 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
       current.length !== SERIES_COUNT || new Set(current.map(value => value.seriesDefinitionKey)).size !== SERIES_COUNT ||
       new Set(parsed.values.map(value => `${value.seriesDefinitionKey}|${value.referencePeriod}`)).size !== parsed.values.length)
     throw new Error("bea_pce_value_contract_invalid");
-  const releaseOccurrenceKey = `${RELEASE_KEY_PREFIX}${parsed.releaseDate}|${parsed.releaseNumber}`,
+  const occurrenceSuffix = parsed.occurrenceType === "correction" ?
+      `${parsed.releaseNumber}|correction|sha256:${acquisition.document.rawContentHash}` : parsed.releaseNumber,
+    releaseOccurrenceKey = `${RELEASE_KEY_PREFIX}${parsed.releaseDate}|${occurrenceSuffix}`,
     sourceDocumentKey = `${releaseOccurrenceKey}|release_specific_html|sha256:${acquisition.document.rawContentHash}`,
     runId = Canonical.sha256({ sourceId: SOURCE_ID, fetchedAt: acquisition.fetchedAt,
       sourceDocumentKey, parserId: PARSER_ID, parserVersion: PARSER_VERSION }), runKey = `${SOURCE_ID}|${runId}`,
@@ -180,7 +197,8 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
       occurrenceType: parsed.occurrenceType, officialReleaseDate: parsed.releaseDate,
       referencePeriod: parsed.referencePeriod, publishedAt: parsed.publishedAt,
       fetchedAt: acquisition.fetchedAt, acceptedAt, sourceUrl: acquisition.document.sourceUrl,
-      sourceDocumentKey, calendarEventKey: calendarLink(calendarEventKey, parsed.referencePeriod) },
+      sourceDocumentKey, calendarEventKey: calendarLink(calendarEventKey, parsed.referencePeriod,
+        parsed.occurrenceType) },
     httpMetadata = { ...Canonical.clone(acquisition.document.httpMetadata), releaseNumber: parsed.releaseNumber,
       vintageAuthority: "bea_release_specific_news_archive", ...Canonical.clone(parsed.vintage) },
     document = { sourceDocumentKey, releaseOccurrenceKey, sourceId: SOURCE_ID, role: "official_release",
@@ -198,10 +216,30 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
     candidateHash: Canonical.sha256({ release, values: values.map(value => value.revisionKey).sort(),
       sourceDocumentKey, acquisitionEvidenceHash }) });
 }
-function validateReleaseOccurrenceKey(value, releaseDate) {
-  return new RegExp(`^${escape(RELEASE_KEY_PREFIX)}${escape(releaseDate)}\\|BEA_\\d{2}-\\d{2}$`).test(value);
+function bindSourceEvidence(candidate, sourceEvidence) {
+  if (!candidate || candidate.sourceId !== SOURCE_ID || !candidate.document ||
+      Object.hasOwn(candidate.document, "sourceEvidence") ||
+      !SourceEvidence.validateSourceEvidenceRef(sourceEvidence) || sourceEvidence.state !== "available" ||
+      sourceEvidence.sourceFamily !== "economic_values" || sourceEvidence.sourceId !== SOURCE_ID ||
+      sourceEvidence.contentSha256 !== candidate.document.rawContentHash)
+    throw new Error("bea_pce_source_evidence_invalid");
+  const document = { ...Canonical.clone(candidate.document),
+    sourceEvidence: Canonical.clone(sourceEvidence) }, evidenceMaterial = {
+      ...Canonical.clone(candidate.evidenceMaterial), sourceEvidence: Canonical.clone(sourceEvidence) },
+    acquisitionEvidenceHash = Canonical.sha256(evidenceMaterial), result = {
+      ...Canonical.clone(candidate), document, evidenceMaterial, acquisitionEvidenceHash };
+  result.candidateHash = Canonical.sha256({ release: result.release,
+    values: result.values.map(value => value.revisionKey).sort(),
+    sourceDocumentKey: result.document.sourceDocumentKey, acquisitionEvidenceHash });
+  return Canonical.freeze(result);
+}
+function validateReleaseOccurrenceKey(value, releaseDate, rawContentHash) {
+  const prefix = `${escape(RELEASE_KEY_PREFIX)}${escape(releaseDate)}\\|BEA_\\d{2}-\\d{2}`;
+  return new RegExp(`^${prefix}$`).test(value) ||
+    new RegExp(`^${prefix}\\|correction\\|sha256:${rawContentHash}$`).test(value);
 }
 
 module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, RELEASE_KEY_PREFIX, PARSER_ID,
   PARSER_VERSION, SERIES, SERIES_COUNT, DEFINITION_FIELDS, parseReleaseHtml, validateDefinition,
-  validateDefinitionSet, validateValue, createAcceptedCandidate, validateReleaseOccurrenceKey, previousMonth });
+  validateDefinitionSet, validateValue, createAcceptedCandidate, bindSourceEvidence,
+  validateReleaseOccurrenceKey, previousMonth, correctionPublishedAt });

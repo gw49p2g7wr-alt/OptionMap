@@ -45,7 +45,8 @@ function candidateEvidenceValid(candidate) {
       Canonical.stable(candidate.evidenceMaterial.sourceEvidence));
 }
 function compatibleReleaseReobservation(prior, candidate) {
-  if (![Cpi.SOURCE_ID, Employment.SOURCE_ID, JapanCpi.SOURCE_ID].includes(candidate.sourceId)) return false;
+  if (![Cpi.SOURCE_ID, Employment.SOURCE_ID, JapanCpi.SOURCE_ID, Pce.SOURCE_ID]
+      .includes(candidate.sourceId)) return false;
   const fields = ["releaseOccurrenceKey", "authority", "releaseProgram", "officialReleaseDate",
     "referencePeriod", "publishedAt", "sourceUrl", "calendarEventKey"];
   return fields.every(field => Canonical.stable(prior[field]) === Canonical.stable(candidate.release[field])) &&
