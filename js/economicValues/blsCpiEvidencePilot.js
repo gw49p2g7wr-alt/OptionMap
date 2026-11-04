@@ -4,6 +4,7 @@ const Canonical = require("./economicValueCanonical.js");
 const Acquisition = require("./blsCpiAcquisition.js");
 const Cpi = require("./blsCpiFormal.js");
 const Store = require("./economicValueFormalStore.js");
+const Resolver = require("./economicValueEvidenceResolver.js");
 const Evidence = require("../sourceEvidence/sourceEvidenceContract.js");
 const Vault = require("../sourceEvidence/sourceEvidenceVault.js");
 
@@ -67,58 +68,10 @@ function createEvidenceInput(acquisition, candidate, acquisitionContext) {
   return Canonical.freeze({ bytes: acquisition.document.parserInput, contentObject, occurrence, policy });
 }
 
-function unavailablePreActivation(document) {
-  return Evidence.createSourceEvidenceRef({ state: "unavailable", sourceFamily: "economic_values",
-    sourceId: document?.sourceId || Cpi.SOURCE_ID, reason: "pre_activation" });
-}
-
-function invalid(reason) {
-  return Canonical.freeze({ status: "invalid", diagnostic: "evidence_invalid", reason,
-    evidenceRef: null, occurrence: null, integrityStatus: reason, parserLineage: [] });
-}
-
 function resolveCpiEvidence({ snapshot, vault, sourceDocumentKey } = {}) {
-  if (!snapshot || !Array.isArray(snapshot.documents) || !vault ||
-      typeof vault.verifyOccurrence !== "function" || typeof sourceDocumentKey !== "string")
-    fail("cpi_evidence_reader_input_invalid");
-  const document = snapshot.documents.find(value => value.sourceDocumentKey === sourceDocumentKey);
-  if (!document || document.sourceId !== Cpi.SOURCE_ID) return invalid("source_document_missing");
-  if (!Object.hasOwn(document, "sourceEvidence")) return Canonical.freeze({ status: "unavailable",
-    diagnostic: "evidence_unavailable_pre_activation", reason: "pre_activation",
-    evidenceRef: unavailablePreActivation(document), occurrence: null,
-    integrityStatus: "unavailable", parserLineage: [] });
-  const reference = document.sourceEvidence;
-  if (!Evidence.validateSourceEvidenceRef(reference) || reference.state !== "available" ||
-      reference.sourceFamily !== "economic_values" || reference.sourceId !== Cpi.SOURCE_ID ||
-      reference.contentSha256 !== document.rawContentHash) return invalid("evidence_ref_invalid");
-  let verified, occurrence;
-  try {
-    verified = vault.verifyOccurrence(reference.occurrenceId);
-    if (verified.status !== "valid") return invalid(verified.status);
-    occurrence = vault.readOccurrence(reference.occurrenceId);
-  } catch (_error) { return invalid("vault_read_failed"); }
-  if (!occurrence || occurrence.contentSha256 !== document.rawContentHash ||
-      occurrence.byteLength !== document.byteCount || occurrence.sourceFamily !== "economic_values" ||
-      occurrence.sourceId !== document.sourceId || occurrence.mediaType !== document.mime ||
-      occurrence.sourceUrl !== document.finalUrl) return invalid("source_identity_mismatch");
-  const release = snapshot.releases.find(value =>
-    value.releaseOccurrenceKey === document.releaseOccurrenceKey), evidenceRecords =
-    snapshot.evidence.filter(value => value.sourceDocumentKey === sourceDocumentKey);
-  if (!release || evidenceRecords.length === 0 || evidenceRecords.some(value =>
-    value.releaseOccurrenceKey !== release.releaseOccurrenceKey || value.sourceId !== Cpi.SOURCE_ID ||
-    value.rawContentHash !== document.rawContentHash || value.parserId !== document.parserId ||
-    value.parserVersion !== document.parserVersion ||
-    Canonical.stable(value.sourceEvidence) !== Canonical.stable(reference)))
-    return invalid("formal_lineage_mismatch");
-  let parserLineage;
-  try {
-    parserLineage = evidenceRecords.map(value => Evidence.createParserLineage({ evidenceRef: reference,
-      parserId: value.parserId, parserVersion: value.parserVersion,
-      canonicalIdentity: { kind: "revision_key", value: value.revisionKey } }));
-  } catch (_error) { return invalid("parser_lineage_invalid"); }
-  return Canonical.freeze({ status: "available", diagnostic: "evidence_saved", reason: null,
-    evidenceRef: Canonical.clone(reference), occurrence: Canonical.clone(occurrence),
-    integrityStatus: "valid", parserLineage });
+  return Resolver.resolveSourceDocument({ snapshot, vault, sourceId: Cpi.SOURCE_ID, sourceDocumentKey,
+    expectedEncoding: () => "utf-8", validateSourceUrl: (value, _document, release) =>
+      Acquisition.validateUrl(value, release?.officialReleaseDate) });
 }
 
 function sameCanonicalFacts(snapshot, candidate) {

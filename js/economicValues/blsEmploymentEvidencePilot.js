@@ -4,6 +4,7 @@ const Canonical = require("./economicValueCanonical.js");
 const Acquisition = require("./blsEmploymentAcquisition.js");
 const Employment = require("./blsEmploymentFormal.js");
 const Store = require("./economicValueFormalStore.js");
+const Resolver = require("./economicValueEvidenceResolver.js");
 const Evidence = require("../sourceEvidence/sourceEvidenceContract.js");
 const Vault = require("../sourceEvidence/sourceEvidenceVault.js");
 
@@ -66,91 +67,18 @@ function createEvidenceInput(acquisition, candidate, acquisitionContext) {
   return Canonical.freeze({ bytes: acquisition.document.parserInput, contentObject, occurrence, policy });
 }
 
-function unavailablePreActivation(document) {
-  return Evidence.createSourceEvidenceRef({ state: "unavailable", sourceFamily: "economic_values",
-    sourceId: document?.sourceId || Employment.SOURCE_ID, reason: "pre_activation" });
-}
-
-function invalid(reason) {
-  return Canonical.freeze({ status: "invalid", diagnostic: "evidence_invalid", reason,
-    evidenceRef: null, occurrence: null, integrityStatus: reason, parserLineage: [] });
-}
-
 function resolveEmploymentEvidence({ snapshot, vault, sourceDocumentKey } = {}) {
-  if (!snapshot || !Array.isArray(snapshot.documents) || !vault ||
-      typeof vault.verifyOccurrence !== "function" || typeof sourceDocumentKey !== "string")
-    fail("employment_evidence_reader_input_invalid");
-  const document = snapshot.documents.find(value => value.sourceDocumentKey === sourceDocumentKey);
-  if (!document || document.sourceId !== Employment.SOURCE_ID) return invalid("source_document_missing");
-  if (!Object.hasOwn(document, "sourceEvidence")) return Canonical.freeze({ status: "unavailable",
-    diagnostic: "evidence_unavailable_pre_activation", reason: "pre_activation",
-    evidenceRef: unavailablePreActivation(document), occurrence: null,
-    integrityStatus: "unavailable", parserLineage: [] });
-  const reference = document.sourceEvidence;
-  if (!Evidence.validateSourceEvidenceRef(reference) || reference.state !== "available" ||
-      reference.sourceFamily !== "economic_values" || reference.sourceId !== Employment.SOURCE_ID ||
-      reference.contentSha256 !== document.rawContentHash) return invalid("evidence_ref_invalid");
-  let verified, occurrence;
-  try {
-    verified = vault.verifyOccurrence(reference.occurrenceId);
-    if (verified.status !== "valid") return invalid(verified.status);
-    occurrence = vault.readOccurrence(reference.occurrenceId);
-  } catch (_error) { return invalid("vault_read_failed"); }
-  if (!occurrence || occurrence.contentSha256 !== document.rawContentHash ||
-      occurrence.byteLength !== document.byteCount || occurrence.sourceFamily !== "economic_values" ||
-      occurrence.sourceId !== document.sourceId || occurrence.mediaType !== document.mime ||
-      occurrence.sourceUrl !== document.finalUrl) return invalid("source_identity_mismatch");
-  const release = snapshot.releases.find(value =>
-    value.releaseOccurrenceKey === document.releaseOccurrenceKey), evidenceRecords =
-    snapshot.evidence.filter(value => value.sourceDocumentKey === sourceDocumentKey);
-  if (!release || evidenceRecords.length === 0 || evidenceRecords.some(value =>
-    value.releaseOccurrenceKey !== release.releaseOccurrenceKey || value.sourceId !== Employment.SOURCE_ID ||
-    value.rawContentHash !== document.rawContentHash || value.parserId !== document.parserId ||
-    value.parserVersion !== document.parserVersion ||
-    Canonical.stable(value.sourceEvidence) !== Canonical.stable(reference)))
-    return invalid("formal_lineage_mismatch");
-  let parserLineage;
-  try {
-    parserLineage = evidenceRecords.map(value => Evidence.createParserLineage({ evidenceRef: reference,
-      parserId: value.parserId, parserVersion: value.parserVersion,
-      canonicalIdentity: { kind: "revision_key", value: value.revisionKey } }));
-  } catch (_error) { return invalid("parser_lineage_invalid"); }
-  return Canonical.freeze({ status: "available", diagnostic: "evidence_saved", reason: null,
-    evidenceRef: Canonical.clone(reference), occurrence: Canonical.clone(occurrence),
-    integrityStatus: "valid", parserLineage });
+  return Resolver.resolveSourceDocument({ snapshot, vault, sourceId: Employment.SOURCE_ID,
+    sourceDocumentKey, expectedEncoding: () => "utf-8",
+    validateSourceUrl: (value, _document, release) =>
+      Acquisition.validateUrl(value, release?.officialReleaseDate) });
 }
 
 function resolveEmploymentRevision({ snapshot, vault, revisionKey } = {}) {
-  if (!snapshot || !Array.isArray(snapshot.revisions) || typeof revisionKey !== "string")
-    fail("employment_revision_evidence_input_invalid");
-  const revision = snapshot.revisions.find(value => value.revisionKey === revisionKey),
-    employmentSeries = new Set(Employment.SERIES.map(value => value.seriesDefinitionKey));
-  if (!revision || !employmentSeries.has(revision.seriesDefinitionKey))
-    return Canonical.freeze({ ...invalid("revision_missing"), revision: null, release: null,
-      sourceDocument: null });
-  const matches = snapshot.evidence.filter(value => value.revisionKey === revisionKey &&
-    value.sourceId === Employment.SOURCE_ID &&
-    value.releaseOccurrenceKey === revision.releaseOccurrenceKey && value.acceptedAt === revision.validFrom);
-  if (matches.length !== 1) return Canonical.freeze({ ...invalid("revision_lineage_ambiguous"),
-    revision: Canonical.clone(revision), release: null, sourceDocument: null });
-  const evidence = matches[0], release = snapshot.releases.find(value =>
-    value.releaseOccurrenceKey === evidence.releaseOccurrenceKey), sourceDocument = snapshot.documents.find(value =>
-    value.sourceDocumentKey === evidence.sourceDocumentKey), resolved = resolveEmploymentEvidence({
-      snapshot, vault, sourceDocumentKey: evidence.sourceDocumentKey });
-  if (!release || !sourceDocument)
-    return Canonical.freeze({ ...invalid("revision_lineage_mismatch"),
-      revision: Canonical.clone(revision), release: release ? Canonical.clone(release) : null,
-      sourceDocument: sourceDocument ? Canonical.clone(sourceDocument) : null });
-  if (resolved.status !== "available") return Canonical.freeze({ ...resolved,
-    revision: Canonical.clone(revision), release: Canonical.clone(release),
-    sourceDocument: Canonical.clone(sourceDocument) });
-  if (!resolved.parserLineage.some(value =>
-      value.canonicalIdentity.value === revisionKey))
-    return Canonical.freeze({ ...invalid("revision_lineage_mismatch"),
-      revision: Canonical.clone(revision), release: release ? Canonical.clone(release) : null,
-      sourceDocument: sourceDocument ? Canonical.clone(sourceDocument) : null });
-  return Canonical.freeze({ ...resolved, revision: Canonical.clone(revision),
-    release: Canonical.clone(release), sourceDocument: Canonical.clone(sourceDocument) });
+  return Resolver.resolveRevision({ snapshot, vault, sourceId: Employment.SOURCE_ID,
+    seriesDefinitionKeys: Employment.SERIES.map(value => value.seriesDefinitionKey), revisionKey,
+    expectedEncoding: () => "utf-8", validateSourceUrl: (value, _document, release) =>
+      Acquisition.validateUrl(value, release?.officialReleaseDate) });
 }
 
 function sameCanonicalFacts(snapshot, candidate) {

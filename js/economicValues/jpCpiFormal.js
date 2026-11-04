@@ -3,6 +3,7 @@
 const Canonical = require("./economicValueCanonical.js");
 const { zonedInstant } = require("./blsCpiFormal.js");
 const Encoding = require("./jpCpiEncoding.js");
+const SourceEvidence = require("../sourceEvidence/sourceEvidenceContract.js");
 
 const SOURCE_ID = "jp-statistics-bureau-cpi-values";
 const AUTHORITY = "JP_STATISTICS_BUREAU";
@@ -180,6 +181,23 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
     candidateHash: Canonical.sha256({ release, values: values.map(value => value.revisionKey).sort(),
       sourceDocumentKey, acquisitionEvidenceHash }) });
 }
+function bindSourceEvidence(candidate, sourceEvidence) {
+  if (!candidate || candidate.sourceId !== SOURCE_ID || !candidate.document ||
+      Object.hasOwn(candidate.document, "sourceEvidence") ||
+      !SourceEvidence.validateSourceEvidenceRef(sourceEvidence) || sourceEvidence.state !== "available" ||
+      sourceEvidence.sourceFamily !== "economic_values" || sourceEvidence.sourceId !== SOURCE_ID ||
+      sourceEvidence.contentSha256 !== candidate.document.rawContentHash)
+    throw new Error("jp_cpi_source_evidence_invalid");
+  const document = { ...Canonical.clone(candidate.document),
+    sourceEvidence: Canonical.clone(sourceEvidence) }, evidenceMaterial = {
+      ...Canonical.clone(candidate.evidenceMaterial), sourceEvidence: Canonical.clone(sourceEvidence) },
+    acquisitionEvidenceHash = Canonical.sha256(evidenceMaterial), result = {
+      ...Canonical.clone(candidate), document, evidenceMaterial, acquisitionEvidenceHash };
+  result.candidateHash = Canonical.sha256({ release: result.release,
+    values: result.values.map(value => value.revisionKey).sort(),
+    sourceDocumentKey: result.document.sourceDocumentKey, acquisitionEvidenceHash });
+  return Canonical.freeze(result);
+}
 function validateReleaseOccurrenceKey(value, releaseDate, rawContentHash) {
   return value === `${RELEASE_KEY_PREFIX}${releaseDate}|initial` ||
     value === `${RELEASE_KEY_PREFIX}${releaseDate}|correction|sha256:${rawContentHash}`;
@@ -188,4 +206,5 @@ function validateReleaseOccurrenceKey(value, releaseDate, rawContentHash) {
 module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, RELEASE_KEY_PREFIX, PARSER_ID,
   PARSER_VERSION, SERIES_COUNT, SERIES_ROLES, GEOGRAPHIES, DEFINITION_FIELDS, seriesForBaseYear,
   parseReleaseHtml, validateDefinition, validateDefinitionSet, validateValue, createAcceptedCandidate,
+  bindSourceEvidence,
   validateReleaseOccurrenceKey, correctionPublishedAt });
