@@ -1,6 +1,7 @@
 "use strict";
 
 const Canonical = require("./economicValueCanonical.js");
+const SourceEvidence = require("../sourceEvidence/sourceEvidenceContract.js");
 
 const SOURCE_ID = "us-bls-cpi-values";
 const AUTHORITY = "BLS";
@@ -188,8 +189,26 @@ function createAcceptedCandidate({ acquisition, acceptedAt, calendarEventKey = n
       sourceDocumentKey, acquisitionEvidenceHash }) });
 }
 
+function bindSourceEvidence(candidate, sourceEvidence) {
+  if (!candidate || candidate.sourceId !== SOURCE_ID || !candidate.document ||
+      Object.hasOwn(candidate.document, "sourceEvidence") ||
+      !SourceEvidence.validateSourceEvidenceRef(sourceEvidence) || sourceEvidence.state !== "available" ||
+      sourceEvidence.sourceFamily !== "economic_values" || sourceEvidence.sourceId !== SOURCE_ID ||
+      sourceEvidence.contentSha256 !== candidate.document.rawContentHash)
+    throw new Error("bls_cpi_source_evidence_invalid");
+  const document = { ...Canonical.clone(candidate.document),
+    sourceEvidence: Canonical.clone(sourceEvidence) }, evidenceMaterial = {
+      ...Canonical.clone(candidate.evidenceMaterial), sourceEvidence: Canonical.clone(sourceEvidence) },
+    acquisitionEvidenceHash = Canonical.sha256(evidenceMaterial), result = {
+      ...Canonical.clone(candidate), document, evidenceMaterial, acquisitionEvidenceHash };
+  result.candidateHash = Canonical.sha256({ release: result.release,
+    values: result.values.map(value => value.revisionKey).sort(),
+    sourceDocumentKey: result.document.sourceDocumentKey, acquisitionEvidenceHash });
+  return Canonical.freeze(result);
+}
+
 const validateReleaseOccurrenceKey = (value, releaseDate) => value === `${RELEASE_KEY_PREFIX}${releaseDate}`;
 
 module.exports = Canonical.freeze({ SOURCE_ID, AUTHORITY, PROGRAM, RELEASE_KEY_PREFIX, PARSER_ID, PARSER_VERSION,
   SERIES, DEFINITION_FIELDS, parseReleaseHtml, validateDefinition, validateValue, createAcceptedCandidate,
-  validateReleaseOccurrenceKey, zonedInstant });
+  bindSourceEvidence, validateReleaseOccurrenceKey, zonedInstant });

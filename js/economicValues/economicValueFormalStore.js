@@ -7,6 +7,7 @@ const Employment = require("./blsEmploymentFormal.js");
 const JapanCpi = require("./jpCpiFormal.js");
 const Pce = require("./beaPceFormal.js");
 const Sources = require("./economicValueSourceRegistry.js");
+const SourceEvidence = require("../sourceEvidence/sourceEvidenceContract.js");
 
 const FIELD_STORE = Object.freeze({ runs: "economicSourceRuns", releases: "economicReleaseOccurrences",
   definitions: "economicSeriesDefinitions", entries: "economicValueEntries",
@@ -29,6 +30,26 @@ const same = (left, right) => Canonical.stable(left) === Canonical.stable(right)
 const sorted = snapshot => Object.fromEntries(Object.entries(snapshot).map(([field, values]) => [field,
   [...values].sort((left, right) => String(left[KEY[field]]).localeCompare(String(right[KEY[field]])))]));
 function error(reason) { throw new Error(reason); }
+function documentEvidenceValid(document) {
+  if (!Object.hasOwn(document || {}, "sourceEvidence")) return true;
+  const reference = document.sourceEvidence;
+  return SourceEvidence.validateSourceEvidenceRef(reference) && reference.state === "available" &&
+    reference.sourceFamily === "economic_values" && reference.sourceId === document.sourceId &&
+    reference.contentSha256 === document.rawContentHash;
+}
+function candidateEvidenceValid(candidate) {
+  const documentHas = Object.hasOwn(candidate?.document || {}, "sourceEvidence"), materialHas =
+    Object.hasOwn(candidate?.evidenceMaterial || {}, "sourceEvidence");
+  return documentHas === materialHas && (!documentHas || documentEvidenceValid(candidate.document) &&
+    Canonical.stable(candidate.document.sourceEvidence) ===
+      Canonical.stable(candidate.evidenceMaterial.sourceEvidence));
+}
+function compatibleCpiReleaseReobservation(prior, candidate) {
+  if (candidate.sourceId !== Cpi.SOURCE_ID) return false;
+  const fields = ["releaseOccurrenceKey", "authority", "releaseProgram", "officialReleaseDate",
+    "referencePeriod", "publishedAt", "sourceUrl", "calendarEventKey"];
+  return fields.every(field => Canonical.stable(prior[field]) === Canonical.stable(candidate.release[field]));
+}
 
 async function audit(snapshot) {
   const errors = [], unique = (field, key) => {
@@ -77,13 +98,20 @@ async function audit(snapshot) {
       sourcePublishedAt: evidence.sourcePublishedAt, sourceUrl: evidence.sourceUrl,
       parserId: evidence.parserId, parserVersion: evidence.parserVersion,
       rawContentHash: evidence.rawContentHash, httpMetadata: evidence.httpMetadata };
+    if (Object.hasOwn(evidence, "sourceEvidence")) material.sourceEvidence = evidence.sourceEvidence;
+    const document = documents.get(evidence.sourceDocumentKey);
     if (!revisions.has(evidence.revisionKey) || !documents.has(evidence.sourceDocumentKey) ||
         !releases.has(evidence.releaseOccurrenceKey) ||
         !runs.has(`${evidence.sourceId}|${evidence.runId}`) ||
         evidence.acquisitionEvidenceHash !== Canonical.sha256(material) ||
+        Object.hasOwn(evidence, "sourceEvidence") !== Object.hasOwn(document || {}, "sourceEvidence") ||
+        Object.hasOwn(evidence, "sourceEvidence") && Canonical.stable(evidence.sourceEvidence) !==
+          Canonical.stable(document.sourceEvidence) ||
         evidence.evidenceKey !== `${evidence.revisionKey}|${evidence.sourceDocumentKey}|${evidence.runId}`)
       errors.push("acquisition_evidence_invalid");
   }
+  for (const document of snapshot.documents)
+    if (!documentEvidenceValid(document)) errors.push("source_document_evidence_invalid");
   for (const cursor of snapshot.cursors) if (!runs.has(cursor.runKey) || !Canonical.timestamp(cursor.acceptedAt))
     errors.push("source_cursor_invalid");
   for (const release of snapshot.releases) if (!documents.has(release.sourceDocumentKey) ||
@@ -113,7 +141,8 @@ function validateCandidate(candidate) {
           value.officialStatus !== "published" || value.factHash !== factHash ||
           value.revisionKey !== `${value.valueKey}|sha256:${factHash}`;
       }) ||
-      !candidate.release || !candidate.document || candidate.release.sourceDocumentKey !== candidate.document.sourceDocumentKey ||
+      !candidate.release || !candidate.document || !candidateEvidenceValid(candidate) ||
+      candidate.release.sourceDocumentKey !== candidate.document.sourceDocumentKey ||
       candidate.release.releaseOccurrenceKey !== candidate.document.releaseOccurrenceKey ||
       candidate.values.some(value => value.releaseOccurrenceKey !== candidate.release.releaseOccurrenceKey)) return false;
   const current = candidate.values.filter(value => value.referencePeriod === candidate.release.referencePeriod);
@@ -168,7 +197,9 @@ function plan(candidate, snapshot) {
   }
   const priorRelease = snapshot.releases.find(value => value.releaseOccurrenceKey ===
     candidate.release.releaseOccurrenceKey);
-  if (priorRelease && !same(priorRelease, candidate.release)) error("economic_release_identity_conflict");
+  if (priorRelease && !same(priorRelease, candidate.release) &&
+      !compatibleCpiReleaseReobservation(priorRelease, candidate))
+    error("economic_release_identity_conflict");
   if (!priorRelease) operations.releases.add.push(Canonical.clone(candidate.release));
   const priorDocument = snapshot.documents.find(value => value.sourceDocumentKey === candidate.document.sourceDocumentKey);
   if (priorDocument && !same(priorDocument, candidate.document)) error("economic_document_identity_conflict");
@@ -288,14 +319,21 @@ async function commitExisting(indexedDB, operations, faultAt) {
   } finally { db.close(); }
 }
 
-function createFormalRuntime({ indexedDB, faultAt = null } = {}) {
+function createFormalRuntime({ indexedDB, faultAt = null, requiredEvidenceSourceIds = [] } = {}) {
   if (![null, "before_open", "first_write_abort", "transaction_abort"].includes(faultAt))
     error("economic_fault_point_invalid");
+  if (!Array.isArray(requiredEvidenceSourceIds) ||
+      new Set(requiredEvidenceSourceIds).size !== requiredEvidenceSourceIds.length ||
+      requiredEvidenceSourceIds.some(sourceId => !Sources.get(sourceId)))
+    error("economic_evidence_requirement_invalid");
   if (Schema.fingerprint() !== Schema.EXPECTED_FINGERPRINT) error("economic_schema_fingerprint_invalid");
   const tickets = new WeakMap(); let active = false;
   async function registerAcceptedRelease(candidate) {
     if (active) error("economic_writer_single_flight");
     if (!validateCandidate(candidate)) error("economic_candidate_invalid");
+    if (requiredEvidenceSourceIds.includes(candidate.sourceId) &&
+        !Object.hasOwn(candidate.document, "sourceEvidence"))
+      error("economic_source_evidence_required");
     const ticket = Object.freeze({}); tickets.set(ticket, Canonical.clone(candidate)); active = true;
     return ticket;
   }
