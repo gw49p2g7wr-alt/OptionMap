@@ -14,6 +14,7 @@ const WriterCore = require("./formalControlledWriterCore.js");
 const BlsSourceEvidenceSet = require("./calendarSourceEvidenceSet.js");
 const NyseSourceEvidenceSet = require("./nyseCalendarSourceEvidenceSet.js");
 const EsriSnaSourceEvidenceSet = require("./esriSnaCalendarSourceEvidenceSet.js");
+const EsriMachinerySourceEvidenceSet = require("./esriMachineryCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -27,7 +28,8 @@ const HASH = /^[0-9a-f]{64}$/;
 const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
   "us-bls-calendar": BlsSourceEvidenceSet.validateSourceEvidenceSet,
   "us-nyse-market-holidays": NyseSourceEvidenceSet.validateSourceEvidenceSet,
-  "jp-esri-sna-calendar": EsriSnaSourceEvidenceSet.validateSourceEvidenceSet
+  "jp-esri-sna-calendar": EsriSnaSourceEvidenceSet.validateSourceEvidenceSet,
+  "jp-esri-machinery-orders-calendar": EsriMachinerySourceEvidenceSet.validateSourceEvidenceSet
 });
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);

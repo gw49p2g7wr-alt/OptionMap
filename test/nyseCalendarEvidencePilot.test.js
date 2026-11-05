@@ -307,7 +307,8 @@ test("R8-16 NYSE activation remains isolated from Economic Values and other Cale
       "../js/marketCalendarHistory/calendarPartialSourcePreparation.js"), "utf8");
   assert.doesNotMatch(pilot, /economicValues|RuntimeState|runtimeState|manualReset/);
   for (const sourceId of Contract.EXPECTED_SOURCE_IDS.filter(value =>
-    ![SOURCE_ID, "us-bls-calendar", "jp-esri-sna-calendar"].includes(value)))
+    ![SOURCE_ID, "us-bls-calendar", "jp-esri-sna-calendar",
+      "jp-esri-machinery-orders-calendar"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 
