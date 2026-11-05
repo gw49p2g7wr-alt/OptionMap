@@ -11,6 +11,7 @@ const Transition = require("./transitionPlanner.js");
 const Mapper = require("./storageRecordMapper.js");
 const PlanCanonicalizer = require("./planCanonicalizer.js");
 const WriterCore = require("./formalControlledWriterCore.js");
+const SourceEvidenceSet = require("./calendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -226,6 +227,10 @@ async function prepareCalendarFormalSourceMutation(input = {}) {
     return rejected(sourceId, "precondition_failed", "acquisition_generation_stale");
   if (!acceptedAtConsistent(acquisition, acceptedAt)) return rejected(sourceId,
     "precondition_failed", "accepted_at_inconsistent");
+  const hasSourceEvidenceSet = Object.hasOwn(acquisition, "sourceEvidenceSet");
+  if (hasSourceEvidenceSet && (sourceId !== "us-bls-calendar" ||
+      !SourceEvidenceSet.validateSourceEvidenceSet(acquisition.sourceEvidenceSet)))
+    return rejected(sourceId, "precondition_failed", "source_evidence_set_invalid");
 
   const checkedSnapshot = await validateSnapshot(formalSnapshot);
   if (!checkedSnapshot.valid) return rejected(sourceId, checkedSnapshot.status,
@@ -240,12 +245,19 @@ async function prepareCalendarFormalSourceMutation(input = {}) {
 
   const records = candidateRecords(acquisition).slice().sort((left, right) =>
     left.eventKey.localeCompare(right.eventKey)), fetchedAt = [...new Set(records.map(value =>
-    value.acquisitionEvidence?.fetchedAt))].sort(), runIdentity = await Canonicalizer.sha256({
-    sourceId, acceptedAt, generation, semanticSetIdentity: eligibility.diagnostics.semanticSetIdentity,
-    candidateIdentity: acquisition.candidateEnvelope?.candidateIdentity || acquisition.candidateIdentity,
-    fetchedAt }), runId = `partial-source|sha256:${runIdentity}`, run = { sourceId, runId,
+    value.acquisitionEvidence?.fetchedAt))].sort(), runIdentityMaterial = {
+      sourceId, acceptedAt, generation,
+      semanticSetIdentity: eligibility.diagnostics.semanticSetIdentity,
+      candidateIdentity: acquisition.candidateEnvelope?.candidateIdentity || acquisition.candidateIdentity,
+      fetchedAt, ...(hasSourceEvidenceSet ? {
+        sourceEvidenceSetSha256: acquisition.sourceEvidenceSet.setSha256 } : {}) },
+    runIdentity = await Canonicalizer.sha256(runIdentityMaterial),
+    runId = `partial-source|sha256:${runIdentity}`,
+    run = { sourceId, runId,
     acceptedAt, fetchedAt, status: "accepted",
-    semanticSetHash: eligibility.diagnostics.semanticSetIdentity }, runKey = `${sourceId}|${runId}`,
+    semanticSetHash: eligibility.diagnostics.semanticSetIdentity,
+    ...(hasSourceEvidenceSet ? { sourceEvidenceSet: clone(acquisition.sourceEvidenceSet) } : {}) },
+    runKey = `${sourceId}|${runId}`,
     existingRun = checkedSnapshot.snapshot.runs.find(value => value.runKey === runKey);
   if (existingRun) {
     const expected = { ...run, runKey, contractVersion: 1 };
