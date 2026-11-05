@@ -11,7 +11,8 @@ const Transition = require("./transitionPlanner.js");
 const Mapper = require("./storageRecordMapper.js");
 const PlanCanonicalizer = require("./planCanonicalizer.js");
 const WriterCore = require("./formalControlledWriterCore.js");
-const SourceEvidenceSet = require("./calendarSourceEvidenceSet.js");
+const BlsSourceEvidenceSet = require("./calendarSourceEvidenceSet.js");
+const NyseSourceEvidenceSet = require("./nyseCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -22,6 +23,10 @@ const AUTHORITY = Object.freeze({
   schemaFingerprint: Schema.EXPECTED_FINGERPRINT
 });
 const HASH = /^[0-9a-f]{64}$/;
+const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
+  "us-bls-calendar": BlsSourceEvidenceSet.validateSourceEvidenceSet,
+  "us-nyse-market-holidays": NyseSourceEvidenceSet.validateSourceEvidenceSet
+});
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);
 const SNAPSHOT_KEYS = Object.freeze(["databaseStatus", "schemaVersion", "schemaFingerprint",
@@ -228,8 +233,9 @@ async function prepareCalendarFormalSourceMutation(input = {}) {
   if (!acceptedAtConsistent(acquisition, acceptedAt)) return rejected(sourceId,
     "precondition_failed", "accepted_at_inconsistent");
   const hasSourceEvidenceSet = Object.hasOwn(acquisition, "sourceEvidenceSet");
-  if (hasSourceEvidenceSet && (sourceId !== "us-bls-calendar" ||
-      !SourceEvidenceSet.validateSourceEvidenceSet(acquisition.sourceEvidenceSet)))
+  const sourceEvidenceValidator = SOURCE_EVIDENCE_VALIDATORS[sourceId];
+  if (hasSourceEvidenceSet && (!sourceEvidenceValidator ||
+      !sourceEvidenceValidator(acquisition.sourceEvidenceSet)))
     return rejected(sourceId, "precondition_failed", "source_evidence_set_invalid");
 
   const checkedSnapshot = await validateSnapshot(formalSnapshot);
