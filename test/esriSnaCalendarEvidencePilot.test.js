@@ -287,7 +287,7 @@ test("R9-15/R9-16 SNA activation is isolated from Machinery, Economic Values and
   assert.doesNotMatch(pilot, /economicValues|Machinery|RuntimeState|runtimeState|manualReset/);
   for (const sourceId of Contract.EXPECTED_SOURCE_IDS.filter(value =>
     ![SOURCE_ID, "us-bls-calendar", "us-nyse-market-holidays",
-      "jp-esri-machinery-orders-calendar", "jp-stat-cpi"].includes(value)))
+      "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 

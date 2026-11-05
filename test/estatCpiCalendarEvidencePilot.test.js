@@ -290,14 +290,14 @@ test("R11-17 Calendar Export leaks neither raw CPI HTML nor evidence references"
   assert.equal(serialized.includes("政府統計名に関連する公表予定一覧"), false);
 });
 
-test("R11-18 activation remains CPI-only and leaves Labor/Runtime State unbound", () => {
+test("R11/R12 e-Stat wrappers stay source-specific and Runtime State remains unbound", () => {
   const pilot = fs.readFileSync(path.join(__dirname,
     "../js/marketCalendarIsolated/estatCpiCalendarEvidencePilot.js"), "utf8"), preparation =
     fs.readFileSync(path.join(__dirname,
       "../js/marketCalendarHistory/calendarPartialSourcePreparation.js"), "utf8");
   assert.doesNotMatch(pilot, /jp-stat-labor|RuntimeState|runtimeState|manualReset/);
   assert.equal(preparation.includes('"jp-stat-cpi":'), true);
-  assert.equal(preparation.includes('"jp-stat-labor":'), false);
+  assert.equal(preparation.includes('"jp-stat-labor":'), true);
 });
 
 test("R11 evidence binding rejects forged source, role and parser lineage", async t => {
