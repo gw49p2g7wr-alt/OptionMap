@@ -17,6 +17,7 @@ const EsriSnaSourceEvidenceSet = require("./esriSnaCalendarSourceEvidenceSet.js"
 const EsriMachinerySourceEvidenceSet = require("./esriMachineryCalendarSourceEvidenceSet.js");
 const EstatCpiSourceEvidenceSet = require("./estatCpiCalendarSourceEvidenceSet.js");
 const EstatLaborSourceEvidenceSet = require("./estatLaborCalendarSourceEvidenceSet.js");
+const CensusSourceEvidenceSet = require("./censusCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -33,7 +34,8 @@ const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
   "jp-esri-sna-calendar": EsriSnaSourceEvidenceSet.validateSourceEvidenceSet,
   "jp-esri-machinery-orders-calendar": EsriMachinerySourceEvidenceSet.validateSourceEvidenceSet,
   "jp-stat-cpi": EstatCpiSourceEvidenceSet.validateSourceEvidenceSet,
-  "jp-stat-labor": EstatLaborSourceEvidenceSet.validateSourceEvidenceSet
+  "jp-stat-labor": EstatLaborSourceEvidenceSet.validateSourceEvidenceSet,
+  "us-census-calendar": CensusSourceEvidenceSet.validateSourceEvidenceSet
 });
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);
