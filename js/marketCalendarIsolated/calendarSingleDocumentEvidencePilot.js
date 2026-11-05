@@ -32,8 +32,10 @@ function bytes(value) {
   return null;
 }
 function validConfiguration(value) {
-  return exact(value, ["sourceId", "sourceEvidenceSet", "pilotVersion", "runIdPrefix",
-    "diagnosticPrefix", "allowedEncodings"]) &&
+  const fields = ["sourceId", "sourceEvidenceSet", "pilotVersion", "runIdPrefix",
+    "diagnosticPrefix", "allowedEncodings"], keys = Object.keys(value || {});
+  if (Object.hasOwn(value || {}, "routeAuthority")) fields.push("routeAuthority");
+  return exact(value, fields) &&
     typeof value.sourceId === "string" && value.sourceEvidenceSet?.SOURCE_ID === value.sourceId &&
     typeof value.sourceEvidenceSet.createSourceEvidenceSet === "function" &&
     typeof value.sourceEvidenceSet.resolveRunEvidence === "function" &&
@@ -42,17 +44,31 @@ function validConfiguration(value) {
     /^[a-z0-9-]+$/.test(value.runIdPrefix) && typeof value.diagnosticPrefix === "string" &&
     /^[a-z0-9_]+$/.test(value.diagnosticPrefix) && Array.isArray(value.allowedEncodings) &&
     value.allowedEncodings.length > 0 && value.allowedEncodings.every(encoding =>
-      typeof encoding === "string");
+      typeof encoding === "string") && (keys.length === 6 || validRouteAuthority(value.routeAuthority));
+}
+function validRouteAuthority(value) {
+  return exact(value, ["source", "route", "operation", "transportVersion", "validateUrl",
+    "validateMime"]) && value.source?.formalEligible === true &&
+    typeof value.source.canonicalUrl === "string" && value.route?.role === "primary" &&
+    value.route.url === value.source.canonicalUrl && Array.isArray(value.route.allowedMime) &&
+    value.route.allowedMime.length > 0 && Number.isSafeInteger(value.route.maxBytes) &&
+    value.route.maxBytes > 0 && typeof value.operation === "string" && value.operation.length > 0 &&
+    typeof value.transportVersion === "string" && value.transportVersion.length > 0 &&
+    typeof value.validateUrl === "function" && typeof value.validateMime === "function";
 }
 
 function createSingleDocumentEvidencePilot(configuration) {
   if (!validConfiguration(configuration)) fail("calendar_single_document_pilot_policy_invalid");
   const { sourceId, sourceEvidenceSet, pilotVersion, runIdPrefix, diagnosticPrefix } = configuration,
-    allowedEncodings = Object.freeze([...configuration.allowedEncodings]),
-    source = Registry.getSource(sourceId), sourcePolicy = Network.getPolicy(sourceId),
-    route = sourcePolicy?.documents?.[0];
-  if (!source || source.formalEligible !== true || sourcePolicy?.documents?.length !== 1 ||
-      route?.role !== "primary" || route.url !== source.canonicalUrl)
+    allowedEncodings = Object.freeze([...configuration.allowedEncodings]), legacySource =
+      Registry.getSource(sourceId), legacyPolicy = Network.getPolicy(sourceId), authority =
+      configuration.routeAuthority || (legacyPolicy?.documents?.length === 1 ? {
+        source: legacySource, route: legacyPolicy.documents[0], operation: Network.OPERATION,
+        transportVersion: TRANSPORT_VERSION,
+        validateUrl: value => Network.validateUrl(sourceId, legacyPolicy.documents[0], value),
+        validateMime: value => Network.validateMime(legacyPolicy.documents[0], value)
+      } : null), source = authority?.source, route = authority?.route;
+  if (!validRouteAuthority(authority))
     fail("calendar_single_document_route_policy_invalid");
   const reason = suffix => `${diagnosticPrefix}_${suffix}`;
   function createEvidencePolicy() {
@@ -61,14 +77,15 @@ function createSingleDocumentEvidencePilot(configuration) {
   }
   function acceptedAcquisition(acquisition) {
     if (acquisition?.success !== true || acquisition.sourceId !== sourceId ||
-        acquisition.operation !== Network.OPERATION || !timestamp(acquisition.fetchedAt) ||
+        acquisition.operation !== authority.operation || !timestamp(acquisition.fetchedAt) ||
         !Array.isArray(acquisition.documents) || acquisition.documents.length !== 1) return false;
     const document = acquisition.documents[0], raw = bytes(document?.parserInput),
-      initial = Network.validateUrl(sourceId, route, document?.originalOfficialUrl),
-      final = Network.validateUrl(sourceId, route, document?.finalUrl),
-      mime = Network.validateMime(route, document?.mime), encoding = document?.encoding?.encoding;
+      initial = authority.validateUrl(document?.originalOfficialUrl),
+      final = authority.validateUrl(document?.finalUrl),
+      mime = authority.validateMime(document?.mime), encoding = document?.encoding?.encoding;
     return document?.role === "primary" && initial.valid && final.valid &&
-      document.httpStatus === 200 && mime.valid && allowedEncodings.includes(encoding) &&
+      acquisition.operation === authority.operation && document.httpStatus === 200 && mime.valid &&
+      allowedEncodings.includes(encoding) &&
       document.encoding?.evidence?.resolutionPolicyVersion === 1 &&
       Array.isArray(document.redirects) && document.redirects.length <= Network.MAX_REDIRECTS &&
       document.redirects.every(hop => Number.isInteger(hop.status) && hop.status >= 300 &&
@@ -94,7 +111,7 @@ function createSingleDocumentEvidencePilot(configuration) {
     const occurrence = Evidence.createAcquisitionOccurrence({ sourceFamily: "market_calendar",
       sourceId, initialUrl: document.originalOfficialUrl, sourceUrl: document.finalUrl,
       fetchedAt: acquisition.fetchedAt, httpStatus: document.httpStatus, contentObject,
-      transportVersion: TRANSPORT_VERSION, publishedAt: null, requestRole: document.role,
+      transportVersion: authority.transportVersion, publishedAt: null, requestRole: document.role,
       redirectHops: document.redirects.map(hop => ({ status: hop.status, url: hop.to })),
       sourceDocumentRole: document.role, runId: acquisitionRunId, acquisitionContext }, policy);
     return freeze({ acquisitionRunId,
@@ -125,7 +142,7 @@ function createSingleDocumentEvidencePilot(configuration) {
           !timestamp(input.acceptedAt) || !/^[0-9a-f]{64}$/.test(input.generationIdentity || "") ||
           !Evidence.ACQUISITION_CONTEXTS.includes(input.acquisitionContext))
         fail(reason("evidence_run_input_invalid"));
-      const acquired = await acquisition.acquire({ sourceId, operation: Network.OPERATION });
+      const acquired = await acquisition.acquire({ sourceId, operation: authority.operation });
       if (!acceptedAcquisition(acquired)) return freeze({ status: "failed",
         diagnostic: "evidence_invalid", reason: acquired?.reason || "acquisition_invalid",
         evidenceTransactionCount: 0, formalTransactionCount: 0, semanticWrites: 0,
@@ -188,7 +205,7 @@ function createSingleDocumentEvidencePilot(configuration) {
         sourceEvidenceSet.resolveRevisionEvidence({ snapshot: result.snapshot, vault, revisionKey })) });
   }
   return freeze({ SOURCE_ID: sourceId, CORE_VERSION, PILOT_VERSION: pilotVersion,
-    TRANSPORT_VERSION, DIAGNOSTICS, createEvidencePolicy, acceptedAcquisition,
+    TRANSPORT_VERSION: authority.transportVersion, DIAGNOSTICS, createEvidencePolicy, acceptedAcquisition,
     createEvidenceInput, sourceResultFor, createPilotRuntime });
 }
 

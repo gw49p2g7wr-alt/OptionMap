@@ -306,7 +306,7 @@ test("R10-17/R10-18 Machinery activation is isolated from Economic Values and ot
   assert.doesNotMatch(pilot, /economicValues|RuntimeState|runtimeState|manualReset/);
   for (const sourceId of Contract.EXPECTED_SOURCE_IDS.filter(value =>
     ![SOURCE_ID, "jp-esri-sna-calendar", "us-bls-calendar",
-      "us-nyse-market-holidays"].includes(value)))
+      "us-nyse-market-holidays", "jp-stat-cpi"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 
