@@ -330,8 +330,9 @@ test("R13-18 prior Calendar evidence adapters stay isolated and unchanged", asyn
     "../js/marketCalendarHistory/calendarPartialSourcePreparation.js"), "utf8");
   assert.equal(EvidenceSet.validateSourceEvidenceSet(set), true);
   assert.equal(preparation.includes('"us-census-calendar":'), true);
-  for (const id of ["jp-jpx-market-holidays", "us-bea-calendar", "jp-jpx-derivatives-calendar",
-    "jp-boj-calendar", "jp-mof-jgb-calendar", "us-fed-calendar"])
+  assert.equal(preparation.includes('"jp-jpx-market-holidays":'), true);
+  for (const id of ["us-bea-calendar", "jp-jpx-derivatives-calendar", "jp-boj-calendar",
+    "jp-mof-jgb-calendar", "us-fed-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
 

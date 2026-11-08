@@ -343,6 +343,6 @@ test("R12-19 Labor activation is isolated from other sources and Runtime State",
   for (const sourceId of Contract.EXPECTED_SOURCE_IDS.filter(value => ![
     SOURCE_ID, CPI, "us-bls-calendar", "us-nyse-market-holidays",
     "jp-esri-sna-calendar", "jp-esri-machinery-orders-calendar",
-    "us-census-calendar"].includes(value)))
+    "us-census-calendar", "jp-jpx-market-holidays"].includes(value)))
     assert.equal(preparation.includes(`"${sourceId}":`), false);
 });
