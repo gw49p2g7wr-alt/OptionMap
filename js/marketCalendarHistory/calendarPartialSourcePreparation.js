@@ -19,6 +19,7 @@ const EstatCpiSourceEvidenceSet = require("./estatCpiCalendarSourceEvidenceSet.j
 const EstatLaborSourceEvidenceSet = require("./estatLaborCalendarSourceEvidenceSet.js");
 const CensusSourceEvidenceSet = require("./censusCalendarSourceEvidenceSet.js");
 const JpxHolidaysSourceEvidenceSet = require("./jpxHolidaysCalendarSourceEvidenceSet.js");
+const BeaSourceEvidenceSet = require("./beaCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -37,7 +38,8 @@ const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
   "jp-stat-cpi": EstatCpiSourceEvidenceSet.validateSourceEvidenceSet,
   "jp-stat-labor": EstatLaborSourceEvidenceSet.validateSourceEvidenceSet,
   "us-census-calendar": CensusSourceEvidenceSet.validateSourceEvidenceSet,
-  "jp-jpx-market-holidays": JpxHolidaysSourceEvidenceSet.validateSourceEvidenceSet
+  "jp-jpx-market-holidays": JpxHolidaysSourceEvidenceSet.validateSourceEvidenceSet,
+  "us-bea-calendar": BeaSourceEvidenceSet.validateSourceEvidenceSet
 });
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);
