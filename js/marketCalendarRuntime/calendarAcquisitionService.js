@@ -183,7 +183,8 @@ function createCalendarAcquisitionService(configuration = {}) {
         httpStatus: response.status, mime: mime.mime, encoding: body.encoding ? clone(body.encoding) : null,
         workbook: body.workbook ? clone(body.workbook) : null, byteCount: bytes.byteLength,
         contentSha256: sha256(bytes), parserInputSha256: sha256(body.parserInput || bytes),
-        parserInput: body.parserInput || bytes }) };
+        parserInput: body.parserInput || bytes,
+        ...(body.workbook?.sanitized === true ? { evidenceInput: bytes } : {}) }) };
     }
     return { ok: false, reason: "redirect_hop_exceeded", retryable: false };
   }
@@ -234,7 +235,9 @@ function createCalendarAcquisitionService(configuration = {}) {
 function sanitizeForIpc(result) {
   if (!result?.success) return clone(result);
   return { ...clone({ ...result, documents: undefined }), documents: result.documents.map(document => ({
-    ...clone({ ...document, parserInput: undefined }), parserInput: document.parserInput
+    ...clone({ ...document, parserInput: undefined, evidenceInput: undefined }),
+    parserInput: document.parserInput,
+    ...(document.evidenceInput ? { evidenceInput: document.evidenceInput } : {})
   })) };
 }
 

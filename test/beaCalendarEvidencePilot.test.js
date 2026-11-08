@@ -359,9 +359,10 @@ test("R15-20 BLS and prior Calendar evidence contracts remain independently vali
   assert.equal(BlsEvidenceSet.validateSourceEvidenceSet(set), false);
   for (const id of ["us-bls-calendar", "us-nyse-market-holidays", "jp-esri-sna-calendar",
     "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
-    "us-census-calendar", "jp-jpx-market-holidays", SOURCE_ID])
+    "us-census-calendar", "jp-jpx-market-holidays", SOURCE_ID,
+    "jp-jpx-derivatives-calendar"])
     assert.equal(preparation.includes(`"${id}":`), true);
-  for (const id of ["jp-jpx-derivatives-calendar", "jp-boj-calendar",
+  for (const id of ["jp-boj-calendar",
     "jp-mof-jgb-calendar", "us-fed-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
