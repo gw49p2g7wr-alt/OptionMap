@@ -310,7 +310,7 @@ test("R8-16 NYSE activation remains isolated from Economic Values and other Cale
     ![SOURCE_ID, "us-bls-calendar", "jp-esri-sna-calendar",
       "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
       "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
-      "jp-jpx-derivatives-calendar"].includes(value)))
+      "jp-jpx-derivatives-calendar", "jp-boj-calendar"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 

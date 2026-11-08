@@ -289,7 +289,7 @@ test("R9-15/R9-16 SNA activation is isolated from Machinery, Economic Values and
     ![SOURCE_ID, "us-bls-calendar", "us-nyse-market-holidays",
       "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
       "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
-      "jp-jpx-derivatives-calendar"].includes(value)))
+      "jp-jpx-derivatives-calendar", "jp-boj-calendar"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 

@@ -330,10 +330,10 @@ test("R14-18 prior Calendar evidence adapters remain active through the same cor
   assert.equal(EvidenceSet.validateSourceEvidenceSet(set), true);
   for (const id of ["us-bls-calendar", "us-nyse-market-holidays", "jp-esri-sna-calendar",
     "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
-    "us-census-calendar", SOURCE_ID, "us-bea-calendar", "jp-jpx-derivatives-calendar"])
+    "us-census-calendar", SOURCE_ID, "us-bea-calendar", "jp-jpx-derivatives-calendar",
+    "jp-boj-calendar"])
     assert.equal(preparation.includes(`"${id}":`), true);
-  for (const id of ["jp-boj-calendar",
-    "jp-mof-jgb-calendar", "us-fed-calendar"])
+  for (const id of ["jp-mof-jgb-calendar", "us-fed-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
 

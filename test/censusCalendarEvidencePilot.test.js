@@ -333,8 +333,8 @@ test("R13-18 prior Calendar evidence adapters stay isolated and unchanged", asyn
   assert.equal(preparation.includes('"jp-jpx-market-holidays":'), true);
   assert.equal(preparation.includes('"us-bea-calendar":'), true);
   assert.equal(preparation.includes('"jp-jpx-derivatives-calendar":'), true);
-  for (const id of ["jp-boj-calendar",
-    "jp-mof-jgb-calendar", "us-fed-calendar"])
+  assert.equal(preparation.includes('"jp-boj-calendar":'), true);
+  for (const id of ["jp-mof-jgb-calendar", "us-fed-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
 

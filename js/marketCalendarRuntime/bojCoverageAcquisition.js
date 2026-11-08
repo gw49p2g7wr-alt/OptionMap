@@ -57,20 +57,28 @@ function build(contract, { fetchImpl, now = () => new Date().toISOString() } = {
     maxRetries: 0, documentContract: contract });
   const builder = Builder.createCalendarCandidateBuilder({ documentContract: contract,
     adapterMap: new Map([[SOURCE_ID, adapter(contract)]]) });
-  async function acquire(request) {
+  async function acquireForEvidence(request) {
     if (request?.sourceId !== SOURCE_ID) return { success: false, reason: "source_mismatch", documents: [] };
     const raw = await transport.acquire(request);
     const candidate = await builder.buildCalendarCandidate({ sourceId: SOURCE_ID, acquisitionResult: raw });
-    // No raw HTML/workbook crosses the normal-acquisition persistence/IPC boundary.
-    const success = raw.success === true && candidate.candidateStatus === "available";
-    return { ...raw, success, reason: success ? null : raw.reason || candidate.parserDiagnostics[0] || "boj_coverage_rejected",
-      documents: (raw.documents || []).map(({ parserInput, ...health }) => health),
-      candidate, bojCoverageVersion: contract.version, routeIdentity: routeFor(contract),
-      coverageAudit: candidate.coverageAudit || null, acquisitionIdentity: success ?
-        await Canonical.sha256({ candidateIdentity: candidate.candidateIdentity, fetchedAt: raw.fetchedAt,
-          documents: raw.documents.map(d => ({ role: d.role, contentSha256: d.contentSha256 })) }) : null };
+    return { ...raw, candidate, bojCoverageVersion: contract.version,
+      routeIdentity: routeFor(contract), coverageAudit: candidate.coverageAudit || null,
+      acquisitionIdentity: raw.success === true && candidate.candidateStatus === "available" ?
+        await Canonical.sha256({ candidateIdentity: candidate.candidateIdentity,
+          fetchedAt: raw.fetchedAt, documents: raw.documents.map(d => ({ role: d.role,
+            contentSha256: d.contentSha256 })) }) : null };
   }
-  return Object.freeze({ acquire });
+  async function acquire(request) {
+    const accepted = await acquireForEvidence(request), candidate = accepted.candidate;
+    // No raw HTML/workbook crosses the normal-acquisition persistence/IPC boundary.
+    const success = accepted.success === true && candidate?.candidateStatus === "available";
+    return { ...accepted, success, reason: success ? null : accepted.reason ||
+      candidate?.parserDiagnostics?.[0] || "boj_coverage_rejected",
+      documents: (accepted.documents || []).map(({ parserInput, evidenceInput, ...health }) => health) };
+  }
+  // Exact main-owned raw capture point for Evidence Vault binding. It is not
+  // used by the normal persistence/IPC result above.
+  return Object.freeze({ acquire, acquireForEvidence });
 }
 function builder(legacy = Builder) {
   return Object.freeze({ buildCalendarCandidate: input => input?.sourceId === SOURCE_ID &&

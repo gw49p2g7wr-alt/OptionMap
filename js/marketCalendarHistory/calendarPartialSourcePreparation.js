@@ -21,6 +21,7 @@ const CensusSourceEvidenceSet = require("./censusCalendarSourceEvidenceSet.js");
 const JpxHolidaysSourceEvidenceSet = require("./jpxHolidaysCalendarSourceEvidenceSet.js");
 const BeaSourceEvidenceSet = require("./beaCalendarSourceEvidenceSet.js");
 const JpxDerivativesSourceEvidenceSet = require("./jpxDerivativesCalendarSourceEvidenceSet.js");
+const BojSourceEvidenceSet = require("./bojCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -41,7 +42,8 @@ const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
   "us-census-calendar": CensusSourceEvidenceSet.validateSourceEvidenceSet,
   "jp-jpx-market-holidays": JpxHolidaysSourceEvidenceSet.validateSourceEvidenceSet,
   "us-bea-calendar": BeaSourceEvidenceSet.validateSourceEvidenceSet,
-  "jp-jpx-derivatives-calendar": JpxDerivativesSourceEvidenceSet.validateSourceEvidenceSet
+  "jp-jpx-derivatives-calendar": JpxDerivativesSourceEvidenceSet.validateSourceEvidenceSet,
+  "jp-boj-calendar": BojSourceEvidenceSet.validateSourceEvidenceSet
 });
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);
