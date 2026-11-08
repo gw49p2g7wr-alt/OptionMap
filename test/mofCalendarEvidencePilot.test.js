@@ -354,7 +354,7 @@ test("R18-22 Calendar Export leaks neither raw MOF body nor Evidence references"
     assert.equal(serialized.includes(document.evidenceRef.occurrenceId), false);
 });
 
-test("R18-23 prior Calendar evidence remains active without Fed activation", async t => {
+test("R18-23 prior Calendar evidence remains active with Fed activation", async t => {
   const h = await fixture(t), result = await h.runtime.acquireAndCommit(INPUT), preparation =
     fs.readFileSync(path.join(__dirname,
       "../js/marketCalendarHistory/calendarPartialSourcePreparation.js"), "utf8");
@@ -363,9 +363,9 @@ test("R18-23 prior Calendar evidence remains active without Fed activation", asy
   for (const id of ["us-bls-calendar", "us-nyse-market-holidays", "jp-esri-sna-calendar",
     "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
     "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
-    "jp-jpx-derivatives-calendar", "jp-boj-calendar", SOURCE_ID])
+    "jp-jpx-derivatives-calendar", "jp-boj-calendar", SOURCE_ID,
+    "us-fed-fomc-calendar"])
     assert.equal(preparation.includes(`"${id}":`), true);
-  assert.equal(preparation.includes('"us-fed-fomc-calendar":'), false);
 });
 
 test("R18-24 Economic evidence Runtime State and exports remain isolated", () => {

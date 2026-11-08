@@ -23,6 +23,7 @@ const BeaSourceEvidenceSet = require("./beaCalendarSourceEvidenceSet.js");
 const JpxDerivativesSourceEvidenceSet = require("./jpxDerivativesCalendarSourceEvidenceSet.js");
 const BojSourceEvidenceSet = require("./bojCalendarSourceEvidenceSet.js");
 const MofSourceEvidenceSet = require("./mofCalendarSourceEvidenceSet.js");
+const FedSourceEvidenceSet = require("./fedCalendarSourceEvidenceSet.js");
 
 const PREPARATION_VERSION = 1;
 const AUTHORITY = Object.freeze({
@@ -45,7 +46,8 @@ const SOURCE_EVIDENCE_VALIDATORS = Object.freeze({
   "us-bea-calendar": BeaSourceEvidenceSet.validateSourceEvidenceSet,
   "jp-jpx-derivatives-calendar": JpxDerivativesSourceEvidenceSet.validateSourceEvidenceSet,
   "jp-boj-calendar": BojSourceEvidenceSet.validateSourceEvidenceSet,
-  "jp-mof-jgb-auction-calendar": MofSourceEvidenceSet.validateSourceEvidenceSet
+  "jp-mof-jgb-auction-calendar": MofSourceEvidenceSet.validateSourceEvidenceSet,
+  "us-fed-fomc-calendar": FedSourceEvidenceSet.validateSourceEvidenceSet
 });
 const SNAPSHOT_FIELDS = Object.freeze(["entries", "revisions", "evidence", "observations",
   "runs", "cursors"]);

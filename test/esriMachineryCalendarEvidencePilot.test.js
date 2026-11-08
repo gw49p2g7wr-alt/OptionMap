@@ -309,7 +309,7 @@ test("R10-17/R10-18 Machinery activation is isolated from Economic Values and ot
       "us-nyse-market-holidays", "jp-stat-cpi", "jp-stat-labor",
       "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
       "jp-jpx-derivatives-calendar", "jp-boj-calendar",
-      "jp-mof-jgb-auction-calendar"].includes(value)))
+      "jp-mof-jgb-auction-calendar", "us-fed-fomc-calendar"].includes(value)))
     assert.equal(preparation.includes(`\"${sourceId}\":`), false);
 });
 
