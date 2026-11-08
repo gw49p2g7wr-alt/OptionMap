@@ -378,9 +378,9 @@ test("R17-23 prior Calendar evidence remains active without MOF or Fed activatio
   for (const id of ["us-bls-calendar", "us-nyse-market-holidays", "jp-esri-sna-calendar",
     "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
     "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
-    "jp-jpx-derivatives-calendar", SOURCE_ID])
+    "jp-jpx-derivatives-calendar", SOURCE_ID, "jp-mof-jgb-auction-calendar"])
     assert.equal(preparation.includes(`"${id}":`), true);
-  for (const id of ["jp-mof-jgb-auction-calendar", "us-fed-fomc-calendar"])
+  for (const id of ["us-fed-fomc-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
 

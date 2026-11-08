@@ -70,7 +70,7 @@ function decode(bytes, contentType) {
 const SAFE = new Set(["request_timeout", "body_timeout", "content_length_invalid", "content_length_exceeded",
   "body_size_exceeded", "truncated_response", "response_stream_unavailable"]);
 function createAcquirer({ fetchImpl, requestTimeoutMs = TIMEOUT_MS, bodyTimeoutMs = TIMEOUT_MS,
-  rejectDuplicateDiscovery = false } = {}) {
+  rejectDuplicateDiscovery = false, retainRawEvidence = false } = {}) {
   if (typeof fetchImpl !== "function" || ![requestTimeoutMs, bodyTimeoutMs].every(n => Number.isInteger(n) && n > 0 && n <= TIMEOUT_MS))
     throw TypeError("isolated_transport_required");
   const resources = { activeTasks: 0, activeTimers: 0, requests: 0 };
@@ -118,7 +118,8 @@ function createAcquirer({ fetchImpl, requestTimeoutMs = TIMEOUT_MS, bodyTimeoutM
         if (!decoded.ok) return { ...base, byteCount: bytes.length, reason: decoded.reason };
         return { ...base, outcome: "complete", reason: null, finalUrl: url, contentType, mime: "text/html",
           byteCount: bytes.length, encoding: decoded.encoding, encodingEvidence: decoded.evidence,
-          rawContentHash: hash(bytes), html: decoded.text };
+          rawContentHash: hash(bytes), html: decoded.text,
+          ...(retainRawEvidence === true ? { evidenceInput: bytes } : {}) };
       }
       return { ...base, reason: "redirect_limit_or_location_invalid" };
     } catch (e) { return { ...base, reason: SAFE.has(e?.code) ? e.code : "network_failed" }; }

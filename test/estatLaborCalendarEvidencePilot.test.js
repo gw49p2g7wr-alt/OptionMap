@@ -344,6 +344,7 @@ test("R12-19 Labor activation is isolated from other sources and Runtime State",
     SOURCE_ID, CPI, "us-bls-calendar", "us-nyse-market-holidays",
     "jp-esri-sna-calendar", "jp-esri-machinery-orders-calendar",
     "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar",
-    "jp-jpx-derivatives-calendar", "jp-boj-calendar"].includes(value)))
+    "jp-jpx-derivatives-calendar", "jp-boj-calendar",
+    "jp-mof-jgb-auction-calendar"].includes(value)))
     assert.equal(preparation.includes(`"${sourceId}":`), false);
 });

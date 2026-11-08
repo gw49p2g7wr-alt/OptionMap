@@ -389,9 +389,9 @@ test("R16-23 prior Calendar evidence contracts remain active without BOJ MOF or 
   for (const id of ["us-bls-calendar", "us-nyse-market-holidays", "jp-esri-sna-calendar",
     "jp-esri-machinery-orders-calendar", "jp-stat-cpi", "jp-stat-labor",
     "us-census-calendar", "jp-jpx-market-holidays", "us-bea-calendar", SOURCE_ID,
-    "jp-boj-calendar"])
+    "jp-boj-calendar", "jp-mof-jgb-auction-calendar"])
     assert.equal(preparation.includes(`"${id}":`), true);
-  for (const id of ["jp-mof-jgb-auction-calendar", "us-fed-fomc-calendar"])
+  for (const id of ["us-fed-fomc-calendar"])
     assert.equal(preparation.includes(`"${id}":`), false);
 });
 
