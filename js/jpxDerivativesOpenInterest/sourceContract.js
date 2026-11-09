@@ -29,7 +29,19 @@
         }
         return require("node:crypto").createHash("sha256").update(bytes).digest("hex");
     }
+    async function sha256Bytes(value) {
+        const bytes = value instanceof Uint8Array ? value : value instanceof ArrayBuffer ?
+            new Uint8Array(value) : ArrayBuffer.isView(value) ?
+                new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
+        if (!bytes || bytes.byteLength === 0) throw new TypeError("source_bytes_invalid");
+        if (globalThis.crypto?.subtle) {
+            const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+            return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+        }
+        return require("node:crypto").createHash("sha256")
+            .update(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)).digest("hex");
+    }
     return Object.freeze({ SOURCE_ID, SCHEMA_VERSION, PARSER_VERSION, LISTING_URL, SHEET_NAME,
         FUTURES_ANCHOR, OPTIONS_ANCHOR, SIGNED_NUMBER_FORMAT, INTEGER_NUMBER_FORMATS,
-        clone, normalizeText, isDate, stable, sha256 });
+        clone, normalizeText, isDate, stable, sha256, sha256Bytes });
 });

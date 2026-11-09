@@ -2,9 +2,10 @@
     const common = typeof module === "object" && module.exports && !(root && root.document);
     const source = common ? require("./sourceContract.js") : root?.OptionMapJpxDerivativesOpenInterestSourceContract;
     const identity = common ? require("./identity.js") : root?.OptionMapJpxDerivativesOpenInterestIdentity;
-    const api = factory(source, identity); if (common) module.exports = api;
+    const sourceEvidence = common ? require("./sourceEvidence.js") : null;
+    const api = factory(source, identity, sourceEvidence); if (common) module.exports = api;
     if (root) root.OptionMapJpxDerivativesOpenInterestHistoryContract = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (source, identity) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (source, identity, sourceEvidence) {
     "use strict";
     const clone = source.clone;
     const stores = Object.freeze({ runs: "jpxDerivativeOpenInterestSourceRuns",
@@ -27,6 +28,8 @@
         const identities = await identity.derive(candidate.canonical, candidate.evidence);
         const errors = validateSnapshot(snapshot); if (errors.length) throw new Error(errors[0]);
         if (!runId || !acceptedAt || Number.isNaN(new Date(acceptedAt).getTime())) throw new TypeError("run_identity_invalid");
+        if (sourceEvidence && !sourceEvidence.validatePlanBinding(candidate.evidence, runId))
+            throw new TypeError("source_evidence_run_binding_invalid");
         const existingDay = snapshot.days.find(item => item.logicalKey === identities.logicalKey) || null;
         const active = existingDay ? snapshot.revisions.find(item => item.revisionKey === existingDay.activeRevisionKey) : null;
         const outcome = !existingDay ? "initial" : active?.semanticIdentity === identities.semanticIdentity ?
