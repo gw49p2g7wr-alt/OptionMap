@@ -259,13 +259,17 @@ test("R2-19 external length, byte and metadata tamper are detected without repai
   assert.equal(vault.verifyContent(input.contentObject.sha256).status, "metadata_mismatch");
 });
 
-test("R2-20 vault is absent from export, preload, IPC and domain runtime surfaces", () => {
+test("R2-20 vault remains absent from export/preload/domain surfaces and main use is QRI-bounded", () => {
   const files = ["../js/fullExportCollector.js", "../js/calendarExportV1.js", "../preload.js",
-    "../main.js", "../js/economicValues/economicValueFormalStore.js"];
+    "../js/economicValues/economicValueFormalStore.js"];
   for (const file of files) {
     const source = fs.readFileSync(path.join(__dirname, file), "utf8");
     assert.equal(source.includes("sourceEvidenceVault"), false, file);
   }
+  const main = fs.readFileSync(path.join(__dirname, "../main.js"), "utf8");
+  assert.match(main, /const sourceEvidenceVault = require\("\.\/js\/sourceEvidence\/sourceEvidenceVault\.js"\)/);
+  assert.match(main, /sourceEvidenceVault\.createProductionVault/);
+  assert.doesNotMatch(main, /readRawBytes|rawBytes/);
 });
 
 test("R2 hardlinked object and symlinked metadata are never trusted", t => {

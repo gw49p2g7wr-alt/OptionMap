@@ -19,10 +19,12 @@ const {
   dialog,
   ipcMain,
   net,
+  session,
+  safeStorage,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, randomBytes } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const networkUrlPolicy = require("./js/security/networkUrlPolicy.js");
 const calendarAcquisition = require(
@@ -61,6 +63,52 @@ let morningV5MainAuthorityBinding = null;
 let overallTraceMainWriter = null;
 let overallTraceMainAuthorityBinding = null;
 let overallTraceReadService = null;
+let qriProductionAcquisitionService = null;
+
+function ensureQriProductionAcquisition() {
+  if (qriProductionAcquisitionService) return qriProductionAcquisitionService;
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("qri_authority_protection_unavailable");
+  const qriRawTransport = require("./js/qriRawTransportShadow.js");
+  const qriEvidenceVault = require("./js/qriEvidenceVaultShadow.js");
+  const qriFormalEvidenceBinding = require("./js/qriFormalEvidenceBinding.js");
+  const qriProductionAuthority = require("./js/qriProductionAuthority.js");
+  const qriProductionAcquisition = require("./js/qriProductionAcquisition.js");
+  const qriOptionsParser = require("./js/qriOptions.js");
+  const sourceEvidenceVault = require("./js/sourceEvidence/sourceEvidenceVault.js");
+  const authorityState = qriProductionAuthority.createProductionAuthority({
+    getUserDataPath: () => app.getPath("userData"),
+    protector: Object.freeze({
+      protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
+      unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
+    }),
+    randomBytes
+  });
+  const authority = authorityState.authority;
+  const requestClient = qriRawTransport.createElectronNetClient({ net,
+    session: session.fromPartition(qriRawTransport.SESSION_PARTITION) });
+  const rawTransportShadow = qriRawTransport.createDefaultQriRawTransportShadow({ authority,
+    requestClient, warmupSession: qriRawTransport.createElectronSessionWarmup({ requestClient }),
+    now: () => new Date().toISOString(),
+    resolveActiveContractIdentity:
+      qriProductionAcquisition.activeContractIdentityFromParserInput });
+  const vault = sourceEvidenceVault.createProductionVault(Object.freeze({
+    getUserDataPath: () => app.getPath("userData") }));
+  const evidenceAcquirer = qriEvidenceVault.createQriEvidenceVaultShadow({
+    rawTransportShadow, vault, authority });
+  const formalBinding = qriFormalEvidenceBinding.createQriFormalEvidenceBinding({ authority,
+    vault, historyStore: Object.freeze({ persistCandidate: async () => {
+      throw new Error("main_formal_persistence_not_invoked");
+    } }) });
+  qriProductionAcquisitionService = qriProductionAcquisition.createQriProductionAcquisition({
+    authority, evidenceAcquirer, formalBinding,
+    parseCanonical: (html, sourceUrl) => qriOptionsParser.parseQriOptionsPage(html, sourceUrl),
+    validateCanonical: canonical => qriOptionsParser.validateCanonical(canonical,
+      { allowUnresolvedContracts: true }),
+    createRunId: () => `qri-production-run-${randomUUID()}`,
+    createRequestId: () => `qri-production-request-${randomUUID()}`
+  });
+  return qriProductionAcquisitionService;
+}
 
 function ensureOverallTraceRuntime() {
   if (overallTraceMainWriter && overallTraceMainAuthorityBinding && overallTraceReadService) return;
@@ -414,8 +462,28 @@ ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
   }
 });
 
+ipcMain.handle("acquire-qri-page", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { success: false, status: "unavailable",
+    reason: "invalid_sender", parserInput: null, receipt: null, parentManifest: null };
+  try { return await ensureQriProductionAcquisition().acquire(request); }
+  catch (error) { return { success: false, status: "unavailable",
+    reason: error?.message || "qri_production_acquisition_unavailable",
+    parserInput: null, receipt: null, parentManifest: null }; }
+});
 
-ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
+ipcMain.handle("finalize-qri-page", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { success: false, status: "unavailable",
+    reason: "invalid_sender", formalCandidate: null, ivInheritance: null };
+  try { return await ensureQriProductionAcquisition().finalize(request); }
+  catch (error) { return { success: false, status: "unavailable",
+    reason: error?.message || "qri_production_finalization_unavailable",
+    formalCandidate: null, ivInheritance: null }; }
+});
+
+
+const legacyFetchQriOptionPage = async pageUrl => {
     let fetchWindow = null;
   
     try {
@@ -566,7 +634,8 @@ ipcMain.handle("fetch-option-page", async (event, pageUrl) => {
             fetchWindow.destroy();
         }
     }
-  });
+  };
+void legacyFetchQriOptionPage;
   ipcMain.handle("fetch-daytrading-page", async (event, pageUrl) => {
     let fetchWindow = null;
   

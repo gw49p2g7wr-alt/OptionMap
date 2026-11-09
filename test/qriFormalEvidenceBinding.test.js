@@ -333,9 +333,13 @@ test("Q4-20 Full Export and Time Travel expose no QRI raw HTML or Evidence ref",
   }
 });
 
-test("Q4-21 production acquisition, preload and IPC remain disconnected", () => {
-  for (const file of ["main.js", "preload.js", "index.html", "js/qriOptionsHistoryPersistence.js"]) {
-    const source = fs.readFileSync(path.join(ROOT, file), "utf8");
-    assert.doesNotMatch(source, /qriFormalEvidenceBinding|qriEvidenceVaultShadow/);
-  }
+test("Q4-21 Q6 production cutover uses Q4 binding without generic renderer writer", () => {
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8"),
+    preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8"),
+    history = fs.readFileSync(path.join(ROOT, "js/qriOptionsHistoryPersistence.js"), "utf8"),
+    production = fs.readFileSync(path.join(ROOT, "js/qriProductionAcquisition.js"), "utf8");
+  assert.match(main, /require\("\.\/js\/qriFormalEvidenceBinding\.js"\)/);
+  assert.match(production, /options\.formalBinding\.prepareFormalCandidate/);
+  assert.match(history, /persistEvidenceCandidate/);
+  assert.doesNotMatch(preload, /persistCandidate|historyStore|VaultPath|rawBytes/);
 });

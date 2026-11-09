@@ -147,9 +147,47 @@ function (defaultHistoryApi, defaultStoreApi) {
                         : "transaction_failure", errorCode: errorCode(error), attemptedAt });
             }
         }
+
+        async function persistEvidenceCandidate(candidate, options = {}) {
+            const attemptedAt = now();
+            const isolated = candidate == null ? candidate : clone(candidate);
+            const identity = { contract: isolated?.contract || null,
+                sourceDateKey: isolated?.tradingDate || null,
+                versionKey: isolated?.versionKey || null };
+            if (!["auto", "reference_history"].includes(options.mode) ||
+                typeof options.isCurrentRequest !== "function" ||
+                !options.isCurrentRequest()) {
+                return update({ status: "not_attempted", ...identity,
+                    reason: "evidence_context_invalid", errorCode: null, attemptedAt });
+            }
+            if (!isolated || !Object.prototype.hasOwnProperty.call(isolated, "sourceEvidence") ||
+                !historyApi.validateFormalEvidenceBinding(isolated.sourceEvidence, isolated)) {
+                return update({ status: "failed", ...identity,
+                    reason: "formal_evidence_invalid", errorCode: null, attemptedAt });
+            }
+            try {
+                if (state.storeStatus !== "ready") await store.openHistoryStore();
+                if (!options.isCurrentRequest()) return update({ status: "not_attempted",
+                    storeStatus: "ready", ...identity, reason: "stale_request",
+                    errorCode: null, attemptedAt });
+                const result = await store.persistCandidate(isolated, { confirmedAt: attemptedAt });
+                if (result.outcome === "same_version") return update({ status: "unchanged",
+                    storeStatus: "ready", ...identity, reason: "duplicate_no_op",
+                    errorCode: null, attemptedAt });
+                if (result.saved) return update({ status: "saved", storeStatus: "ready",
+                    ...identity, reason: result.outcome, errorCode: null, attemptedAt });
+                return update({ status: "failed", storeStatus: "ready", ...identity,
+                    reason: result.outcome || "transaction_failure",
+                    errorCode: result.error || null, attemptedAt });
+            } catch (error) {
+                return update({ status: "failed", storeStatus: "failed", ...identity,
+                    reason: errorCode(error).includes("Quota") ? "quota_failure"
+                        : "transaction_failure", errorCode: errorCode(error), attemptedAt });
+            }
+        }
         const getState = () => clone(state);
         return Object.freeze({ openPersistence, persistActiveContractCache,
-            persistReferenceContractCache, getState });
+            persistReferenceContractCache, persistEvidenceCandidate, getState });
     }
     return Object.freeze({ createQriOptionsHistoryPersistence });
 });

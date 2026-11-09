@@ -88,7 +88,11 @@ function createQriEvidenceVaultShadow(options) {
       return failure(rawResult?.reason || "raw_transport_result_invalid", { vaultWriteCount: 0 });
     }
 
-    const resolution = Qri.resolveQriIntent(input.intent, input.authorityContext);
+    const authorityContext = input.intent.requestKind === "active" &&
+      exact(input.authorityContext, [])
+      ? { activeContractIdentity: rawResult.receipt.contractIdentity }
+      : input.authorityContext;
+    const resolution = Qri.resolveQriIntent(input.intent, authorityContext);
     if (!resolution.accepted) return failure(resolution.reason, { vaultWriteCount: 0 });
     const route = resolution.route;
     let acquisition;
@@ -102,7 +106,7 @@ function createQriEvidenceVaultShadow(options) {
     }
 
     const parentManifestId = route.role === "active" ? null :
-      input.authorityContext.parentManifest.manifestId;
+      authorityContext.parentManifest.manifestId;
     let contextIdentity, bytes, contentObject, occurrence;
     try {
       contextIdentity = Qri.createEvidenceContextIdentity({ acquisition, intent: input.intent,

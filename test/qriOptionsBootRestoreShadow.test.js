@@ -188,15 +188,17 @@ test("renderer loads dependencies and starts boot shadow without awaiting initia
     assert.doesNotMatch(html, /await qriOptionsBootRestoreShadowPromise/);
 });
 
-test("active auto live success supersedes shadow before unchanged save and legacy wiring", () => {
+test("active Evidence-bound live success supersedes shadow before unchanged save and legacy wiring", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
     const active = html.slice(html.indexOf("async function fetchQriData"),
         html.indexOf("async function fetchParticipantData"));
-    const historyAt = active.indexOf("persistQriOptionsHistory(");
+    const historyAt = active.indexOf("persistEvidenceCandidate(");
+    const finalizationAt = active.indexOf("finalizeQriProductionAcquisition(");
     const supersedeAt = active.indexOf("markQriOptionsBootRestoreShadowSuperseded");
     const saveAt = active.indexOf("buildAndSaveQriOptionsLastValid(localStorage");
     const legacyAt = active.indexOf("window.saveLastValidQriOpenInterest({");
-    assert.ok(historyAt >= 0 && historyAt < supersedeAt && supersedeAt < saveAt &&
+    assert.ok(finalizationAt >= 0 && finalizationAt < historyAt &&
+        historyAt < supersedeAt && supersedeAt < saveAt &&
         saveAt < legacyAt);
     const wiring = active.slice(historyAt, saveAt);
     for (const fact of ["openInterestStatus", "validateCanonical", "optionType === \"call\"",

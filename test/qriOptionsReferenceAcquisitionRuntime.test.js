@@ -347,7 +347,8 @@ test("production wiring is ordered, post-render, non-awaiting and isolated", () 
     assert.doesNotMatch(refresh, /setTimeout|setInterval/);
     const adapter = html.slice(html.indexOf("function initializeQriReferenceAcquisitionRuntime"),
         html.indexOf("function validateQriPayload"));
-    assert.match(adapter, /persistReferenceContractCache/);
+    assert.match(adapter, /persistEvidenceCandidate/);
+    assert.match(adapter, /finalizeQriProductionAcquisition/);
     assert.doesNotMatch(adapter, /publishQriFormalIdentity|LastValid|renderOptionMapOverallJudgmentV2|publishMorning|publishFormalOptionAvailabilityEvidence|adoptQriOptionIv|CurrentPrice|\.render\(|document\./);
 });
 

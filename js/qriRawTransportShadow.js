@@ -168,10 +168,15 @@ function fixedRequestHeaders() {
 }
 
 function createQriRawTransportShadow(options) {
-  if (!exact(options, ["authority", "requestClient", "warmupSession", "now",
-    "requestTimeoutMs", "bodyTimeoutMs", "maxResponseBytes"]) ||
+  const optionFields = ["authority", "requestClient", "warmupSession", "now",
+    "requestTimeoutMs", "bodyTimeoutMs", "maxResponseBytes"];
+  if (!object(options) || Object.keys(options).some(key =>
+    ![...optionFields, "resolveActiveContractIdentity"].includes(key)) ||
+      optionFields.some(key => !Object.hasOwn(options, key)) ||
       typeof options.requestClient?.requestOnce !== "function" ||
       typeof options.warmupSession !== "function" || typeof options.now !== "function" ||
+      (options.resolveActiveContractIdentity !== undefined &&
+        typeof options.resolveActiveContractIdentity !== "function") ||
       !Number.isInteger(options.requestTimeoutMs) || options.requestTimeoutMs <= 0 ||
       !Number.isInteger(options.bodyTimeoutMs) || options.bodyTimeoutMs <= 0 ||
       !Number.isSafeInteger(options.maxResponseBytes) || options.maxResponseBytes <= 0) {
@@ -184,21 +189,22 @@ function createQriRawTransportShadow(options) {
     }
     const activeContext = input.intent?.requestKind === "active" &&
       exact(input.authorityContext, ["activeContractIdentity"]);
+    const deferredActiveContext = input.intent?.requestKind === "active" &&
+      exact(input.authorityContext, []) && typeof options.resolveActiveContractIdentity === "function";
     const listedContext = input.intent?.requestKind === "listed_reference" &&
       exact(input.authorityContext, ["parentManifest", "parentReceipt", "authority"]);
-    if (!activeContext && !listedContext) {
+    if (!activeContext && !deferredActiveContext && !listedContext) {
       return failure("authority_context_invalid", { rendererUrlAccepted: false });
     }
-    const resolution = QriAuthority.resolveQriIntent(input.intent, input.authorityContext);
-    if (!resolution.accepted) return failure(resolution.reason, { rendererUrlAccepted: false });
-    const route = resolution.route;
-    let acquisition;
-    try {
-      acquisition = QriAuthority.createMainAcquisitionIdentity({ intent: input.intent, route,
-        runId: input.runId, requestId: input.requestId }, options.authority);
-    } catch (_error) {
-      return failure("acquisition_identity_invalid", { routeIdentity: route.routeIdentity });
+    let resolution = deferredActiveContext ? null :
+      QriAuthority.resolveQriIntent(input.intent, input.authorityContext);
+    if (resolution && !resolution.accepted) {
+      return failure(resolution.reason, { rendererUrlAccepted: false });
     }
+    let route = resolution?.route || null;
+    const networkRoute = route || Object.freeze({ requestKind: "active",
+      canonicalUrl: QriAuthority.ACTIVE_URL, routeIdentity: null });
+    const routeDiagnostics = () => route?.routeIdentity || null;
 
     try {
       const warmupController = new AbortController();
@@ -207,20 +213,20 @@ function createQriRawTransportShadow(options) {
         signal: warmupController.signal }),
       options.requestTimeoutMs, warmupController, "warmup_timeout");
       if (!warmup || warmup.accepted !== true) {
-        return failure("warmup_failed", { routeIdentity: route.routeIdentity,
+        return failure("warmup_failed", { routeIdentity: routeDiagnostics(),
           warmupReason: "rejected" });
       }
     } catch (error) {
       return failure(error?.code === "warmup_timeout" ? "warmup_timeout" : "warmup_failed",
-        { routeIdentity: route.routeIdentity });
+        { routeIdentity: routeDiagnostics() });
     }
 
     const redirectHops = [];
     const visited = new Set();
-    let requestUrl = route.canonicalUrl;
+    let requestUrl = networkRoute.canonicalUrl;
     let response;
     while (true) {
-      if (visited.has(requestUrl)) return failure("redirect_loop", { routeIdentity: route.routeIdentity,
+      if (visited.has(requestUrl)) return failure("redirect_loop", { routeIdentity: routeDiagnostics(),
         redirectCount: redirectHops.length });
       visited.add(requestUrl);
       const controller = new AbortController();
@@ -233,47 +239,49 @@ function createQriRawTransportShadow(options) {
       } catch (error) {
         const reason = ["request_timeout", "byte_ceiling_exceeded"].includes(error?.code)
           ? error.code : "request_failed";
-        return failure(reason, { routeIdentity: route.routeIdentity,
+        return failure(reason, { routeIdentity: routeDiagnostics(),
           redirectCount: redirectHops.length });
       }
       if (response?.kind !== "redirect") break;
       if (!Number.isInteger(response.statusCode) || response.statusCode < 300 ||
           response.statusCode > 399 || typeof response.redirectUrl !== "string") {
-        return failure("redirect_invalid", { routeIdentity: route.routeIdentity });
+        return failure("redirect_invalid", { routeIdentity: routeDiagnostics() });
       }
       if (redirectHops.length >= MAX_REDIRECTS) {
-        return failure("redirect_limit_exceeded", { routeIdentity: route.routeIdentity,
+        return failure("redirect_limit_exceeded", { routeIdentity: routeDiagnostics(),
           redirectCount: redirectHops.length + 1 });
       }
       let nextUrl;
       try { nextUrl = new URL(response.redirectUrl, requestUrl).href; }
-      catch (_error) { return failure("redirect_invalid", { routeIdentity: route.routeIdentity }); }
-      if (!routeHopAccepted(requestUrl, route) || !routeHopAccepted(nextUrl, route)) {
-        return failure("redirect_outside_route", { routeIdentity: route.routeIdentity });
+      catch (_error) { return failure("redirect_invalid", { routeIdentity: routeDiagnostics() }); }
+      if (!routeHopAccepted(requestUrl, networkRoute) ||
+          !routeHopAccepted(nextUrl, networkRoute)) {
+        return failure("redirect_outside_route", { routeIdentity: routeDiagnostics() });
       }
       redirectHops.push(Object.freeze({ status: response.statusCode, fromUrl: requestUrl,
         toUrl: nextUrl }));
       requestUrl = nextUrl;
     }
 
-    if (!response || response.kind !== "response" || !routeHopAccepted(requestUrl, route)) {
-      return failure("response_invalid", { routeIdentity: route.routeIdentity });
+    if (!response || response.kind !== "response" ||
+        !routeHopAccepted(requestUrl, networkRoute)) {
+      return failure("response_invalid", { routeIdentity: routeDiagnostics() });
     }
     const headers = normalizeHeaders(response.headers);
     const rawLength = headers["content-length"];
     if (rawLength != null && (!/^\d+$/.test(rawLength) || Number(rawLength) > options.maxResponseBytes)) {
-      return failure("byte_ceiling_exceeded", { routeIdentity: route.routeIdentity });
+      return failure("byte_ceiling_exceeded", { routeIdentity: routeDiagnostics() });
     }
     if (response.statusCode !== 200) {
-      return failure("http_status_rejected", { routeIdentity: route.routeIdentity,
+      return failure("http_status_rejected", { routeIdentity: routeDiagnostics(),
         httpStatus: response.statusCode });
     }
     if (headers["content-encoding"] && headers["content-encoding"].toLowerCase() !== "identity") {
-      return failure("content_encoding_rejected", { routeIdentity: route.routeIdentity });
+      return failure("content_encoding_rejected", { routeIdentity: routeDiagnostics() });
     }
     const contentType = parseContentType(headers["content-type"]);
     if (!contentType || contentType.mediaType !== ACCEPTED_MEDIA_TYPE) {
-      return failure("mime_rejected", { routeIdentity: route.routeIdentity,
+      return failure("mime_rejected", { routeIdentity: routeDiagnostics(),
         declaredContentType: headers["content-type"] || null });
     }
 
@@ -286,23 +294,41 @@ function createQriRawTransportShadow(options) {
     } catch (error) {
       const reason = ["body_timeout", "byte_ceiling_exceeded"].includes(error?.code)
         ? error.code : "body_receive_failed";
-      return failure(reason, { routeIdentity: route.routeIdentity });
+      return failure(reason, { routeIdentity: routeDiagnostics() });
     }
     if (rawLength != null && Number(rawLength) !== rawBytes.byteLength) {
-      return failure("content_length_mismatch", { routeIdentity: route.routeIdentity,
+      return failure("content_length_mismatch", { routeIdentity: routeDiagnostics(),
         declaredByteLength: Number(rawLength), receivedByteLength: rawBytes.byteLength });
     }
     const contentSha256 = sha256Bytes(rawBytes);
     const encodingResult = resolveEncoding(rawBytes, contentType.charset);
     if (!encodingResult.accepted) return failure(encodingResult.reason,
-      { routeIdentity: route.routeIdentity, contentSha256, byteLength: rawBytes.byteLength });
+      { routeIdentity: routeDiagnostics(), contentSha256, byteLength: rawBytes.byteLength });
     const parserInput = decode(rawBytes, encodingResult.encoding);
-    if (parserInput === null) return failure("decode_failed", { routeIdentity: route.routeIdentity,
+    if (parserInput === null) return failure("decode_failed", { routeIdentity: routeDiagnostics(),
       contentSha256, byteLength: rawBytes.byteLength });
     const normalizedText = parserInput.toLowerCase();
     if (BLOCK_SIGNATURES.some(signature => normalizedText.includes(signature))) {
-      return failure("block_page_detected", { routeIdentity: route.routeIdentity,
+      return failure("block_page_detected", { routeIdentity: routeDiagnostics(),
         contentSha256, byteLength: rawBytes.byteLength });
+    }
+
+    if (deferredActiveContext) {
+      let activeContractIdentity;
+      try { activeContractIdentity = options.resolveActiveContractIdentity(parserInput); }
+      catch (_error) { return failure("active_contract_resolution_failed",
+        { routeIdentity: null, contentSha256, byteLength: rawBytes.byteLength }); }
+      resolution = QriAuthority.resolveQriIntent(input.intent, { activeContractIdentity });
+      if (!resolution.accepted) return failure("active_contract_resolution_failed",
+        { routeIdentity: null, contentSha256, byteLength: rawBytes.byteLength });
+      route = resolution.route;
+    }
+    let acquisition;
+    try {
+      acquisition = QriAuthority.createMainAcquisitionIdentity({ intent: input.intent, route,
+        runId: input.runId, requestId: input.requestId }, options.authority);
+    } catch (_error) {
+      return failure("acquisition_identity_invalid", { routeIdentity: routeDiagnostics() });
     }
 
     const transportIdentity = QriAuthority.createTransportIdentity({ httpStatus: response.statusCode,
@@ -318,7 +344,7 @@ function createQriRawTransportShadow(options) {
         route, acceptedInitialUrl: route.canonicalUrl, acceptedFinalUrl: route.canonicalUrl,
         fetchedAt: options.now(), transportIdentity, parserInputIdentity }, options.authority);
     } catch (_error) {
-      return failure("receipt_invalid", { routeIdentity: route.routeIdentity });
+      return failure("receipt_invalid", { routeIdentity: routeDiagnostics() });
     }
     const rawFacts = { httpStatus: response.statusCode,
       declaredContentType: contentType.declaredContentType, mediaType: contentType.mediaType,

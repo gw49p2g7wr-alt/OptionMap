@@ -34,6 +34,37 @@ function invokeUrlChannel(channel, args) {
   return ipcRenderer.invoke(channel, url);
 }
 
+function invokeQriAcquisition(args) {
+  const request = args[0];
+  const active = args.length === 1 && request && typeof request === "object" &&
+    !Array.isArray(request) && Object.keys(request).length === 1 &&
+    request.requestKind === "active";
+  const reference = args.length === 1 && request && typeof request === "object" &&
+    !Array.isArray(request) && Object.keys(request).sort().join("|") ===
+      "listedContractId|parentAcquisitionId|requestKind|role" &&
+    request.requestKind === "listed_reference" && ["next", "major_sq"].includes(request.role) &&
+    /^qri-acquisition-v1\|sha256:[0-9a-f]{64}$/.test(request.parentAcquisitionId || "") &&
+    /^qri-listed-contract-v1\|sha256:[0-9a-f]{64}$/.test(request.listedContractId || "");
+  if (!active && !reference) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("acquire-qri-page", Object.freeze({ ...request }));
+}
+
+function invokeQriFinalization(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).sort().join("|") !== "acquisitionId|cache|canonical|ivCanonical" ||
+      !/^qri-acquisition-v1\|sha256:[0-9a-f]{64}$/.test(request.acquisitionId || "") ||
+      !request.canonical || typeof request.canonical !== "object" ||
+      Array.isArray(request.canonical) ||
+      (request.cache !== null && (!request.cache || typeof request.cache !== "object" ||
+        Array.isArray(request.cache))) ||
+      (request.ivCanonical !== null && (!request.ivCanonical ||
+        typeof request.ivCanonical !== "object" || Array.isArray(request.ivCanonical)))) {
+    return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  }
+  return ipcRenderer.invoke("finalize-qri-page", request);
+}
+
 function invokeFullExportSave(args) {
   const request = args[0];
   if (args.length !== 1 || !request || typeof request !== "object" ||
@@ -138,7 +169,8 @@ async function invokeCalendarCheck(args) {
 }
 
 contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
-  fetchQriOptionPage: (...args) => invokeUrlChannel("fetch-option-page", args),
+  acquireQriPage: (...args) => invokeQriAcquisition(args),
+  finalizeQriPage: (...args) => invokeQriFinalization(args),
   fetchJpxPage: (...args) => invokeUrlChannel("fetch-daytrading-page", args),
   fetchOpenInterestListing: (...args) =>
     invokeUrlChannel("fetch-jpx-open-interest-json", args),

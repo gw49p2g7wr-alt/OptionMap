@@ -156,7 +156,7 @@ test("browser Node-off modules compose without Node globals; API input contract 
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8"), {
     require: () => ({ contextBridge: { exposeInMainWorld: (_, value) => { api = value; } },
       ipcRenderer: { invoke: async () => { calls++; return {}; } } }) });
-  assert.equal(Object.keys(api).length, 14);
+  assert.equal(Object.keys(api).length, 15);
   for (const request of [{ trigger: "scheduler" }, { databaseName: "other" }, { runtimeStates: [] },
     { sessionStates: null }, { trigger: "startup", url: "https://bad.invalid" }])
     assert.equal((await api.checkCalendarSources(request)).errorCode, "invalid_argument");

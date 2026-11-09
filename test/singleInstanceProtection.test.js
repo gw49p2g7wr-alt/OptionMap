@@ -61,17 +61,17 @@ test("second-instance arguments are used only to reject audit invocation, never 
     assert.doesNotMatch(handler, /\beval\b|executeJavaScript|openURL|openExternal|loadURL|readFile|require\("fs"\)|\bshell\b/);
 });
 
-test("hidden QRI and JPX BrowserWindow lifecycle remains local and independent", () => {
-    const option = blockBetween('ipcMain.handle("fetch-option-page"',
+test("main-owned QRI transport and JPX BrowserWindow lifecycle remain local and independent", () => {
+    const option = blockBetween('ipcMain.handle("acquire-qri-page"',
         'ipcMain.handle("fetch-daytrading-page"');
     const day = blockBetween('ipcMain.handle("fetch-daytrading-page"',
         'ipcMain.handle("download-daytrading-excel"');
-    for (const block of [option, day]) {
-        assert.match(block, /let fetchWindow = null/);
-        assert.match(block, /fetchWindow = new BrowserWindow\(\{\s*show: false/s);
-        assert.match(block, /fetchWindow\.destroy\(\)/);
-        assert.doesNotMatch(block, /mainWindow|requestSingleInstanceLock|second-instance/);
-    }
+    assert.match(option, /ensureQriProductionAcquisition\(\)\.acquire\(request\)/);
+    assert.doesNotMatch(option, /ipcMain\.handle\("fetch-option-page"/);
+    assert.match(day, /let fetchWindow = null/);
+    assert.match(day, /fetchWindow = new BrowserWindow\(\{\s*show: false/s);
+    assert.match(day, /fetchWindow\.destroy\(\)/);
+    assert.doesNotMatch(day, /requestSingleInstanceLock|second-instance/);
 });
 
 test("renderer package and Morning files receive no single-instance wiring", () => {

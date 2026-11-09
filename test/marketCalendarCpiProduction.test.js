@@ -153,7 +153,7 @@ test("Cpi production dependency graph has no Calendar Formal writer/reader and b
   visit(path.join(__dirname, "../js/marketCalendarRuntime/cpiProductionCheck.js"));
   visit(path.join(__dirname, "../js/marketCalendarRuntime/cpiRuntimeStateElectron.js"));
   const source = fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8");
-  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 14);
+  assert.equal([...source.matchAll(/^  \w+: \(\.\.\.args\)/gm)].length, 15);
   assert.doesNotMatch(source, /cpiRuntimeStateElectron|routeReevaluationPolicy/);
 });
 

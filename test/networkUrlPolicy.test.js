@@ -167,13 +167,17 @@ test("listing JSONはredirect禁止、Excelはbody読取前にresponse.urlを再
   assert.ok(excelBlock.indexOf("response.url") < excelBlock.indexOf("response.arrayBuffer()"));
 });
 
-test("QRI/JPX hidden windowはfinal URL検証後だけDOMを抽出しpopupを拒否する", () => {
+test("QRI main transportとJPX hidden windowはredirect/popupをfail-closedにする", () => {
   assert.match(mainSource, /installHiddenWindowPolicy\(fetchWindow\)/);
   assert.match(mainSource, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
-  const qri = mainSource.slice(mainSource.indexOf('ipcMain.handle("fetch-option-page"'),
+  const qri = mainSource.slice(mainSource.indexOf('ipcMain.handle("acquire-qri-page"'),
     mainSource.indexOf('ipcMain.handle("fetch-daytrading-page"'));
-  assert.ok(qri.indexOf("finalValidation") < qri.indexOf("executeJavaScript"));
-  assert.match(qri, /securityError\("invalid_redirect"\)/);
+  assert.match(qri, /ensureQriProductionAcquisition\(\)\.acquire\(request\)/);
+  assert.doesNotMatch(qri, /ipcMain\.handle\("fetch-option-page"/);
+  const transport = fs.readFileSync(path.join(root, "js/qriRawTransportShadow.js"), "utf8");
+  assert.match(transport, /redirect:\s*"manual"/);
+  assert.match(transport, /routeHopAccepted/);
+  assert.match(transport, /canonicalRouteUrl/);
 });
 
 test("main windowはexact index reloadだけ許可しexternal/local別fileとpopupを拒否する", () => {

@@ -25,10 +25,9 @@ function mainWindowBlock() {
 }
 
 function hiddenWindowBlocks() {
-    const qri = mainSource.indexOf('ipcMain.handle("fetch-option-page"');
     const jpx = mainSource.indexOf('ipcMain.handle("fetch-daytrading-page"');
     const excel = mainSource.indexOf('ipcMain.handle("download-daytrading-excel"');
-    return [mainSource.slice(qri, jpx), mainSource.slice(jpx, excel)];
+    return [mainSource.slice(jpx, excel)];
 }
 
 function browserModule(file, dependencies = {}) {
@@ -66,7 +65,7 @@ test("main world production has no raw Electron, XLSX require, or historical dir
     }
 });
 
-test("preload keeps Electron authority and the exact immutable fourteen-method surface", () => {
+test("preload keeps Electron authority and the exact immutable fifteen-method surface", () => {
     let exposed;
     const calls = [];
     const sandbox = {
@@ -83,8 +82,8 @@ test("preload keeps Electron authority and the exact immutable fourteen-method s
     vm.runInNewContext(preloadSource, sandbox, { filename: "preload.js" });
     assert.equal(exposed.key, "optionMapBridge");
     assert.deepEqual(Object.keys(exposed.api).sort(), [
-        "checkCalendarSources", "downloadJpxExcel", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "fetchJpxPage", "fetchOpenInterestListing",
-        "fetchParticipantListing", "fetchQriOptionPage", "getRuntimeMetadata", "readMorningV5Formal", "readOverallV2Trace", "requestCalendarSource",
+        "acquireQriPage", "checkCalendarSources", "downloadJpxExcel", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "fetchJpxPage", "fetchOpenInterestListing",
+        "fetchParticipantListing", "finalizeQriPage", "getRuntimeMetadata", "readMorningV5Formal", "readOverallV2Trace", "requestCalendarSource",
         "saveCalendarExportJson", "saveFullExportJson"
     ]);
     assert.equal(Object.isFrozen(exposed.api), true);
@@ -197,6 +196,8 @@ test("hidden windows and Security 0C/0D remain isolated and fail-closed", () => 
     assert.match(mainSource, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
     assert.match(mainSource, /redirect:\s*"error"/);
     assert.match(mainSource, /requireAllowedUrl/);
+    assert.match(mainSource, /ipcMain\.handle\("acquire-qri-page"/);
+    assert.doesNotMatch(mainSource, /ipcMain\.handle\("fetch-option-page"/);
     assert.doesNotMatch(preloadSource, /\bfetch\s*\(|localStorage|sessionStorage|indexedDB/);
 });
 

@@ -334,7 +334,7 @@ test("reference history rejects unsupported context and invalid candidates", asy
     "specific_display_not_persisted");
 });
 
-test("reference persistence is storage-only and production calls it only through reference wiring", () => {
+test("Evidence-bound persistence is storage-only and production calls it only after main finalization", () => {
     const source = fs.readFileSync(path.join(__dirname,
         "../js/qriOptionsHistoryPersistence.js"), "utf8");
     assert.doesNotMatch(source, /publishQriFormalIdentity|FormalOptionAvailability|CurrentPrice|OverallV2|Morning|LastValid|optionMapLastValid|optionMapQriOptionsLastValid|option signal|document\.|localStorage|fetch-option-page/);
@@ -345,18 +345,19 @@ test("reference persistence is storage-only and production calls it only through
     const referenceWiring = html.slice(
         html.indexOf("function initializeQriReferenceAcquisitionRuntime"),
         html.indexOf("function validateQriPayload"));
-    assert.match(referenceWiring, /persistReferenceContractCache/);
-    assert.equal((html.match(/persistReferenceContractCache/g) || []).length, 2);
+    assert.match(referenceWiring, /finalizeQriProductionAcquisition/);
+    assert.match(referenceWiring, /persistEvidenceCandidate/);
+    assert.equal((html.match(/persistEvidenceCandidate/g) || []).length, 3);
 });
 
-test("renderer wiring persists only in fetchQriData and leaves specific path disconnected", () => {
+test("renderer wiring persists Evidence candidates in formal paths and leaves specific display disconnected", () => {
     const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
     const specific = html.slice(html.indexOf("async function showSpecificQriContract"),
         html.indexOf("async function updateQriContractManifest"));
     const normal = html.slice(html.indexOf("async function fetchQriData"),
         html.indexOf("function handleQriFetchError"));
-    assert.doesNotMatch(specific, /persistActiveContractCache|persistQriOptionsHistory/);
-    assert.match(normal, /persistQriOptionsHistory/);
+    assert.doesNotMatch(specific, /persistEvidenceCandidate|persistActiveContractCache|persistQriOptionsHistory/);
+    assert.match(normal, /persistEvidenceCandidate/);
     assert.doesNotMatch(normal, /optionMapJpxSnapshots/);
 });
 
@@ -373,7 +374,8 @@ test("unresolved lazy fetchは表示専用でsequence確認後だけmanifestへ�
     const lazy = html.slice(html.indexOf("async function showUnresolvedQriEntry"),
         html.indexOf("async function updateQriContractManifest"));
     assert.match(lazy, /qriLazyManifestResolver\.resolve/);
-    assert.match(lazy, /optionMapBridge\.fetchQriOptionPage\(url\)/);
+    assert.match(lazy, /acquireQriProductionReference\(url, role\)/);
+    assert.match(lazy, /finalizeQriProductionAcquisition\(response, payload, null\)/);
     assert.match(lazy, /sequence !== qriContractSelectionState\.requestSequence/);
     assert.match(lazy, /qriContractManifest = resolved\.manifest/);
     assert.doesNotMatch(lazy, /persistQriOptionsHistory|morningBaseline|overallJudgment/);

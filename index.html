@@ -1641,12 +1641,13 @@ import {
 
 const optionMapBridge = window.optionMapBridge;
 const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
+    "acquireQriPage",
     "checkCalendarSources",
     "downloadJpxExcel",
     "fetchJpxPage",
     "fetchOpenInterestListing",
     "fetchParticipantListing",
-    "fetchQriOptionPage",
+    "finalizeQriPage",
     "getRuntimeMetadata",
     "evaluateMorningV5Formal",
     "evaluateOverallV2Trace",
@@ -4829,6 +4830,45 @@ function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {
     };
 }
 
+let qriProductionParentManifest = null;
+const qriPendingReferenceAcquisitions = new Map();
+
+async function acquireQriProductionReference(url, role) {
+    const manifest = qriProductionParentManifest;
+    const entry = manifest?.entries?.find(item => item.canonicalUrl === url &&
+        item.allowedRoles?.includes(role));
+    if (!entry || typeof manifest?.parentAcquisitionId !== "string") {
+        throw new Error("production_parent_manifest_target_unavailable");
+    }
+    const result = await optionMapBridge.acquireQriPage({ requestKind: "listed_reference", role,
+        parentAcquisitionId: manifest.parentAcquisitionId,
+        listedContractId: entry.listedContractId });
+    if (!result?.success || result.receipt?.acceptedFinalUrl !== url ||
+        result.receipt?.role !== role) {
+        throw new Error(result?.reason || "production_reference_acquisition_failed");
+    }
+    qriPendingReferenceAcquisitions.set(`${role}|${url}`, result);
+    return result;
+}
+
+async function finalizeQriProductionAcquisition(acquisition, payload, cache) {
+    if (!acquisition?.receipt?.acquisitionId || !payload?.canonicalV2) {
+        throw new Error("production_qri_finalization_input_invalid");
+    }
+    const result = await optionMapBridge.finalizeQriPage({
+        acquisitionId: acquisition.receipt.acquisitionId,
+        canonical: payload.canonicalV2,
+        cache: cache || null,
+        ivCanonical: payload.ivCanonicalV1 || null
+    });
+    if (!result?.success) throw new Error(result?.reason || "production_qri_finalization_failed");
+    if (payload.ivCanonicalV1 && (!result.ivInheritance ||
+        result.ivInheritance.occurrenceId !== acquisition.receipt.evidenceStatus?.occurrenceId)) {
+        throw new Error("production_qri_iv_inheritance_invalid");
+    }
+    return result;
+}
+
 function initializeQriReferenceAcquisitionRuntime() {
     if (qriReferenceAcquisitionRuntime) return qriReferenceAcquisitionRuntime;
     const lifecycle = { getState: () => qriReferenceAcquisitionRuntime?.getLifecycleState() ||
@@ -4854,10 +4894,8 @@ function initializeQriReferenceAcquisitionRuntime() {
     const orchestrator = window.OptionMapQriOptionsReferenceAcquisition
         .createQriReferenceAcquisitionOrchestrator({
             fetchReferencePage: async url => {
-                const response = await optionMapBridge.fetchQriOptionPage(url);
-                if (!response?.success) throw new Error(response?.error || "reference_fetch_failed");
-                if (response.sourceUrl !== url) throw new Error("reference_source_url_mismatch");
-                return response.html;
+                const response = await acquireQriProductionReference(url, "next");
+                return response.parserInput;
             },
             buildCanonical: (html, { sourceUrl }) =>
                 window.OptionMapQriOptions.parseQriOptionsPage(html, sourceUrl),
@@ -4866,8 +4904,21 @@ function initializeQriReferenceAcquisitionRuntime() {
             buildCache: canonical => window.OptionMapQriOptions.createCacheV2(
                 canonical, new Date().toISOString()),
             validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
-            persistReference: (cache, context) =>
-                qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            persistReference: async (cache, context) => {
+                const key = `next|${context.sourceUrl}`;
+                const acquisition = qriPendingReferenceAcquisitions.get(key);
+                if (!acquisition) return { status: "failed", reason: "acquisition_context_missing" };
+                try {
+                    const payload = createQriPayload(acquisition.parserInput, context.sourceUrl);
+                    const finalized = await finalizeQriProductionAcquisition(
+                        acquisition, payload, cache);
+                    if (!finalized.formalCandidate) return {
+                        status: "failed", reason: "formal_candidate_missing" };
+                    return qriOptionsHistoryPersistence.persistEvidenceCandidate(
+                        finalized.formalCandidate, { mode: "reference_history",
+                            isCurrentRequest: context.isCurrentRequest });
+                } finally { qriPendingReferenceAcquisitions.delete(key); }
+            },
             persistAcceptedIvHistory: (input, guard) =>
                 persistQriReferenceIvHistory("next", input, guard),
             restoreAcceptedIvHistory: (memo, guard) =>
@@ -4915,10 +4966,8 @@ function initializeQriMajorSqAcquisitionRuntime() {
     qriMajorSqAcquisitionOrchestrator = window.OptionMapQriOptionsMajorSqAcquisition
         .createQriMajorSqAcquisitionOrchestrator({
             fetchReferencePage: async url => {
-                const response = await optionMapBridge.fetchQriOptionPage(url);
-                if (!response?.success) throw new Error(response?.error || "major_sq_fetch_failed");
-                if (response.sourceUrl !== url) throw new Error("major_sq_source_url_mismatch");
-                return response.html;
+                const response = await acquireQriProductionReference(url, "major_sq");
+                return response.parserInput;
             },
             buildCanonical: (html, { sourceUrl }) =>
                 window.OptionMapQriOptions.parseQriOptionsPage(html, sourceUrl),
@@ -4927,8 +4976,21 @@ function initializeQriMajorSqAcquisitionRuntime() {
             buildCache: canonical => window.OptionMapQriOptions.createCacheV2(
                 canonical, new Date().toISOString()),
             validateCache: cache => window.OptionMapQriOptions.validateCacheV2(cache),
-            persistReference: (cache, context) =>
-                qriOptionsHistoryPersistence.persistReferenceContractCache(cache, context),
+            persistReference: async (cache, context) => {
+                const key = `major_sq|${context.sourceUrl}`;
+                const acquisition = qriPendingReferenceAcquisitions.get(key);
+                if (!acquisition) return { status: "failed", reason: "acquisition_context_missing" };
+                try {
+                    const payload = createQriPayload(acquisition.parserInput, context.sourceUrl);
+                    const finalized = await finalizeQriProductionAcquisition(
+                        acquisition, payload, cache);
+                    if (!finalized.formalCandidate) return {
+                        status: "failed", reason: "formal_candidate_missing" };
+                    return qriOptionsHistoryPersistence.persistEvidenceCandidate(
+                        finalized.formalCandidate, { mode: "reference_history",
+                            isCurrentRequest: context.isCurrentRequest });
+                } finally { qriPendingReferenceAcquisitions.delete(key); }
+            },
             persistAcceptedIvHistory: (input, guard) =>
                 persistQriReferenceIvHistory("major_sq", input, guard),
             restoreAcceptedIvHistory: (memo, guard) =>
@@ -5463,25 +5525,17 @@ async function showSpecificQriContract(contract) {
     window.setQriContractDisplayUnavailable?.(contract);
     setQriContractSelectionNote(`表示用：${contract}限を取得中…（総合判定には未使用）`, "loading");
     try {
-        const response = await optionMapBridge.fetchQriOptionPage(listed.url);
+        const signed = qriProductionParentManifest?.entries?.find(item =>
+            item.canonicalUrl === listed.url);
+        const role = signed?.allowedRoles?.includes("next") ? "next"
+            : signed?.allowedRoles?.includes("major_sq") ? "major_sq" : null;
+        if (!role) throw new Error("production_reference_role_unavailable");
+        const response = await acquireQriProductionReference(listed.url, role);
         if (sequence !== qriContractSelectionState.requestSequence ||
             qriContractSelectionState.contract !== contract) return { status: "stale_ignored" };
-        if (!response.success) {
-            const ivFetchedAt = new Date().toISOString();
-            await markQriOptionIvSourceUnavailable("selected", ivFetchedAt,
-                { mode: "specific", sequence, requestedContract: contract,
-                    sourceUrl: listed.url },
-                () => ({ isCurrent: sequence === qriContractSelectionState.requestSequence &&
-                    qriContractSelectionState.contract === contract,
-                requestedContract: contract,
-                selectedContract: qriContractSelectionState.contract }), response.error);
-            qriContractSelectionState = window.OptionMapQriOptionsSelection.finishRequest(
-                qriContractSelectionState, sequence, { status: "fetch_failed", error: response.error });
-            setQriContractSelectionNote(`表示用：${contract}限の取得に失敗しました。総合判定には未使用`, "fetch_failed");
-            return { status: "fetch_failed" };
-        }
         qriHtmlAcquired = true;
-        const payload = createQriPayload(response.html, response.sourceUrl);
+        const payload = createQriPayload(response.parserInput,
+            response.receipt.acceptedFinalUrl);
         const valid = validateQriPayload(payload) &&
             window.OptionMapQriOptionsSelection.validateSpecificResult({ requestedContract: contract,
                 requestedUrl: listed.url, manifest: qriContractManifest, canonical: payload.canonicalV2,
@@ -5492,6 +5546,8 @@ async function showSpecificQriContract(contract) {
             setQriContractSelectionNote(`表示用：${contract}限の検証に失敗しました。総合判定には未使用`, "validation_failed");
             return { status: "validation_failed" };
         }
+        await finalizeQriProductionAcquisition(response, payload, null);
+        qriPendingReferenceAcquisitions.delete(`${role}|${listed.url}`);
         const ivFetchedAt = new Date().toISOString();
         await adoptQriOptionIv("selected", payload, ivFetchedAt,
             { mode: "specific", sequence, requestedContract: contract,
@@ -5548,13 +5604,18 @@ async function showUnresolvedQriEntry(selectionKey) {
             selectionKey,
             validateCanonical: window.OptionMapQriOptions.validateCanonical,
             load: async url => {
-                const response = await optionMapBridge.fetchQriOptionPage(url);
-                if (!response.success) throw new Error(`lazy_fetch_failed:${response.error || "unknown"}`);
-                if (response.sourceUrl !== url) throw new Error("lazy_source_url_mismatch");
-                const payload = createQriPayload(response.html, response.sourceUrl);
+                const signed = qriProductionParentManifest?.entries?.find(item =>
+                    item.canonicalUrl === url);
+                const role = signed?.allowedRoles?.[0] || null;
+                if (!role) throw new Error("lazy_fetch_failed:bounded_role_unavailable");
+                const response = await acquireQriProductionReference(url, role);
+                const payload = createQriPayload(response.parserInput,
+                    response.receipt.acceptedFinalUrl);
                 if (!validateQriPayload(payload) || !payload.canonicalV2) {
                     throw new Error("lazy_payload_invalid");
                 }
+                await finalizeQriProductionAcquisition(response, payload, null);
+                qriPendingReferenceAcquisitions.delete(`${role}|${url}`);
                 return { canonical: payload.canonicalV2, payload,
                     ivFetchedAt: new Date().toISOString() };
             }
@@ -5742,6 +5803,11 @@ async function fetchQriData({ requestId } = {}) {
         window.createFetchRequestId(source);
     const startedAt = new Date().toISOString();
     let qriHtmlAcquired = false;
+    let qriProductionAcquisition = null;
+    let qriFormalFinalization = null;
+    let qriFormalCache = null;
+    qriProductionParentManifest = null;
+    qriPendingReferenceAcquisitions.clear();
 
     window.updateFetchState(source, {
         status: window.FETCH_STATUS.LOADING,
@@ -5783,16 +5849,18 @@ async function fetchQriData({ requestId } = {}) {
     refreshQriOptionsDisplay({ liveState: null, liveStatus: "pending" });
 
     try {
-        const result = await optionMapBridge.fetchQriOptionPage(sourceUrl);
+        const result = await optionMapBridge.acquireQriPage({ requestKind: "active" });
 
         if (!result.success) {
             throw new Error(
-                result.error || "オプションページの取得に失敗しました"
+                result.reason || "オプションページの取得に失敗しました"
             );
         }
+        qriProductionAcquisition = result;
         qriHtmlAcquired = true;
 
-        const payload = createQriPayload(result.html, sourceUrl);
+        const payload = createQriPayload(result.parserInput,
+            result.receipt.acceptedFinalUrl);
 
         if (!validateQriPayload(payload)) {
             throw new Error("QRIオプションデータの解析結果が不正です");
@@ -5811,8 +5879,17 @@ async function fetchQriData({ requestId } = {}) {
             };
         }
 
-        const fetchedAt = new Date().toISOString();
+        const fetchedAt = result.receipt.fetchedAt;
         const sourceDate = payload.sourceDate.toISOString();
+        qriProductionParentManifest = result.parentManifest || null;
+        qriFormalCache = payload.canonicalV2?.openInterestStatus === "available"
+            ? await window.OptionMapQriOptions.createCacheV2(payload.canonicalV2, fetchedAt)
+            : null;
+        qriFormalFinalization = await finalizeQriProductionAcquisition(
+            qriProductionAcquisition, payload, qriFormalCache);
+        if (qriFormalCache && !qriFormalFinalization.formalCandidate) {
+            throw new Error("production_qri_formal_candidate_missing");
+        }
         qriOptionsDisplayLiveState = payload.canonicalV2 ? {
             available: payload.openInterestAvailable === true,
             sourceStatus: payload.openInterestAvailable === true
@@ -5867,14 +5944,14 @@ async function fetchQriData({ requestId } = {}) {
         }
 
         if (payload.canonicalV2) {
-            const qriPersistenceResult = await persistQriOptionsHistory(
-                payload.canonicalV2,
-                fetchedAt,
-                () => isCurrentFetchRequest(source, activeRequestId)
-            );
-            const qriIdentityCache = await window.OptionMapQriOptions.createCacheV2(
-                payload.canonicalV2, fetchedAt
-            );
+            const qriPersistenceResult = qriFormalFinalization.formalCandidate
+                ? await qriOptionsHistoryPersistence.persistEvidenceCandidate(
+                    qriFormalFinalization.formalCandidate, { mode: "auto",
+                        isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId) })
+                : { status: "not_attempted", reason: "open_interest_unavailable" };
+            await renderQriOptionsHistoryStatus();
+            const qriIdentityCache = qriFormalCache ||
+                await window.OptionMapQriOptions.createCacheV2(payload.canonicalV2, fetchedAt);
             await window.publishQriFormalIdentityFact?.({
                 canonical: payload.canonicalV2,
                 canonicalValid: window.OptionMapQriOptions.validateCanonical(

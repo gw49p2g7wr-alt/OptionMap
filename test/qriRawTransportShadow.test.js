@@ -266,14 +266,17 @@ test("Q2-17 request and body timeouts fail closed with no retry", async () => {
     ["request_timeout", "body_timeout", 1]);
 });
 
-test("Q2-18 production BrowserWindow path, preload and IPC remain untouched", () => {
+test("Q2-18 accepted raw transport is activated only through bounded Q6 IPC", () => {
   const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
   const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-  assert.match(main, /ipcMain\.handle\("fetch-option-page"[\s\S]*?new BrowserWindow[\s\S]*?executeJavaScript/);
-  assert.match(main, /partition:\s*"persist:qri-option-session"/);
-  for (const source of [main, preload, index]) assert.doesNotMatch(source, /qriRawTransportShadow/);
-  assert.equal((main.match(/ipcMain\.handle\("fetch-option-page"/g) || []).length, 1);
+  assert.match(main, /require\("\.\/js\/qriRawTransportShadow\.js"\)/);
+  assert.match(main, /ipcMain\.handle\("acquire-qri-page"/);
+  assert.match(preload, /ipcRenderer\.invoke\("acquire-qri-page"/);
+  assert.match(index, /optionMapBridge\.acquireQriPage\(\{ requestKind: "active" \}\)/);
+  for (const source of [main, preload, index]) {
+    assert.doesNotMatch(source, /ipcMain\.handle\("fetch-option-page"|ipcRenderer\.invoke\("fetch-option-page"|optionMapBridge\.fetchQriOptionPage/);
+  }
 });
 
 test("Q2-19 existing QRI parser accepts the decoded raw server fixture", async () => {

@@ -295,12 +295,12 @@ test("Q3-19 later parser rejection retains valid orphan shadow Evidence and Form
   assert.equal(result.diagnostics.formalWriteCount, 0);
 });
 
-test("Q3-20 production QRI, history, UI, export, preload and IPC remain untouched", () => {
-  for (const file of ["main.js", "preload.js", "index.html", "js/qriOptions.js",
-    "js/qriOptionsHistory.js", "js/fullExportCollector.js"]) {
-    const source = fs.readFileSync(path.join(ROOT, file), "utf8");
-    assert.doesNotMatch(source, /qriEvidenceVaultShadow/);
-  }
+test("Q3-20 production QRI activates Vault while UI and export remain raw-free", () => {
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
+  assert.match(main, /require\("\.\/js\/qriEvidenceVaultShadow\.js"\)/);
+  for (const file of ["index.html", "js/qriOptions.js", "js/qriOptionsHistory.js",
+    "js/fullExportCollector.js"]) assert.doesNotMatch(
+      fs.readFileSync(path.join(ROOT, file), "utf8"), /readRawBytes|rawBytes|sourceEvidenceVault/);
   const shadow = fs.readFileSync(path.join(ROOT, "js/qriEvidenceVaultShadow.js"), "utf8");
   assert.doesNotMatch(shadow, /indexedDB|localStorage|ipcMain|ipcRenderer|BrowserWindow|FullExport/);
 });
