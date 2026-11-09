@@ -333,6 +333,7 @@ function createQriRawTransportShadow(options) {
       domMutationDependency: "none_observed_in_fixture" };
     return frozenResult({ contractVersion: SHADOW_VERSION, status: "available", reason: null,
       receipt, rawFacts, parserInput, diagnostics,
+      copyRawBytesForMainShadow: () => Buffer.from(rawBytes),
       copyRawBytesForMainTest: () => Buffer.from(rawBytes) });
   }
 

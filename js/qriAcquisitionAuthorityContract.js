@@ -8,12 +8,16 @@ const MANIFEST_VERSION = "qri-parent-manifest-v1";
 const ACQUISITION_VERSION = "qri-main-acquisition-identity-v1";
 const RECEIPT_VERSION = "qri-acquisition-receipt-v1";
 const RECEIPT_V2_VERSION = "qri-acquisition-receipt-v2";
+const RECEIPT_V3_VERSION = "qri-acquisition-receipt-v3";
 const PARSER_INPUT_VERSION = "qri-parser-input-identity-v1";
 const TRANSPORT_IDENTITY_VERSION = "qri-transport-identity-v1";
 const TRANSPORT_PLACEHOLDER_VERSION = "qri-transport-identity-placeholder-v1";
 const EVIDENCE_PLACEHOLDER_VERSION = "qri-evidence-status-placeholder-v1";
+const EVIDENCE_STATUS_VERSION = "qri-evidence-status-v1";
+const EVIDENCE_CONTEXT_VERSION = "qri-evidence-context-v1";
 const PARSER_BINDING_VERSION = "qri-parser-result-binding-v1";
 const IV_INHERITANCE_VERSION = "qri-iv-receipt-inheritance-v1";
+const IV_INHERITANCE_V2_VERSION = "qri-iv-receipt-inheritance-v2";
 
 const SOURCE_FAMILY = "qri";
 const SOURCE_ID = "qri-nikkei225-options";
@@ -43,7 +47,7 @@ const identifier = (value, maximum = 192) => text(value, maximum) &&
 const identity = (value, prefix) => typeof value === "string" &&
   new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\|sha256:[0-9a-f]{64}$`).test(value);
 const receiptIdentity = value => identity(value, "qri-receipt-v1") ||
-  identity(value, "qri-receipt-v2");
+  identity(value, "qri-receipt-v2") || identity(value, "qri-receipt-v3");
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -415,6 +419,10 @@ const TRANSPORT_PLACEHOLDER = freeze({ contractVersion: TRANSPORT_PLACEHOLDER_VE
   state: "pending_q2", identity: null });
 const EVIDENCE_PLACEHOLDER = freeze({ contractVersion: EVIDENCE_PLACEHOLDER_VERSION,
   state: "not_activated", reason: "q2_q3_pending", rawContentSha256: null });
+const EVIDENCE_STATUS_FIELDS = Object.freeze([
+  "contractVersion", "state", "contentSha256", "occurrenceId", "sourceFamily", "sourceId",
+  "role", "contextIdentity", "parentManifestId", "listedContractId"
+]);
 const REDIRECT_HOP_FIELDS = Object.freeze(["status", "fromUrl", "toUrl"]);
 const TRANSPORT_IDENTITY_FIELDS = Object.freeze([
   "contractVersion", "httpStatus", "declaredContentType", "mediaType", "encoding",
@@ -459,19 +467,71 @@ function createTransportIdentity(input) {
   return freeze(result);
 }
 
+function validateEvidenceStatus(value) {
+  if (!exact(value, EVIDENCE_STATUS_FIELDS) || value.contractVersion !== EVIDENCE_STATUS_VERSION ||
+      value.state !== "available" || !digest(value.contentSha256) ||
+      !identity(value.occurrenceId, "source-occurrence-v1") ||
+      value.sourceFamily !== SOURCE_FAMILY || value.sourceId !== SOURCE_ID ||
+      !ROLES.includes(value.role) || !identity(value.contextIdentity, EVIDENCE_CONTEXT_VERSION)) {
+    return false;
+  }
+  if (value.role === "active") {
+    return value.parentManifestId === null && value.listedContractId === null;
+  }
+  return identity(value.parentManifestId, "qri-parent-manifest-v1") &&
+    identity(value.listedContractId, "qri-listed-contract-v1");
+}
+
+function createEvidenceStatus(input) {
+  if (!exact(input, ["contentSha256", "occurrenceId", "role", "contextIdentity",
+    "parentManifestId", "listedContractId"])) throw new TypeError("qri_evidence_status_fields_invalid");
+  const result = { contractVersion: EVIDENCE_STATUS_VERSION, state: "available",
+    contentSha256: input.contentSha256, occurrenceId: input.occurrenceId,
+    sourceFamily: SOURCE_FAMILY, sourceId: SOURCE_ID, role: input.role,
+    contextIdentity: input.contextIdentity, parentManifestId: input.parentManifestId,
+    listedContractId: input.listedContractId };
+  if (!validateEvidenceStatus(result)) throw new TypeError("qri_evidence_status_invalid");
+  return freeze(result);
+}
+
+function evidenceContextMaterial(acquisition, intent, route, parentManifestId) {
+  return { contractVersion: EVIDENCE_CONTEXT_VERSION,
+    acquisitionId: acquisition.acquisitionId, intentId: intent.intentId,
+    sourceFamily: SOURCE_FAMILY, sourceId: SOURCE_ID, role: route.role,
+    contractIdentity: clone(route.contractIdentity), routeIdentity: route.routeIdentity,
+    canonicalUrl: route.canonicalUrl, parentAcquisitionId: route.parentAcquisitionId,
+    parentManifestId, listedContractId: route.listedContractId,
+    runId: acquisition.runId, requestId: acquisition.requestId };
+}
+
+function createEvidenceContextIdentity(input, authority) {
+  if (!exact(input, ["acquisition", "intent", "route", "parentManifestId"]) ||
+      !validateMainAcquisitionIdentity(input.acquisition, input.intent, input.route, authority)) {
+    throw new TypeError("qri_evidence_context_input_invalid");
+  }
+  const active = input.route.role === "active";
+  if (active ? input.parentManifestId !== null :
+      !identity(input.parentManifestId, "qri-parent-manifest-v1")) {
+    throw new TypeError("qri_evidence_context_parent_invalid");
+  }
+  return `${EVIDENCE_CONTEXT_VERSION}|sha256:${sha256(evidenceContextMaterial(
+    input.acquisition, input.intent, input.route, input.parentManifestId))}`;
+}
+
 function receiptRouteMatches(value, route) {
   const active = route.requestKind === "active";
   const normalize = url => canonicalQriUrl(url, { active });
   if (normalize(value.acceptedInitialUrl) !== route.canonicalUrl ||
       normalize(value.acceptedFinalUrl) !== route.canonicalUrl) return false;
-  if (value.contractVersion !== RECEIPT_V2_VERSION) return true;
+  if (value.contractVersion === RECEIPT_VERSION) return true;
   return value.transportIdentity.redirectHops.every(hop =>
     normalize(hop.fromUrl) === route.canonicalUrl && normalize(hop.toUrl) === route.canonicalUrl);
 }
 
 function validateAcquisitionReceipt(value, authority, context = null) {
   if (!exact(value, RECEIPT_FIELDS) ||
-      ![RECEIPT_VERSION, RECEIPT_V2_VERSION].includes(value.contractVersion) ||
+      ![RECEIPT_VERSION, RECEIPT_V2_VERSION, RECEIPT_V3_VERSION]
+        .includes(value.contractVersion) ||
       !receiptIdentity(value.receiptId) ||
       !identity(value.acquisitionId, "qri-acquisition-v1") ||
       !identity(value.intentId, "qri-intent-v1") || value.sourceFamily !== SOURCE_FAMILY ||
@@ -482,14 +542,18 @@ function validateAcquisitionReceipt(value, authority, context = null) {
         !identity(value.parentAcquisitionId, "qri-acquisition-v1") ||
       !timestamp(value.fetchedAt) || !validAuthority(authority) ||
       value.authorityKeyId !== authority.keyId || !validateParserInputIdentity(value.parserInputIdentity) ||
-      stable(value.evidenceStatus) !== stable(EVIDENCE_PLACEHOLDER) ||
       !digest(value.integritySha256) || !digest(value.authoritySignature)) return false;
   const v1 = value.contractVersion === RECEIPT_VERSION;
+  const v3 = value.contractVersion === RECEIPT_V3_VERSION;
   if (v1 ? stable(value.transportIdentity) !== stable(TRANSPORT_PLACEHOLDER) :
       !validateTransportIdentity(value.transportIdentity) ||
       value.parserInputIdentity.state !== "bound" ||
       value.parserInputIdentity.rawContentSha256 !== value.transportIdentity.contentSha256 ||
       value.parserInputIdentity.encoding !== value.transportIdentity.encoding) return false;
+  if (v3 ? !validateEvidenceStatus(value.evidenceStatus) ||
+      value.evidenceStatus.contentSha256 !== value.transportIdentity.contentSha256 ||
+      value.evidenceStatus.role !== value.role :
+      stable(value.evidenceStatus) !== stable(EVIDENCE_PLACEHOLDER)) return false;
   const active = value.role === "active";
   const initial = canonicalQriUrl(value.acceptedInitialUrl, { active });
   const final = canonicalQriUrl(value.acceptedFinalUrl, { active });
@@ -499,8 +563,9 @@ function validateAcquisitionReceipt(value, authority, context = null) {
     canonicalQriUrl(hop.fromUrl, { active }) !== initial ||
     canonicalQriUrl(hop.toUrl, { active }) !== initial)) return false;
   const integrity = sha256(receiptUnsigned(value));
-  const receiptPrefix = v1 ? "qri-receipt-v1" : "qri-receipt-v2";
-  const signatureKind = v1 ? "acquisition_receipt" : "acquisition_receipt_v2";
+  const receiptPrefix = v1 ? "qri-receipt-v1" : v3 ? "qri-receipt-v3" : "qri-receipt-v2";
+  const signatureKind = v1 ? "acquisition_receipt" : v3 ?
+    "acquisition_receipt_v3" : "acquisition_receipt_v2";
   if (value.integritySha256 !== integrity ||
       value.receiptId !== `${receiptPrefix}|sha256:${integrity}` ||
       !authority.verify(signatureKind, integrity, value.authoritySignature)) return false;
@@ -511,8 +576,46 @@ function validateAcquisitionReceipt(value, authority, context = null) {
         value.role !== route.role || value.routeIdentity !== route.routeIdentity ||
         stable(value.contractIdentity) !== stable(route.contractIdentity) ||
         !receiptRouteMatches(value, route)) return false;
+    if (v3) {
+      let contextIdentity;
+      try { contextIdentity = createEvidenceContextIdentity({ acquisition, intent, route,
+        parentManifestId: context.parentManifestId }, authority); }
+      catch (_error) { return false; }
+      if (value.evidenceStatus.contextIdentity !== contextIdentity ||
+          value.evidenceStatus.parentManifestId !== context.parentManifestId ||
+          value.evidenceStatus.listedContractId !== route.listedContractId) return false;
+    }
   }
   return true;
+}
+
+function createAcquisitionReceiptV3(input, authority) {
+  if (!validAuthority(authority) || !exact(input,
+    ["acquisition", "intent", "route", "acceptedInitialUrl", "acceptedFinalUrl", "fetchedAt",
+      "transportIdentity", "parserInputIdentity", "evidenceStatus", "parentManifestId"]) ||
+      !validateMainAcquisitionIdentity(input.acquisition, input.intent, input.route, authority) ||
+      !validateTransportIdentity(input.transportIdentity) ||
+      !validateParserInputIdentity(input.parserInputIdentity) ||
+      !validateEvidenceStatus(input.evidenceStatus)) {
+    throw new TypeError("qri_receipt_v3_input_invalid");
+  }
+  const result = { contractVersion: RECEIPT_V3_VERSION, receiptId: "",
+    acquisitionId: input.acquisition.acquisitionId, intentId: input.intent.intentId,
+    sourceFamily: SOURCE_FAMILY, sourceId: SOURCE_ID, role: input.route.role,
+    contractIdentity: clone(input.route.contractIdentity), routeIdentity: input.route.routeIdentity,
+    parentAcquisitionId: input.route.parentAcquisitionId,
+    acceptedInitialUrl: input.acceptedInitialUrl, acceptedFinalUrl: input.acceptedFinalUrl,
+    fetchedAt: input.fetchedAt, transportIdentity: clone(input.transportIdentity),
+    parserInputIdentity: clone(input.parserInputIdentity),
+    evidenceStatus: clone(input.evidenceStatus), authorityKeyId: authority.keyId,
+    integritySha256: "", authoritySignature: "" };
+  result.integritySha256 = sha256(receiptUnsigned(result));
+  result.receiptId = `qri-receipt-v3|sha256:${result.integritySha256}`;
+  result.authoritySignature = authority.sign("acquisition_receipt_v3", result.integritySha256);
+  if (!validateAcquisitionReceipt(result, authority, input)) {
+    throw new TypeError("qri_receipt_v3_invalid");
+  }
+  return freeze(result);
 }
 
 function createAcquisitionReceiptV2(input, authority) {
@@ -601,6 +704,13 @@ function validateParserResultAgainstReceipt(receipt, candidate, authority) {
   return freeze({ accepted: true, reason: null, binding: freeze(result) });
 }
 
+function validateDecodedParserInputAgainstReceipt(receipt, parserInput, authority) {
+  if (!validateAcquisitionReceipt(receipt, authority) ||
+      receipt.parserInputIdentity.state !== "bound" || typeof parserInput !== "string") return false;
+  const actual = crypto.createHash("sha256").update(parserInput, "utf8").digest("hex");
+  return actual === receipt.parserInputIdentity.sha256;
+}
+
 function createIvReceiptInheritance(receipt, ivCandidate, authority) {
   if (!validateAcquisitionReceipt(receipt, authority)) {
     return freeze({ accepted: false, reason: "receipt_invalid", inheritance: null });
@@ -621,11 +731,37 @@ function createIvReceiptInheritance(receipt, ivCandidate, authority) {
   }) });
 }
 
+function createIvReceiptInheritanceV2(receipt, ivCandidate, authority) {
+  if (!validateAcquisitionReceipt(receipt, authority) ||
+      receipt.contractVersion !== RECEIPT_V3_VERSION ||
+      !validateEvidenceStatus(receipt.evidenceStatus)) {
+    return freeze({ accepted: false, reason: "evidence_receipt_invalid", inheritance: null });
+  }
+  if (!object(ivCandidate) || ivCandidate.source !== IV_SOURCE_ID ||
+      ivCandidate.sourceUrl !== receipt.acceptedFinalUrl ||
+      ivCandidate.contract !== receipt.contractIdentity.contract ||
+      !date(ivCandidate.tradingDate)) {
+    return freeze({ accepted: false, reason: "iv_parent_binding_mismatch", inheritance: null });
+  }
+  return freeze({ accepted: true, reason: null, inheritance: freeze({
+    contractVersion: IV_INHERITANCE_V2_VERSION, sourceFamily: SOURCE_FAMILY,
+    sourceId: IV_SOURCE_ID, parentSourceId: SOURCE_ID, parentReceiptId: receipt.receiptId,
+    parentAcquisitionId: receipt.acquisitionId, role: receipt.role,
+    contractIdentity: clone(receipt.contractIdentity), sourceUrl: receipt.acceptedFinalUrl,
+    tradingDate: ivCandidate.tradingDate,
+    occurrenceId: receipt.evidenceStatus.occurrenceId,
+    rawContentSha256: receipt.evidenceStatus.contentSha256,
+    evidenceContextIdentity: receipt.evidenceStatus.contextIdentity,
+    parserInputIdentity: clone(receipt.parserInputIdentity)
+  }) });
+}
+
 module.exports = freeze({
   INTENT_VERSION, ROUTE_VERSION, MANIFEST_VERSION, ACQUISITION_VERSION, RECEIPT_VERSION,
-  RECEIPT_V2_VERSION, PARSER_INPUT_VERSION, TRANSPORT_IDENTITY_VERSION,
-  TRANSPORT_PLACEHOLDER_VERSION, EVIDENCE_PLACEHOLDER_VERSION,
-  PARSER_BINDING_VERSION, IV_INHERITANCE_VERSION, SOURCE_FAMILY, SOURCE_ID, IV_SOURCE_ID,
+  RECEIPT_V2_VERSION, RECEIPT_V3_VERSION, PARSER_INPUT_VERSION, TRANSPORT_IDENTITY_VERSION,
+  TRANSPORT_PLACEHOLDER_VERSION, EVIDENCE_PLACEHOLDER_VERSION, EVIDENCE_STATUS_VERSION,
+  EVIDENCE_CONTEXT_VERSION, PARSER_BINDING_VERSION, IV_INHERITANCE_VERSION,
+  IV_INHERITANCE_V2_VERSION, SOURCE_FAMILY, SOURCE_ID, IV_SOURCE_ID,
   FUTURES_SOURCE_ID, ROUTE_FAMILY, MANIFEST_PARSER_ID, MANIFEST_PARSER_VERSION,
   QRI_ORIGIN, ACTIVE_URL, ROLES, REFERENCE_ROLES, TRANSPORT_PLACEHOLDER,
   EVIDENCE_PLACEHOLDER, stable, sha256, createMainAuthority, createContractIdentity,
@@ -633,7 +769,9 @@ module.exports = freeze({
   validateAcquisitionIntent, validateRouteDescriptor, createParserInputIdentity,
   validateParserInputIdentity, createParentManifest, validateParentManifest,
   resolveQriIntent, createMainAcquisitionIdentity, validateMainAcquisitionIdentity,
-  createTransportIdentity, validateTransportIdentity, createAcquisitionReceipt,
-  createAcquisitionReceiptV2, validateAcquisitionReceipt,
-  validateParserResultAgainstReceipt, createIvReceiptInheritance
+  createTransportIdentity, validateTransportIdentity, createEvidenceContextIdentity,
+  createEvidenceStatus, validateEvidenceStatus, createAcquisitionReceipt,
+  createAcquisitionReceiptV2, createAcquisitionReceiptV3, validateAcquisitionReceipt,
+  validateDecodedParserInputAgainstReceipt, validateParserResultAgainstReceipt,
+  createIvReceiptInheritance, createIvReceiptInheritanceV2
 });
