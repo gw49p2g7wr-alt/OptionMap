@@ -11,6 +11,8 @@
     const HISTORY_VERSION = 1;
     const SOURCE = "qri-nikkei225-options";
     const SIGNATURE_ALGORITHM = "sha256";
+    const FORMAL_EVIDENCE_VERSION = "qri-formal-revision-evidence-v1";
+    const RECEIPT_V3_VERSION = "qri-acquisition-receipt-v3";
 
     const clone = value => value === undefined
         ? undefined : JSON.parse(JSON.stringify(value));
@@ -35,6 +37,70 @@
     };
     const validContract = value => /^20\d{2}-(0[1-9]|1[0-2])$/.test(value || "");
     const entryKeyFor = (contract, sourceDateKey) => `${contract}|${sourceDateKey}`;
+    const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
+    const exact = (value, fields) => object(value) && Object.keys(value).length === fields.length &&
+        fields.every(field => Object.hasOwn(value, field));
+    const identity = (value, prefix) => typeof value === "string" &&
+        new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\|sha256:[0-9a-f]{64}$`).test(value);
+    const digest = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+    const RECEIPT_FIELDS = ["contractVersion", "receiptId", "acquisitionId", "intentId",
+        "sourceFamily", "sourceId", "role", "contractIdentity", "routeIdentity",
+        "parentAcquisitionId", "acceptedInitialUrl", "acceptedFinalUrl", "fetchedAt",
+        "transportIdentity", "parserInputIdentity", "evidenceStatus", "authorityKeyId",
+        "integritySha256", "authoritySignature"];
+    const TRANSPORT_FIELDS = ["contractVersion", "httpStatus", "declaredContentType",
+        "mediaType", "encoding", "byteLength", "contentSha256", "redirectHops"];
+    const PARSER_INPUT_FIELDS = ["contractVersion", "state", "sha256", "encoding",
+        "rawContentSha256"];
+    const EVIDENCE_FIELDS = ["contractVersion", "state", "contentSha256", "occurrenceId",
+        "sourceFamily", "sourceId", "role", "contextIdentity", "parentManifestId",
+        "listedContractId"];
+
+    function validateFormalEvidenceBinding(value, revisionLike) {
+        if (!exact(value, ["contractVersion", "status", "receipt"]) ||
+            value.contractVersion !== FORMAL_EVIDENCE_VERSION || value.status !== "available" ||
+            !exact(value.receipt, RECEIPT_FIELDS)) return false;
+        const receipt = value.receipt, evidence = receipt.evidenceStatus,
+            parser = receipt.parserInputIdentity, transport = receipt.transportIdentity;
+        if (receipt.contractVersion !== RECEIPT_V3_VERSION ||
+            !identity(receipt.receiptId, "qri-receipt-v3") ||
+            !identity(receipt.acquisitionId, "qri-acquisition-v1") ||
+            !identity(receipt.intentId, "qri-intent-v1") ||
+            !identity(receipt.routeIdentity, "qri-route-v1") ||
+            receipt.sourceFamily !== "qri" || receipt.sourceId !== SOURCE ||
+            !["active", "next", "major_sq"].includes(receipt.role) ||
+            !exact(receipt.contractIdentity, ["contract", "gengetsu"]) ||
+            receipt.contractIdentity.contract !== revisionLike?.contract ||
+            receipt.contractIdentity.gengetsu !== String(revisionLike?.contract || "").replace("-", "") ||
+            typeof receipt.acceptedInitialUrl !== "string" ||
+            receipt.acceptedFinalUrl !== revisionLike?.sourceUrl ||
+            !validTimestamp(receipt.fetchedAt) || !digest(receipt.integritySha256) ||
+            !digest(receipt.authoritySignature) || typeof receipt.authorityKeyId !== "string" ||
+            !exact(evidence, EVIDENCE_FIELDS) ||
+            evidence.contractVersion !== "qri-evidence-status-v1" ||
+            evidence.state !== "available" || evidence.sourceFamily !== "qri" ||
+            evidence.sourceId !== SOURCE || evidence.role !== receipt.role ||
+            !digest(evidence.contentSha256) ||
+            !identity(evidence.occurrenceId, "source-occurrence-v1") ||
+            !identity(evidence.contextIdentity, "qri-evidence-context-v1") ||
+            !exact(parser, PARSER_INPUT_FIELDS) ||
+            parser.contractVersion !== "qri-parser-input-identity-v1" ||
+            parser.state !== "bound" || !digest(parser.sha256) ||
+            parser.rawContentSha256 !== evidence.contentSha256 ||
+            !exact(transport, TRANSPORT_FIELDS) || transport.contractVersion !==
+                "qri-transport-identity-v1" || transport.httpStatus !== 200 ||
+            transport.mediaType !== "text/html" || typeof transport.encoding !== "string" ||
+            !Number.isSafeInteger(transport.byteLength) || transport.byteLength < 0 ||
+            !Array.isArray(transport.redirectHops) || transport.redirectHops.length > 3 ||
+            transport.redirectHops.some(hop => !exact(hop, ["status", "fromUrl", "toUrl"])) ||
+            transport.contentSha256 !== evidence.contentSha256 ||
+            parser.encoding !== transport.encoding) return false;
+        if (receipt.role === "active") return receipt.parentAcquisitionId === null &&
+            evidence.parentManifestId === null && evidence.listedContractId === null;
+        return identity(receipt.parentAcquisitionId, "qri-acquisition-v1") &&
+            identity(evidence.parentManifestId, "qri-parent-manifest-v1") &&
+            identity(evidence.listedContractId, "qri-listed-contract-v1");
+    }
 
     function createEmptyQriOptionsHistory(now = null) {
         const timestamp = validTimestamp(now) ? now : null;
@@ -152,6 +218,10 @@
         }
         if (Array.isArray(revision.canonical?.records) && revision.canonical.records.some(record =>
             record.contract !== entry.contract)) errors.push("record_contract_mismatch");
+        if (Object.hasOwn(revision, "sourceEvidence") &&
+            !validateFormalEvidenceBinding(revision.sourceEvidence, revision)) {
+            errors.push("source_evidence_invalid");
+        }
         const signature = await qriApi?.createSignature?.(revision.canonical);
         if (!signature || signature !== revision.signature) errors.push("signature_mismatch");
         const expectedVersionKey = `qri-options-v2|${entry.contract}|${revision.pageUpdatedAt}|sha256:${signature}`;
@@ -209,7 +279,7 @@
     }
 
     function revisionFromCandidate(candidate, confirmedAt) {
-        return {
+        const revision = {
             contract: candidate.contract,
             versionKey: candidate.versionKey,
             signature: candidate.signature,
@@ -226,6 +296,10 @@
             openInterestStatus: candidate.openInterestStatus,
             canonical: clone(candidate.canonical)
         };
+        if (Object.hasOwn(candidate, "sourceEvidence")) {
+            revision.sourceEvidence = clone(candidate.sourceEvidence);
+        }
+        return revision;
     }
 
     async function mergeCandidate(history, candidate, options = {}) {
@@ -244,6 +318,10 @@
         const candidateValidation = await createHistoryCandidate(cacheLike);
         if (!candidateValidation.ok || candidateValidation.candidate.entryKey !== candidate?.entryKey) {
             return { changed: false, outcome: candidateValidation.reason || "invalid_candidate", history: original };
+        }
+        if (Object.hasOwn(candidate, "sourceEvidence") &&
+            !validateFormalEvidenceBinding(candidate.sourceEvidence, candidate)) {
+            return { changed: false, outcome: "source_evidence_invalid", history: original };
         }
         const next = clone(history);
         const entry = next.entries.find(item => item.entryKey === candidate.entryKey);
@@ -287,8 +365,8 @@
         return revision ? clone(revision) : null;
     }
 
-    return Object.freeze({ HISTORY_VERSION, SOURCE, SIGNATURE_ALGORITHM,
+    return Object.freeze({ HISTORY_VERSION, SOURCE, SIGNATURE_ALGORITHM, FORMAL_EVIDENCE_VERSION,
         entryKeyFor, createEmptyQriOptionsHistory, createHistoryCandidate,
-        validateHistory, mergeCandidate, listContracts, listSourceDates,
+        validateFormalEvidenceBinding, validateHistory, mergeCandidate, listContracts, listSourceDates,
         getActiveRevision, snapshotDateFromConfirmedAt, effectiveSnapshotDate });
 });
