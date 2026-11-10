@@ -79,10 +79,11 @@ function manifestEntries(canonical) {
 
 function createQriProductionAcquisition(options) {
   if (!exact(options, ["authority", "evidenceAcquirer", "formalBinding", "parseCanonical",
-    "validateCanonical", "createRunId", "createRequestId"]) ||
+    "validateCanonical", "createVolumeCandidate", "createRunId", "createRequestId"]) ||
       typeof options.evidenceAcquirer?.acquire !== "function" ||
       typeof options.formalBinding?.prepareFormalCandidate !== "function" ||
       typeof options.parseCanonical !== "function" || typeof options.validateCanonical !== "function" ||
+      typeof options.createVolumeCandidate !== "function" ||
       typeof options.createRunId !== "function" || typeof options.createRequestId !== "function") {
     throw new TypeError("qri_production_acquisition_options_invalid");
   }
@@ -191,9 +192,19 @@ function createQriProductionAcquisition(options) {
         { evidenceRetained: true, formalWriteCount: 0 });
       formalCandidate = prepared.candidate;
     }
+    let volumeCandidate = null, volumeHistoryReason = null;
+    try {
+      volumeCandidate = await options.createVolumeCandidate({
+        parserInput: acquisition.parserInput, qriCanonical: acquisition.canonical,
+        receipt, relatedQriOiVersionKey: formalCandidate?.versionKey || null
+      });
+    } catch (_error) {
+      volumeHistoryReason = "volume_candidate_rejected";
+    }
     pending.delete(input.acquisitionId);
     return freeze({ contractVersion: SERVICE_VERSION, success: true, status: "accepted",
       reason: null, formalCandidate: clone(formalCandidate),
+      volumeCandidate: clone(volumeCandidate), volumeHistoryReason,
       ivInheritance: clone(ivInheritance), parserBinding: clone(parserBinding.binding),
       diagnostics: { evidenceRetained: true, formalWriteCount: 0,
         rawPayloadExposed: false, storageLocationExposed: false } });

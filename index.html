@@ -1491,6 +1491,9 @@
 <script src="js/qriOptionsHistory.js"></script>
 <script src="js/storage/qriOptionsHistoryStore.js"></script>
 <script src="js/qriOptionsHistoryPersistence.js"></script>
+<script src="js/qriVolumeHistory.js"></script>
+<script src="js/storage/qriVolumeHistoryStore.js"></script>
+<script src="js/qriVolumeHistoryPersistence.js"></script>
 <script src="js/qriOptionIvHistoryPersistence.js"></script>
 <script src="js/qriOptionsReferenceAcquisition.js"></script>
 <script src="js/qriOptionsMajorSqAcquisition.js"></script>
@@ -2010,6 +2013,8 @@ window.OptionMapFullExportUi.configure({
 });
 const qriOptionsHistoryPersistence =
     window.OptionMapQriOptionsHistoryPersistence.createQriOptionsHistoryPersistence();
+const qriVolumeHistoryPersistence =
+    window.OptionMapQriVolumeHistoryPersistence.createQriVolumeHistoryPersistence();
 const qriOptionIvHistoryPersistence =
     window.OptionMapQriOptionIvHistoryPersistence.createPersistence();
 const qriOptionIvHistoryRestore =
@@ -2174,6 +2179,20 @@ async function persistQriOptionsHistory(canonical, fetchedAt, isCurrentRequest) 
 
 window.getQriOptionsHistoryPersistenceState = () =>
     qriOptionsHistoryPersistence.getState();
+window.getQriVolumeHistoryPersistenceState = () =>
+    qriVolumeHistoryPersistence.getState();
+
+async function persistQriVolumeHistory(finalized, mode, isCurrentRequest) {
+    if (!finalized?.volumeCandidate) return { status: "not_attempted",
+        reason: finalized?.volumeHistoryReason || "volume_candidate_missing" };
+    try {
+        return await qriVolumeHistoryPersistence.persistCandidate(
+            finalized.volumeCandidate, { mode, isCurrentRequest });
+    } catch (error) {
+        console.warn("QRI Volume historyへの保存に失敗しました:", error);
+        return { status: "failed", reason: "volume_persistence_exception" };
+    }
+}
 window.getQriOptionsHistory = async () => {
     const result = await window.OptionMapQriOptionsHistoryStore.loadHistory();
     return JSON.parse(JSON.stringify(result));
@@ -4925,6 +4944,8 @@ function initializeQriReferenceAcquisitionRuntime() {
                     const payload = createQriPayload(acquisition.parserInput, context.sourceUrl);
                     const finalized = await finalizeQriProductionAcquisition(
                         acquisition, payload, cache);
+                    await persistQriVolumeHistory(finalized, "reference_history",
+                        context.isCurrentRequest);
                     if (!finalized.formalCandidate) return {
                         status: "failed", reason: "formal_candidate_missing" };
                     return qriOptionsHistoryPersistence.persistEvidenceCandidate(
@@ -4997,6 +5018,8 @@ function initializeQriMajorSqAcquisitionRuntime() {
                     const payload = createQriPayload(acquisition.parserInput, context.sourceUrl);
                     const finalized = await finalizeQriProductionAcquisition(
                         acquisition, payload, cache);
+                    await persistQriVolumeHistory(finalized, "reference_history",
+                        context.isCurrentRequest);
                     if (!finalized.formalCandidate) return {
                         status: "failed", reason: "formal_candidate_missing" };
                     return qriOptionsHistoryPersistence.persistEvidenceCandidate(
@@ -5962,6 +5985,8 @@ async function fetchQriData({ requestId } = {}) {
                     qriFormalFinalization.formalCandidate, { mode: "auto",
                         isCurrentRequest: () => isCurrentFetchRequest(source, activeRequestId) })
                 : { status: "not_attempted", reason: "open_interest_unavailable" };
+            await persistQriVolumeHistory(qriFormalFinalization, "auto",
+                () => isCurrentFetchRequest(source, activeRequestId));
             await renderQriOptionsHistoryStatus();
             const qriIdentityCache = qriFormalCache ||
                 await window.OptionMapQriOptions.createCacheV2(payload.canonicalV2, fetchedAt);

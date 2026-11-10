@@ -17,6 +17,7 @@ const AuthorityStore = require("../js/qriProductionAuthority.js");
 const Parser = require("../js/qriOptions.js");
 const Iv = require("../js/qriOptionIv.js");
 const HistoryStore = require("../js/storage/qriOptionsHistoryStore.js");
+const VolumeHistory = require("../js/qriVolumeHistory.js");
 const { rawQriHtml, rawQriBytes } = require("./fixtures/qri/rawQriPageFixture.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -72,6 +73,7 @@ function harness(t, options = {}) {
     parseCanonical: (html, sourceUrl) => Parser.parseQriOptionsPage(html, sourceUrl),
     validateCanonical: canonical => Parser.validateCanonical(canonical,
       { allowUnresolvedContracts: true }),
+    createVolumeCandidate: input => VolumeHistory.createEvidenceCandidate(input),
     createRunId: () => `q6-run-${++identity}`,
     createRequestId: () => `q6-request-${identity}` });
   return { main, calls, raw, evidence, formal, service, ...isolated };

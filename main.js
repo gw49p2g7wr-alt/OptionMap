@@ -74,6 +74,7 @@ function ensureQriProductionAcquisition() {
   const qriProductionAuthority = require("./js/qriProductionAuthority.js");
   const qriProductionAcquisition = require("./js/qriProductionAcquisition.js");
   const qriOptionsParser = require("./js/qriOptions.js");
+  const qriVolumeHistory = require("./js/qriVolumeHistory.js");
   const sourceEvidenceVault = require("./js/sourceEvidence/sourceEvidenceVault.js");
   const authorityState = qriProductionAuthority.createProductionAuthority({
     getUserDataPath: () => app.getPath("userData"),
@@ -104,6 +105,7 @@ function ensureQriProductionAcquisition() {
     parseCanonical: (html, sourceUrl) => qriOptionsParser.parseQriOptionsPage(html, sourceUrl),
     validateCanonical: canonical => qriOptionsParser.validateCanonical(canonical,
       { allowUnresolvedContracts: true }),
+    createVolumeCandidate: input => qriVolumeHistory.createEvidenceCandidate(input),
     createRunId: () => `qri-production-run-${randomUUID()}`,
     createRequestId: () => `qri-production-request-${randomUUID()}`
   });
