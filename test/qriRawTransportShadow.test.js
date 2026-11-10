@@ -333,14 +333,81 @@ test("Electron net adapter binds the existing main session and returns exact del
   const adapter = Shadow.createElectronNetClient({ net, session: expectedSession });
   const controller = new AbortController();
   const response = await adapter.requestOnce({ url: Qri.ACTIVE_URL, method: "GET",
-    headers: { Accept: "text/html" }, useSessionCookies: true,
+    headers: { Accept: "text/html", Referer: Shadow.JPX_QUOTES_URL },
+    sourceId: Qri.SOURCE_ID, referrerPolicy: "unsafe-url", useSessionCookies: true,
     sessionPartition: Shadow.SESSION_PARTITION, redirect: "manual", cache: "no-store",
     maxBytes: Shadow.MAX_RESPONSE_BYTES, signal: controller.signal });
   assert.equal(response.kind, "response");
   assert.deepEqual(await response.body, rawQriBytes);
   assert.equal(requestOptions.session, expectedSession);
   assert.deepEqual([requestOptions.useSessionCookies, requestOptions.credentials,
-    requestOptions.redirect, requestOptions.cache], [true, "include", "manual", "no-store"]);
+    requestOptions.redirect, requestOptions.cache, requestOptions.referrerPolicy],
+  [true, "include", "manual", "no-store", "unsafe-url"]);
+});
+
+test("H1/H5 exact QRI route accepts only the fixed JPX Referer policy", async () => {
+  const calls = [];
+  const result = await service(client([successResponse()], calls)).acquire(activeInput());
+  assert.equal(result.status, "available");
+  assert.deepEqual([calls[0].sourceId, calls[0].url, calls[0].headers.Referer,
+    calls[0].referrerPolicy],
+  [Qri.SOURCE_ID, Qri.ACTIVE_URL, Shadow.JPX_QUOTES_URL, "unsafe-url"]);
+});
+
+function electronAdapterHarness() {
+  let netCallCount = 0;
+  const adapter = Shadow.createElectronNetClient({
+    net: { request() { netCallCount += 1; throw new Error("unexpected_net_request"); } },
+    session: Object.freeze({ name: "qri-session" })
+  });
+  const invoke = overrides => adapter.requestOnce({ url: Qri.ACTIVE_URL, method: "GET",
+    headers: { Accept: "text/html", Referer: Shadow.JPX_QUOTES_URL },
+    sourceId: Qri.SOURCE_ID, referrerPolicy: "unsafe-url", useSessionCookies: true,
+    sessionPartition: Shadow.SESSION_PARTITION, redirect: "manual", cache: "no-store",
+    maxBytes: Shadow.MAX_RESPONSE_BYTES, signal: new AbortController().signal, ...overrides });
+  return { invoke, netCallCount: () => netCallCount };
+}
+
+test("H2 arbitrary Referer is rejected before Electron network", async () => {
+  const harness = electronAdapterHarness();
+  await assert.rejects(harness.invoke({ headers: {
+    Accept: "text/html", Referer: "https://evil.example/" } }),
+  error => error?.code === "qri_referrer_policy_invalid");
+  assert.equal(harness.netCallCount(), 0);
+});
+
+test("H3 wrong JPX Referer path is rejected before Electron network", async () => {
+  const harness = electronAdapterHarness();
+  await assert.rejects(harness.invoke({ headers: {
+    Accept: "text/html", Referer: Shadow.JPX_HOME_URL } }),
+  error => error?.code === "qri_referrer_policy_invalid");
+  assert.equal(harness.netCallCount(), 0);
+});
+
+test("H4 renderer cannot inject target Referer or referrer policy", () => {
+  const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
+  const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.doesNotMatch(preload, /referrerPolicy|Referer/);
+  assert.doesNotMatch(index, /acquireQriPage\([^)]*(?:referrerPolicy|Referer)/);
+});
+
+test("H6 non-QRI targets cannot inherit the QRI referrer policy", async () => {
+  const harness = electronAdapterHarness();
+  await assert.rejects(harness.invoke({ url: Shadow.JPX_QUOTES_URL }),
+  error => error?.code === "qri_referrer_policy_invalid");
+  assert.equal(harness.netCallCount(), 0);
+});
+
+test("H7-H12 transport and consumer boundaries remain unchanged", () => {
+  const transport = fs.readFileSync(path.join(ROOT, "js/qriRawTransportShadow.js"), "utf8");
+  const save = fs.readFileSync(path.join(ROOT, "js/script.js"), "utf8");
+  assert.match(transport, /const MAX_REDIRECTS = 3/);
+  assert.match(transport, /const MAX_RESPONSE_BYTES = 4 \* 1024 \* 1024/);
+  assert.match(transport, /const ACCEPTED_MEDIA_TYPE = "text\/html"/);
+  assert.match(transport, /SESSION_PARTITION = "persist:qri-option-session"/);
+  assert.match(transport, /createAcquisitionReceiptV2/);
+  assert.match(save, /allJpxLabels\.length === 0[\s\S]*保存できるJPXデータがありません/);
+  assert.doesNotMatch(save, /referrerPolicy|qri_referrer_policy_invalid/);
 });
 
 test("Electron warm-up uses only the fixed JPX plan and same main-owned cookie session", async () => {

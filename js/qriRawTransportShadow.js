@@ -14,6 +14,7 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 20_000;
 const BODY_TIMEOUT_MS = 20_000;
 const ACCEPTED_MEDIA_TYPE = "text/html";
+const QRI_REFERRER_POLICY = "unsafe-url";
 const BLOCK_SIGNATURES = Object.freeze([
   "403 error", "request blocked", "the request could not be satisfied", "access denied"
 ]);
@@ -167,6 +168,24 @@ function fixedRequestHeaders() {
   });
 }
 
+function qriRouteAccepted(value) {
+  return QriAuthority.canonicalQriUrl(value, { active: true }) !== null ||
+    QriAuthority.canonicalQriUrl(value) !== null;
+}
+
+function exactFixedReferer(headers) {
+  if (!headers || typeof headers !== "object") return false;
+  const entries = Object.entries(headers).filter(([name]) =>
+    String(name).toLowerCase() === "referer");
+  return entries.length === 1 && entries[0][1] === JPX_QUOTES_URL;
+}
+
+function validQriReferrerConfiguration(options) {
+  return object(options) && options.sourceId === QriAuthority.SOURCE_ID &&
+    qriRouteAccepted(options.url) && exactFixedReferer(options.headers) &&
+    options.referrerPolicy === QRI_REFERRER_POLICY;
+}
+
 function createQriRawTransportShadow(options) {
   const optionFields = ["authority", "requestClient", "warmupSession", "now",
     "requestTimeoutMs", "bodyTimeoutMs", "maxResponseBytes"];
@@ -234,6 +253,7 @@ function createQriRawTransportShadow(options) {
         response = await withTimeout(options.requestClient.requestOnce({ url: requestUrl,
           method: "GET", headers: fixedRequestHeaders(), useSessionCookies: true,
           sessionPartition: SESSION_PARTITION, redirect: "manual", cache: "no-store",
+          sourceId: QriAuthority.SOURCE_ID, referrerPolicy: QRI_REFERRER_POLICY,
           maxBytes: options.maxResponseBytes, signal: controller.signal }),
         options.requestTimeoutMs, controller, "request_timeout");
       } catch (error) {
@@ -373,10 +393,19 @@ function createElectronNetClient({ net, session }) {
   return Object.freeze({
     requestOnce(options) {
       return new Promise((resolve, reject) => {
+        const qriRoute = qriRouteAccepted(options?.url);
+        const hasQriPolicy = options?.sourceId !== undefined ||
+          options?.referrerPolicy !== undefined;
+        if ((qriRoute || hasQriPolicy) && !validQriReferrerConfiguration(options)) {
+          reject(Object.assign(new Error("qri_referrer_policy_invalid"),
+            { code: "qri_referrer_policy_invalid" }));
+          return;
+        }
         let settled = false;
         const request = net.request({ url: options.url, method: options.method,
           session, useSessionCookies: options.useSessionCookies, credentials: "include",
-          redirect: options.redirect, cache: options.cache, headers: options.headers });
+          redirect: options.redirect, cache: options.cache, headers: options.headers,
+          ...(qriRoute ? { referrerPolicy: QRI_REFERRER_POLICY } : {}) });
         const finish = value => { if (!settled) { settled = true; resolve(value); } };
         const fail = error => { if (!settled) { settled = true; reject(error); } };
         const abort = () => request.abort();
