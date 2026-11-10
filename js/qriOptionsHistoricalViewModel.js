@@ -35,6 +35,7 @@ function result(status, reason, details = {}) {
         contracts: [],
         dates: [],
         dateOptions: [],
+        revisionOptions: [],
         selection: null,
         snapshot: null,
         chartData: null,
@@ -137,7 +138,8 @@ function validSelectedRevision(revision, entry) {
         revision.signatureAlgorithm === "sha256" &&
         validTimestamp(revision.fetchedAt) && validTimestamp(revision.confirmedAt) &&
         effectiveSnapshotDate(revision) !== null &&
-        revision.replacedAt === null && canonical && typeof canonical === "object" &&
+        (revision.replacedAt === null || validTimestamp(revision.replacedAt)) &&
+        canonical && typeof canonical === "object" &&
         canonical.contract === entry.contract && canonical.tradingDate === entry.sourceDateKey &&
         canonical.parserVersion === 2 && canonical.schemaVersion === 2 &&
         canonical.source === "qri-nikkei225-options" &&
@@ -146,10 +148,38 @@ function validSelectedRevision(revision, entry) {
         canonical.openInterestStatus === revision.openInterestStatus;
 }
 
+function validRevisionChain(entry) {
+    const seen = new Set();
+    for (let index = 0; index < entry.revisions.length; index += 1) {
+        const revision = entry.revisions[index], next = entry.revisions[index + 1] || null;
+        if (!validSelectedRevision(revision, entry) || seen.has(revision.versionKey)) return false;
+        seen.add(revision.versionKey);
+        if (next) {
+            if (Date.parse(next.confirmedAt) <= Date.parse(revision.confirmedAt) ||
+                revision.replacedAt !== next.confirmedAt) return false;
+        } else if (revision.versionKey !== entry.activeVersionKey || revision.replacedAt !== null) {
+            return false;
+        }
+    }
+    return entry.revisions.length > 0;
+}
+
+function shortVersionKey(versionKey) {
+    const hash = /sha256:([0-9a-f]{64})$/.exec(versionKey || "")?.[1];
+    return hash ? hash.slice(0, 8) : String(versionKey || "").slice(-8);
+}
+
+function revisionLabel(revision) {
+    const jst = new Date(Date.parse(revision.confirmedAt) + 9 * 60 * 60 * 1000)
+        .toISOString().slice(11, 16);
+    return `${jst} / ${shortVersionKey(revision.versionKey)}`;
+}
+
 function buildQriHistoricalViewModel({
     history,
     selectedContract = null,
-    selectedTradingDate = null
+    selectedTradingDate = null,
+    selectedVersionKey = null
 } = {}) {
     if (history == null) return result("empty", "no_history");
     if (!validHistoryHeader(history)) return result("invalid", "snapshot_invalid");
@@ -199,23 +229,41 @@ function buildQriHistoricalViewModel({
     if (active.length !== 1) {
         return result("invalid", "active_revision_ambiguous", { contracts, dates, dateOptions });
     }
-    const revision = active[0];
-    if (!validSelectedRevision(revision, entry)) {
+    if (!validRevisionChain(entry)) {
         return result("invalid", "snapshot_invalid", { contracts, dates, dateOptions });
     }
+    const revisionOptions = [...entry.revisions].sort((a, b) =>
+        Date.parse(b.confirmedAt) - Date.parse(a.confirmedAt) ||
+        b.versionKey.localeCompare(a.versionKey)).map(item => ({
+        value: item.versionKey,
+        label: revisionLabel(item),
+        confirmedAt: item.confirmedAt,
+        replacedAt: item.replacedAt,
+        active: item.versionKey === entry.activeVersionKey
+    }));
+    const requestedRevision = typeof selectedVersionKey === "string" && selectedVersionKey.length > 0
+        ? entry.revisions.find(item => item.versionKey === selectedVersionKey) || null : null;
+    const revision = requestedRevision || active[0];
+    const revisionFallback = selectedVersionKey !== null && selectedVersionKey !== undefined &&
+        selectedVersionKey !== "" && !requestedRevision;
     if (revision.openInterestStatus !== "available") {
-        return result("unavailable", "oi_unavailable", { contracts, dates, dateOptions });
+        return result("unavailable", "oi_unavailable", { contracts, dates, dateOptions,
+            revisionOptions });
     }
     const chartData = normalizeRecords(revision.canonical.records, contract);
     if (!chartData) {
-        return result("unavailable", "records_unavailable", { contracts, dates, dateOptions });
+        return result("unavailable", "records_unavailable", { contracts, dates, dateOptions,
+            revisionOptions });
     }
 
     const identity = {
         contract,
         tradingDate,
         entryKey: entry.entryKey,
-        activeVersionKey: entry.activeVersionKey
+        activeVersionKey: entry.activeVersionKey,
+        selectedVersionKey: revision.versionKey,
+        revisionFallback,
+        fallbackFromVersionKey: revisionFallback ? selectedVersionKey : null
     };
     const signatureShort = revision.signature.length > 12
         ? `${revision.signature.slice(0, 12)}…` : revision.signature;
@@ -232,6 +280,13 @@ function buildQriHistoricalViewModel({
         source: revision.canonical.source,
         sourceUrl: revision.sourceUrl,
         activeVersionKey: entry.activeVersionKey,
+        selectedVersionKey: revision.versionKey,
+        selectedVersionShort: shortVersionKey(revision.versionKey),
+        selectedRevisionIsActive: revision.versionKey === entry.activeVersionKey,
+        validity: { validFrom: revision.confirmedAt, validTo: revision.replacedAt },
+        evidence: Object.hasOwn(revision, "sourceEvidence")
+            ? { status: "available", reason: null }
+            : { status: "unavailable", reason: "pre_activation" },
         signature: revision.signature,
         signatureShort,
         parserVersion: history.parserVersion,
@@ -242,6 +297,7 @@ function buildQriHistoricalViewModel({
         contracts,
         dates,
         dateOptions,
+        revisionOptions,
         selection: identity,
         snapshot: { identity, facts: chartData.points },
         chartData,

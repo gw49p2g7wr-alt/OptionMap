@@ -70,6 +70,32 @@ test("date-scoped active projectionはTOP3と前回保存観測比を作る", as
     assert.equal(value.liveStateWrite, false); assert.equal(Object.isFrozen(value), true);
 });
 
+test("same-day old revision selectionはexact saved OIを表示しactive IVを混入しない", async () => {
+    const history = await fixture();
+    const target = history.entries.find(item => item.entryKey === "2026-09|2026-09-08");
+    const active = target.revisions[0], old = structuredClone(active);
+    old.signature = "7".repeat(64);
+    old.versionKey = `qri-options-v2|2026-09|2026-09-08T15:00:00+09:00|sha256:${old.signature}`;
+    old.pageUpdatedAt = "2026-09-08T15:00:00+09:00";
+    old.canonical.pageUpdatedAt = old.pageUpdatedAt;
+    old.confirmedAt = "2026-09-08T08:30:00Z";
+    old.replacedAt = active.confirmedAt;
+    old.canonical.records.find(record => record.optionType === "call" &&
+        record.strike === 60000).value = 9;
+    target.revisions = [old, active];
+    const state = State.create({ selectedTradingDate: "2026-09-08",
+        selectedContract: "2026-09", selectedContracts: ["2026-09"],
+        selectedRevision: { policy: "version", versionKey: old.versionKey } });
+    const value = Projection.build({ history, ivHistory: ivHistory(), state });
+    assert.equal(value.status, "available", value.reason);
+    assert.equal(value.selectedRevision, old.versionKey);
+    assert.equal(value.chartData.callOpenInterest[0], 9);
+    assert.equal(value.metadata.selectedRevisionIsActive, false);
+    assert.equal(value.ivCoverage.observed, 0);
+    assert.deepEqual(value.revisionOptions.map(item => item.value),
+        [active.versionKey, old.versionKey]);
+});
+
 test("保存日availabilityは09/10/12を示し11限を補完しない", async () => {
     const history = await fixture(); const missing = Projection.build({ history, state: State.create({
         selectedTradingDate: "2026-09-08", selectedContract: "2026-11",
@@ -121,6 +147,8 @@ test("既存panelをTime Travelへ発展させ保護対象へ接続しない", (
     const css = fs.readFileSync(path.join(__dirname, "../style.css"), "utf8");
     assert.match(html, /過去日のQRIを見る（Time Travel β）/);
     assert.match(html, /timeTravelPreviousDate[\s\S]*historyDateSelect[\s\S]*timeTravelNextDate/);
+    assert.match(html, /historyRevisionSelect/);
+    assert.match(html, /historicalVolumeUnavailable[\s\S]*この保存断面には取引高履歴がありません/);
     assert.match(html, /過去表示[\s\S]*現在へ戻る/);
     assert.match(html, /timeTravelResultHeader[\s\S]*timeTravelTopCall[\s\S]*historicalQriOpenInterestChart[\s\S]*timeTravelComparison[\s\S]*timeTravelCoverage/);
     assert.match(html, /Time Travelの表示はここまで/);

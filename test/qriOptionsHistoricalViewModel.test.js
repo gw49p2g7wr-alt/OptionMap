@@ -66,7 +66,9 @@ test("明示contract/dateを選択できarchive identityを返す", async () => 
     const view = build({ history: await fixture(), selectedContract: "2026-09",
         selectedTradingDate: "2026-08-30" });
     assert.deepEqual(view.selection, { contract: "2026-09", tradingDate: "2026-08-30",
-        entryKey: "2026-09|2026-08-30", activeVersionKey: view.metadata.activeVersionKey });
+        entryKey: "2026-09|2026-08-30", activeVersionKey: view.metadata.activeVersionKey,
+        selectedVersionKey: view.metadata.activeVersionKey, revisionFallback: false,
+        fallbackFromVersionKey: null });
 });
 
 test("legacy revision projects snapshotDate from confirmedAt without mutating history", async () => {
@@ -101,6 +103,40 @@ test("activeVersionKeyだけを選びreplaced revisionへfallbackしない", asy
     const view = build({ history });
     assert.equal(view.selection.activeVersionKey, entry.revisions[1].versionKey);
     assert.notEqual(view.selection.activeVersionKey, entry.revisions[0].versionKey);
+});
+
+test("同日old/new revisionをconfirmedAt降順で列挙しexact OIを選択する", async () => {
+    let history = historyApi.createEmptyQriOptionsHistory();
+    history = await add(history, { updated: "2026-08-31T15:00:00+09:00",
+        records: [
+            { optionType: "call", strike: 40000, published: true, value: 11 },
+            { optionType: "put", strike: 40000, published: true, value: 21 }
+        ] }, "2026-08-31T10:00:00Z");
+    history = await add(history, { updated: "2026-08-31T16:00:00+09:00",
+        records: [
+            { optionType: "call", strike: 40000, published: true, value: 12 },
+            { optionType: "put", strike: 40000, published: true, value: 22 }
+        ] }, "2026-08-31T11:00:00Z");
+    const entry = history.entries[0], oldKey = entry.revisions[0].versionKey;
+    const old = build({ history, selectedVersionKey: oldKey });
+    const current = build({ history });
+    assert.deepEqual(old.revisionOptions.map(item => item.value),
+        [entry.revisions[1].versionKey, oldKey]);
+    assert.deepEqual([old.chartData.callOpenInterest[0], current.chartData.callOpenInterest[0]],
+        [11, 12]);
+    assert.deepEqual([old.selection.selectedVersionKey, old.metadata.selectedRevisionIsActive,
+        old.metadata.validity.validTo], [oldKey, false, entry.revisions[1].confirmedAt]);
+    assert.deepEqual(old.metadata.evidence, { status: "unavailable", reason: "pre_activation" });
+});
+
+test("missing revision selectionは同じcontract/dateのactiveへ明示fallbackする", async () => {
+    const history = await fixture();
+    const view = build({ history, selectedContract: "2026-09",
+        selectedTradingDate: "2026-08-31", selectedVersionKey: "missing-version" });
+    assert.equal(view.status, "available");
+    assert.equal(view.selection.revisionFallback, true);
+    assert.equal(view.selection.fallbackFromVersionKey, "missing-version");
+    assert.equal(view.selection.selectedVersionKey, view.selection.activeVersionKey);
 });
 
 test("active revision missing/ambiguousをreject", async () => {

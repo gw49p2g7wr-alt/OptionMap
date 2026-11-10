@@ -133,3 +133,12 @@ test("pure adapterはDOM・network・storage・QRI persistenceを持たない", 
     assert.doesNotMatch(code, /document\.|querySelector|\bChart\b|fetch\(|indexedDB|localStorage/);
     assert.doesNotMatch(code, /qriOptionsHistory|Evidence|persist|write|setItem/);
 });
+
+test("center Strike label pluginはcurrent/historyで共有できるdeterministic factory", () => {
+    const first = Presentation.createCenterStrikeLabelsPlugin();
+    const second = Presentation.createCenterStrikeLabelsPlugin();
+    assert.equal(first.id, "centerStrikeLabels");
+    assert.equal(typeof first.afterDatasetsDraw, "function");
+    assert.notEqual(first, second);
+    assert.equal(Object.isFrozen(first), true);
+});

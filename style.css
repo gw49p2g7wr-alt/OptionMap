@@ -92,7 +92,7 @@ body{
 }
 .time-travel-controls {
     display: grid;
-    grid-template-columns: minmax(330px, 1.5fr) minmax(230px, 1fr) minmax(145px, auto);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     align-items: end;
     margin: 12px 0;
@@ -101,6 +101,7 @@ body{
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.86);
 }
+.time-travel-date-navigation { grid-column: span 2; }
 .time-travel-control-label { display: block; margin-bottom: 5px; color: #5b4b63; font-size: 0.78rem; font-weight: 700; }
 .time-travel-date-row { display: grid; grid-template-columns: auto minmax(132px, 1fr) auto; gap: 6px; }
 .time-travel-controls button {
@@ -112,11 +113,16 @@ body{
     font-size: 0.86rem;
 }
 .time-travel-date-row button { white-space: nowrap; }
-.time-travel-date-row input, .time-travel-contract-control select {
+.time-travel-date-row select, .time-travel-contract-control select {
     width: 100%;
     min-width: 0;
     min-height: 36px;
     box-sizing: border-box;
+}
+.time-travel-metric-control p {
+    margin: 5px 0 0;
+    color: #7b5260;
+    font-size: 0.75rem;
 }
 .time-travel-mode-switch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 4px; width: 100%; }
 .time-travel-mode-switch button { width: 100%; min-width: 0; white-space: normal; }
@@ -189,13 +195,31 @@ body{
 .historical-qri-chart-container {
     position: relative;
     width: 100%;
+    height: 400px;
     min-height: 360px;
+    overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.historical-qri-chart-container .strike-bar-chart-plot {
+    min-width: 720px;
+    min-height: 0;
+}
+
+#historicalQriOpenInterestChart {
+    height: 100% !important;
 }
 
 .strike-bar-chart-scroll {
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-inline: contain;
+}
+
+.historical-qri-chart-container.strike-bar-chart-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
 }
 
 .strike-bar-chart-legend {

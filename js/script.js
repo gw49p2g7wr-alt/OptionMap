@@ -3156,30 +3156,8 @@ labels.forEach((label, index) => {
     }
 };
 
-const centerStrikeLabelsPlugin = {
-    id: "centerStrikeLabels",
-    afterDatasetsDraw(chart) {
-        const x = chart.scales?.x?.getPixelForValue?.(0);
-        const yScale = chart.scales?.y;
-        if (!Number.isFinite(x) || !yScale) return;
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.font = "600 11px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        chart.data.labels.forEach((label, index) => {
-            const y = yScale.getPixelForValue(index);
-            if (!Number.isFinite(y) || y < chart.chartArea.top || y > chart.chartArea.bottom) return;
-            const text = String(label);
-            const width = Math.ceil(ctx.measureText(text).width) + 10;
-            ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
-            ctx.fillRect(x - width / 2, y - 8, width, 16);
-            ctx.fillStyle = "rgba(35, 43, 55, 0.95)";
-            ctx.fillText(text, x, y);
-        });
-        ctx.restore();
-    }
-};
+const centerStrikeLabelsPlugin = window.OptionMapCurrentCallPutGraphPresentation
+    ?.createCenterStrikeLabelsPlugin?.();
 
 const currentPriceInput =
     document.getElementById("currentPriceInput");

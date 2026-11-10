@@ -71,12 +71,17 @@
             availability: available.availability };
         if (!date || selected.length === 0) return result("unavailable", "selection_missing", base);
         const snapshots = [], views = [];
+        const selectedVersionKey = state?.viewMode === "single_contract" &&
+            state?.selectedRevision?.policy === "version"
+            ? state.selectedRevision.versionKey : null;
         for (const contract of selected) { const view = historicalApi.buildQriHistoricalViewModel({ history,
-            selectedContract: contract, selectedTradingDate: date }); views.push(view);
+            selectedContract: contract, selectedTradingDate: date,
+            selectedVersionKey: state?.viewMode === "single_contract" ? selectedVersionKey : null });
+            views.push(view);
             if (view.status !== "available") return result("unavailable", "snapshot_not_saved", { ...base,
                 missingContracts: selected.filter(value => !available.availability.find(item =>
                     item.tradingDate === date)?.contracts.includes(value)) }); snapshots.push(view.snapshot); }
-        let snapshot, chartData, identity, metadata;
+        let snapshot, chartData, identity, metadata, revisionOptions = [];
         if (state.viewMode === "aggregate") { if (snapshots.length < 2)
             return result("unavailable", "aggregate_requires_two_contracts", base);
             const aggregation = aggregationApi.buildQriHistoricalAggregation({ snapshots });
@@ -89,7 +94,8 @@
             identity = aggregation.aggregationIdentity; metadata = { contracts: selected,
                 activeVersionKeys: views.map(view => view.selection.activeVersionKey) };
         } else { snapshot = snapshots[0]; chartData = views[0].chartData;
-            identity = views[0].selection.entryKey; metadata = views[0].metadata; }
+            identity = views[0].selection.entryKey; metadata = views[0].metadata;
+            revisionOptions = views[0].revisionOptions; }
         const priorDates = available.dates.filter(value => value < date && selected.every(contract =>
             available.availability.find(item => item.tradingDate === value)?.contracts.includes(contract)));
         const previousDate = priorDates.at(-1) || null; let previous = null;
@@ -98,16 +104,19 @@
             previous = state.viewMode === "aggregate"
                 ? aggregationSnapshot(aggregationApi.buildQriHistoricalAggregation({ snapshots: previousSnapshots }))
                 : previousSnapshots[0]; }
-        const iv = state.viewMode === "single_contract" ? activeIvIndex(ivHistory) : null;
+        const selectedIsActive = state.viewMode === "single_contract" &&
+            views[0].selection.selectedVersionKey === views[0].selection.activeVersionKey;
+        const iv = selectedIsActive ? activeIvIndex(ivHistory) : null;
         const derived = decorate(snapshot, previous, iv, state.viewMode === "single_contract"
             ? selected[0] : null, date); return result("available", null, { ...base,
-            identity, metadata, chartData, previousTradingDate: previousDate, top3: derived.top3,
+            identity, metadata, revisionOptions, chartData,
+            previousTradingDate: previousDate, top3: derived.top3,
             comparisonFacts: derived.facts, coverage: derived.coverage,
             ivCoverage: state.viewMode === "single_contract" ? derived.ivCoverage : {
                 eligible: 0, observed: 0, missing: 0, reason: "aggregate_not_applicable" },
             quality: { complete: derived.coverage.notPublished === 0,
                 previousObservationAvailable: previousDate !== null }, selectedRevision:
-                state.viewMode === "single_contract" ? views[0].selection.activeVersionKey
+                state.viewMode === "single_contract" ? views[0].selection.selectedVersionKey
                     : views.map(view => view.selection.activeVersionKey) });
     }
     return Object.freeze({ inventory, build });

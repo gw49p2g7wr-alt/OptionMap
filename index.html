@@ -1008,7 +1008,7 @@
                         <div class="time-travel-date-row">
                             <button id="timeTravelPreviousDate" type="button" disabled aria-label="前の保存日">◀ <span>前の保存日</span></button>
                             <label class="visually-hidden" for="historyDateSelect">保存日</label>
-                            <input id="historyDateSelect" type="date" disabled>
+                            <select id="historyDateSelect" disabled></select>
                             <button id="timeTravelNextDate" type="button" disabled aria-label="次の保存日"><span>次の保存日</span> ▶</button>
                         </div>
                     </div>
@@ -1022,6 +1022,18 @@
                     <div id="timeTravelSingleContractControl" class="time-travel-contract-control">
                         <label class="time-travel-control-label" for="historyContractSelect">限月：</label>
                         <select id="historyContractSelect" disabled></select>
+                    </div>
+                    <div id="timeTravelRevisionControl" class="time-travel-contract-control">
+                        <label class="time-travel-control-label" for="historyRevisionSelect">revision：</label>
+                        <select id="historyRevisionSelect" disabled></select>
+                    </div>
+                    <div id="timeTravelMetricControl" class="time-travel-metric-control">
+                        <span class="time-travel-control-label">指標：</span>
+                        <div class="time-travel-mode-switch">
+                            <button id="historyOpenInterestButton" type="button" aria-pressed="true">建玉残</button>
+                            <button id="historyVolumeButton" type="button" aria-pressed="false" disabled>取引高</button>
+                        </div>
+                        <p id="historicalVolumeUnavailable">この保存断面には取引高履歴がありません</p>
                     </div>
                     <div id="timeTravelAggregateContracts" class="historical-qri-aggregation-contracts time-travel-contract-control" hidden></div>
                 </div>
