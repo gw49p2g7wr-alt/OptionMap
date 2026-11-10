@@ -1256,7 +1256,18 @@ canvas {
 .combined-chart-container {
     height: 400px;
     width: 100%;
-    
+    overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.combined-chart-container .strike-bar-chart-plot {
+    min-width: 720px;
+    min-height: 0;
+}
+
+#combinedPriceChart {
+    height: 100% !important;
 }
 
 .open-interest-data-status {

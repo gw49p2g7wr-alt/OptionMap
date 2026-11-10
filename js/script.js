@@ -3052,44 +3052,14 @@ window.setLatestParsedDayData = setLatestParsedDayData;
 window.setParticipantFetchDisplayState = setParticipantFetchDisplayState;
 window.getLatestParticipantMetadata = () => latestParticipantMetadata;
 
-function createBarColors(values, normalColor, strongColor) {
-
-    const positiveValues = values
-        .filter(value => value > 0)
-        .sort((a, b) => b - a);
-
-    const thirdLargest = positiveValues[2] || positiveValues[0] || 0;
-
-    return values.map((value, index) => {
-
-        // 建玉上位3か所
-        if (value >= thirdLargest && value > 0) {
-            return strongColor;
-        }
-
-        const isEdge = index === 0 || index === values.length - 1;
-
-        const previous = values[index - 1] || 0;
-        const next = values[index + 1] || 0;
-        const nearbyAverage = (previous + next) / 2;
-        
-        // 前後平均より50%以上大きい価格帯
-        if (
-            !isEdge &&
-            value > 0 &&
-            nearbyAverage > 0 &&
-            value >= nearbyAverage * 1.5
-        ) {
-            return "rgba(255, 165, 0, 0.95)";
-        }
-
-        return normalColor;
-    });
+function mirroredHighlightColors(rows, key, normalColor, strongColor) {
+    return rows.map(row => row[key] === "strong" ? strongColor
+        : row[key] === "spike" ? "rgba(255, 165, 0, 0.95)" : normalColor);
 }
 
 function prepareCombinedStrikeChart(strikeCount) {
     const presentation = window.OptionMapStrikeBarChartPresentation;
-    presentation?.preparePlot?.({
+    presentation?.prepareMirroredPlot?.({
         container: document.getElementById("combinedPriceChartContainer"),
         plot: document.getElementById("combinedPriceChartPlot"),
         strikeCount
@@ -3099,11 +3069,12 @@ function prepareCombinedStrikeChart(strikeCount) {
 
 function centerCombinedStrikeChart(chart, labels) {
     const presentation = window.OptionMapStrikeBarChartPresentation;
-    const priceIndex = labels.reduce((best, label, index) => {
-        const distance = Math.abs(Number(String(label).replace(/,/g, "")) - currentPrice);
-        return distance < best.distance ? { index, distance } : best;
-    }, { index: -1, distance: Infinity }).index;
-    presentation?.centerIndex?.({
+    const mirror = window.OptionMapCurrentCallPutGraphPresentation;
+    const priceIndex = mirror?.nearestStrikeIndex?.(
+        labels.map(label => ({ strike: Number(String(label).replace(/,/g, "")) })),
+        currentPrice
+    ) ?? -1;
+    presentation?.centerVerticalIndex?.({
         container: document.getElementById("combinedPriceChartContainer"),
         plot: document.getElementById("combinedPriceChartPlot"),
         chart,
@@ -3148,9 +3119,8 @@ labels.forEach((label, index) => {
             return;
         }
 
-        const xScale = chart.scales.x;
         const yScale = chart.scales.y;
-        const x = xScale.getPixelForValue(priceIndex);
+        const y = yScale.getPixelForValue(priceIndex);
         const nearestStrike =
     Number(
         String(labels[priceIndex]).replace(/,/g, "")
@@ -3161,8 +3131,8 @@ labels.forEach((label, index) => {
         ctx.save();
 
         ctx.beginPath();
-        ctx.moveTo(x, yScale.top);
-        ctx.lineTo(x, yScale.bottom);
+        ctx.moveTo(chart.chartArea.left, y);
+        ctx.lineTo(chart.chartArea.right, y);
 
         ctx.lineWidth = 3;
         ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
@@ -3172,22 +3142,41 @@ labels.forEach((label, index) => {
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
         ctx.font = "bold 13px sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "bottom";
+
+        ctx.fillText(
+            "現在値 " + currentPrice.toLocaleString() + "円 / 最寄り " +
+                nearestStrike.toLocaleString() + "円",
+            chart.chartArea.right - 4,
+            y - 3
+        );
+
+        ctx.restore();
+    }
+};
+
+const centerStrikeLabelsPlugin = {
+    id: "centerStrikeLabels",
+    afterDatasetsDraw(chart) {
+        const x = chart.scales?.x?.getPixelForValue?.(0);
+        const yScale = chart.scales?.y;
+        if (!Number.isFinite(x) || !yScale) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = "600 11px sans-serif";
         ctx.textAlign = "center";
-
-        ctx.fillText(
-            "現在値 " + currentPrice.toLocaleString() + "円",
-            x,
-            yScale.top + 16
-        );
-        
-        ctx.font = "12px sans-serif";
-        
-        ctx.fillText(
-            "最寄り " + nearestStrike.toLocaleString() + "円",
-            x,
-            yScale.top + 34
-        );
-
+        ctx.textBaseline = "middle";
+        chart.data.labels.forEach((label, index) => {
+            const y = yScale.getPixelForValue(index);
+            if (!Number.isFinite(y) || y < chart.chartArea.top || y > chart.chartArea.bottom) return;
+            const text = String(label);
+            const width = Math.ceil(ctx.measureText(text).width) + 10;
+            ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+            ctx.fillRect(x - width / 2, y - 8, width, 16);
+            ctx.fillStyle = "rgba(35, 43, 55, 0.95)";
+            ctx.fillText(text, x, y);
+        });
         ctx.restore();
     }
 };
@@ -3713,23 +3702,10 @@ const combinedWallRankPlugin = {
 
                 if (!bar) return;
 
-                const x = bar.x;
-
-                let y;
-
-                if (datasetIndex === 0) {
-                    // CALLは棒の上
-                    y = Math.max(
-                        chart.chartArea.top + 13,
-                        bar.y - 14
-                    );
-                } else {
-                    // PUTは棒の下
-                    y = Math.min(
-                        chart.chartArea.bottom - 13,
-                        bar.y + 14 + rankIndex * 25
-                    );
-                }
+                const x = datasetIndex === 0
+                    ? Math.max(chart.chartArea.left + 12, bar.x - 13)
+                    : Math.min(chart.chartArea.right - 12, bar.x + 13);
+                const y = bar.y;
 
                 ctx.beginPath();
                 ctx.arc(x, y, 11, 0, Math.PI * 2);
@@ -6984,6 +6960,73 @@ if (saveJpxSnapshotButton) {
 
 
 
+function renderCurrentCallPutMirror({ strikes, callValues, putValues, isVolumeMode,
+    contract = null, rendererIdentity } = {}) {
+    const mirror = window.OptionMapCurrentCallPutGraphPresentation;
+    const model = mirror?.createModel?.({ strikes, callValues, putValues,
+        metric: isVolumeMode ? "volume" : "openInterest" });
+    const canvas = document.getElementById("combinedPriceChart");
+    if (!canvas || model?.status !== "available") return null;
+    const strikeChartPresentation = prepareCombinedStrikeChart(model.rows.length);
+    if (combinedPriceChart) {
+        combinedPriceChart.destroy();
+        clearQriChartRendererIdentity();
+    }
+    const callOriginal = model.rows.map(row => row.callOriginal);
+    const putOriginal = model.rows.map(row => row.putOriginal);
+    const labels = model.rows.map(row => row.strike.toLocaleString());
+    combinedPriceChart = new Chart(canvas, {
+        type: "bar",
+        plugins: [currentPriceLinePlugin, combinedWallRankPlugin, centerStrikeLabelsPlugin],
+        data: { labels, datasets: [
+            { label: isVolumeMode ? "CALL取引高" : "CALL建玉残", optionSide: "call",
+                data: model.rows.map(row => row.callDisplay),
+                originalValues: callOriginal,
+                grouped: false,
+                backgroundColor: mirroredHighlightColors(model.rows, "callHighlight",
+                    OPTION_SIDE_CHART_COLORS.call.soft, OPTION_SIDE_CHART_COLORS.call.strong),
+                borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1,
+                ...strikeChartPresentation?.DATASET_OPTIONS },
+            { label: isVolumeMode ? "PUT取引高" : "PUT建玉残", optionSide: "put",
+                data: model.rows.map(row => row.putDisplay),
+                originalValues: putOriginal,
+                grouped: false,
+                backgroundColor: mirroredHighlightColors(model.rows, "putHighlight",
+                    OPTION_SIDE_CHART_COLORS.put.soft, OPTION_SIDE_CHART_COLORS.put.strong),
+                borderColor: OPTION_SIDE_CHART_COLORS.put.border, borderWidth: 1,
+                ...strikeChartPresentation?.DATASET_OPTIONS }
+        ] },
+        options: {
+            indexAxis: "y", responsive: true, maintainAspectRatio: false, animation: false,
+            layout: { padding: { left: 10, right: 25, top: 10, bottom: 5 } },
+            scales: {
+                x: { stacked: false, min: -model.displayMaximum, max: model.displayMaximum,
+                    ticks: { autoSkip: true, maxTicksLimit: 9, maxRotation: 0, minRotation: 0,
+                        padding: 6, font: { size: CHART_TEXT_SIZE.axis },
+                        callback: value => mirror.formatAbsolute(value) },
+                    grid: { color: context => Number(context.tick.value) === 0
+                        ? "rgba(0, 0, 0, 0.75)" : "rgba(0, 0, 0, 0.1)",
+                        lineWidth: context => Number(context.tick.value) === 0 ? 2 : 1 } },
+                y: { offset: true, ticks: { display: false }, grid: { display: false } }
+            },
+            plugins: { legend: { display: false }, tooltip: { ...readableTooltipOptions(),
+                callbacks: {
+                    title(items) { const row = model.rows[items?.[0]?.dataIndex];
+                        return mirror.createTooltip({ row, side: "call", metric: model.metric,
+                            contract })?.title || ""; },
+                    label(context) { const row = model.rows[context.dataIndex];
+                        return mirror.createTooltip({ row,
+                            side: context.datasetIndex === 0 ? "call" : "put",
+                            metric: model.metric, contract })?.label || ""; }
+                } } }
+        }
+    });
+    renderCombinedStrikeChartLegend(combinedPriceChart);
+    centerCombinedStrikeChart(combinedPriceChart, labels);
+    setQriChartRendererIdentity(rendererIdentity);
+    return Object.freeze({ model, labels, callOriginal, putOriginal });
+}
+
 function renderQriContractDisplayChart() {
     if (!qriContractDisplayData || qriContractDisplayData.unavailable) return false;
     const isVolumeMode = currentChartMode === "volume";
@@ -6993,65 +7036,25 @@ function renderQriContractDisplayChart() {
     const putSource = isVolumeMode ? source.putVolumes : source.putOpenInterest;
     const valuesByStrike = new Map(labels.map((label, index) => [
         Number(String(label).replace(/,/g, "")),
-        { call: Number(callSource[index]) || 0, put: Number(putSource[index]) || 0 }
+        { call: callSource[index], put: putSource[index] }
     ]));
     const startStrike = Math.ceil((currentPrice - 12000) / 125) * 125;
     const endStrike = Math.floor((currentPrice + 22000) / 125) * 125;
     const visible = [];
     for (let strike = startStrike; strike <= endStrike; strike += 125) {
         const item = valuesByStrike.get(strike) || { call: 0, put: 0 };
-        visible.push({ label: strike.toLocaleString(), ...item });
-    }
-    const numericCallValues = visible.map(item => item.call);
-    const numericPutValues = visible.map(item => item.put);
-    const maxCall = Math.max(...numericCallValues, 1);
-    const maxPut = Math.max(...numericPutValues, 1);
-    const canvas = document.getElementById("combinedPriceChart");
-    if (!canvas) return false;
-    const strikeChartPresentation = prepareCombinedStrikeChart(visible.length);
-    if (combinedPriceChart) {
-        combinedPriceChart.destroy();
-        clearQriChartRendererIdentity();
+        visible.push({ strike, ...item });
     }
     const title = document.getElementById("combinedChartTitleText");
     if (title) title.textContent = isVolumeMode ? "CALL・PUT 本日の取引高" : "CALL・PUT建玉残";
-    combinedPriceChart = new Chart(canvas, {
-        type: "bar",
-        plugins: [currentPriceLinePlugin],
-        data: { labels: visible.map(item => item.label), datasets: [
-            { label: isVolumeMode ? "CALL取引高" : "CALL建玉残", optionSide: "call",
-                data: numericCallValues.map(value => value / maxCall * 100),
-                backgroundColor: createBarColors(numericCallValues,
-                    OPTION_SIDE_CHART_COLORS.call.soft,
-                    OPTION_SIDE_CHART_COLORS.call.strong),
-                borderColor: OPTION_SIDE_CHART_COLORS.call.border, borderWidth: 1,
-                ...strikeChartPresentation?.DATASET_OPTIONS },
-            { label: isVolumeMode ? "PUT取引高" : "PUT建玉残", optionSide: "put",
-                data: numericPutValues.map(value => -(value / maxPut * 100)),
-                backgroundColor: createBarColors(numericPutValues,
-                    OPTION_SIDE_CHART_COLORS.put.soft,
-                    OPTION_SIDE_CHART_COLORS.put.strong),
-                borderColor: OPTION_SIDE_CHART_COLORS.put.border, borderWidth: 1,
-                ...strikeChartPresentation?.DATASET_OPTIONS }
-        ] },
-        options: { responsive: true, maintainAspectRatio: false, animation: false,
-            scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 16, maxRotation: 45,
-                minRotation: 35, font: { size: CHART_TEXT_SIZE.axis } } },
-            y: { min: -115, max: 115, ticks: { stepSize: 100,
-                font: { size: CHART_TEXT_SIZE.axis, weight: "600" },
-                callback: value => value === 100 ? "CALL" : value === -100 ? "PUT" : value === 0 ? "0" : "" } } },
-            plugins: { legend: { display: false }, tooltip: { ...readableTooltipOptions(),
-                callbacks: { label(context) { const values = context.datasetIndex === 0
-                    ? numericCallValues : numericPutValues; const type = context.datasetIndex === 0 ? "CALL" : "PUT";
-                    return `${type}${isVolumeMode ? "取引高" : "建玉残"}：${values[context.dataIndex].toLocaleString()}枚`; } } } }
-        }
-    });
-    renderCombinedStrikeChartLegend(combinedPriceChart);
-    centerCombinedStrikeChart(combinedPriceChart, visible.map(item => item.label));
-    setQriChartRendererIdentity({ rendererKind: "display_only",
-        sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
-        displayOnly: true, displayGeneration: source.displayGeneration, contract: source.contract });
-    return true;
+    return Boolean(renderCurrentCallPutMirror({
+        strikes: visible.map(item => item.strike),
+        callValues: visible.map(item => item.call),
+        putValues: visible.map(item => item.put), isVolumeMode, contract: source.contract,
+        rendererIdentity: { rendererKind: "display_only",
+            sourceKind: source.sourceKind || (source.legacyDisplayOnly ? "legacy" : "unknown"),
+            displayOnly: true, displayGeneration: source.displayGeneration, contract: source.contract }
+    }));
 }
 
 window.setQriContractDisplayData = function (data) {
@@ -7274,15 +7277,16 @@ selectedLabels.forEach((label, index) => {
     );
 
     dataByStrike.set(strike, {
-        callValue:
-            Number(selectedCallValues[index]) || 0,
-    
-        putValue:
-            Number(selectedPutValues[index]) || 0
+        callValue: selectedCallValues[index] === null ||
+            selectedCallValues[index] === undefined
+            ? null : Number(selectedCallValues[index]),
+        putValue: selectedPutValues[index] === null ||
+            selectedPutValues[index] === undefined
+            ? null : Number(selectedPutValues[index])
     });
 });
 
-// 横軸を125円刻みに統一
+// Strike行を125円刻みに統一
 const strikeStep = 125;
 
 const startStrike =
@@ -7335,237 +7339,23 @@ console.log(
         latestPutValues = putValues;
 
     
-    const canvas =
-        document.getElementById("combinedPriceChart");
-
-    if (!canvas) {
-        console.error(
-            "combinedPriceChartのcanvasが見つかりません"
-        );
+    const renderResult = renderCurrentCallPutMirror({
+        strikes: labels, callValues, putValues, isVolumeMode,
+        contract: sourceAvailability.contract || qriFormalChartContract,
+        rendererIdentity: { rendererKind: "formal",
+            sourceKind: sourceAvailability.rendererSourceKind || "formal",
+            displayOnly: false,
+            contract: sourceAvailability.contract || qriFormalChartContract }
+    });
+    if (!renderResult) {
+        console.error("combinedPriceChartを作成できません");
         return;
     }
 
-    const strikeChartPresentation = prepareCombinedStrikeChart(labels.length);
-
-    if (combinedPriceChart) {
-        combinedPriceChart.destroy();
-        clearQriChartRendererIdentity();
-    }
-
-    const numericCallValues =
-        callValues.map(value => Number(value) || 0);
-
-    const numericPutValues =
-        putValues.map(value => Number(value) || 0);
-
-    const maxCall =
-        Math.max(...numericCallValues, 1);
-
-    const maxPut =
-        Math.max(...numericPutValues, 1);
-
-    // CALLは上方向へ0〜100
-    const normalizedCallValues =
-        numericCallValues.map(value =>
-            value / maxCall * 100
-        );
-
-    // PUTは下方向へ0〜-100
-    const normalizedPutValues =
-        numericPutValues.map(value =>
-            -(value / maxPut * 100)
-        );
-
-    combinedPriceChart = new Chart(canvas, {
-        type: "bar",
-
-        plugins: [
-            currentPriceLinePlugin,
-            combinedWallRankPlugin
-        ],
-
-        data: {
-            labels: labels,
-
-            datasets: [
-                {
-                    label: isVolumeMode
-                        ? "CALL取引高"
-                        : "CALL建玉残",
-                    optionSide: "call",
-                    data: normalizedCallValues,
-
-                    backgroundColor: createBarColors(
-                        numericCallValues,
-                        OPTION_SIDE_CHART_COLORS.call.soft,
-                        OPTION_SIDE_CHART_COLORS.call.strong
-                    ),
-
-                    borderColor:
-                        OPTION_SIDE_CHART_COLORS.call.border,
-
-                    borderWidth: 1,
-                    ...strikeChartPresentation?.DATASET_OPTIONS
-                },
-                {
-                    label: isVolumeMode
-                        ? "PUT取引高"
-                        : "PUT建玉残",
-                    optionSide: "put",
-                    data: normalizedPutValues,
-
-                    backgroundColor: createBarColors(
-                        numericPutValues,
-                        OPTION_SIDE_CHART_COLORS.put.soft,
-                        OPTION_SIDE_CHART_COLORS.put.strong
-                    ),
-
-                    borderColor:
-                        OPTION_SIDE_CHART_COLORS.put.border,
-
-                    borderWidth: 1,
-                    ...strikeChartPresentation?.DATASET_OPTIONS
-                }
-            ]
-        },
-
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            layout: {
-
-                padding: {
-        
-                    left: 10,
-        
-                    right: 25,
-        
-                    top: 10,
-        
-                    bottom: 5
-        
-                }
-        
-            },
-            scales: {
-                x: {
-                    stacked: false,
-
-                    ticks: {
-                        autoSkip: true,
-                        maxTicksLimit: 16,
-                        maxRotation: 45,
-                        minRotation: 35,
-                        padding: 6,
-                        font: { size: CHART_TEXT_SIZE.axis }
-                    }
-                },
-
-                y: {
-                    min: -115,
-                    max: 115,
-
-                    ticks: {
-                        stepSize: 100,
-                        padding: 6,
-                        font: {
-                            size: CHART_TEXT_SIZE.axis,
-                            weight: "600"
-                        },
-                    
-                        callback: function (value) {
-                    
-                            if (value === 100) {
-                                return "CALL";
-                            }
-                    
-                            if (value === 0) {
-                                return "0";
-                            }
-                    
-                            if (value === -100) {
-                                return "PUT";
-                            }
-                    
-                            return "";
-                        }
-                    },
-
-                    grid: {
-                        color: function (context) {
-
-                            if (context.tick.value === 0) {
-                                return "rgba(0, 0, 0, 0.75)";
-                            }
-
-                            return "rgba(0, 0, 0, 0.1)";
-                        },
-
-                        lineWidth: function (context) {
-
-                            return context.tick.value === 0
-                                ? 2
-                                : 1;
-                        }
-                    }
-                }
-            },
-
-            plugins: {
-                legend: {
-                    display: false
-                },
-
-                tooltip: {
-                    ...readableTooltipOptions(),
-                    callbacks: {
-                        label: function (context) {
-
-                            const index =
-                                context.dataIndex;
-
-                            if (
-                                context.datasetIndex === 0
-                            ) {
-                                return (
-                                    (isVolumeMode
-
-                                        ? "CALL取引高："
-                                
-                                        : "CALL建玉残：")  +
-                                    numericCallValues[index]
-                                        .toLocaleString() +
-                                    "枚"
-                                );
-                            }
-
-                            return (
-                                (isVolumeMode
-
-                                     ? "PUT取引高："
-
-                                     : "PUT建玉残：") +
-                                numericPutValues[index]
-                                    .toLocaleString() +
-                                "枚"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    });
-    renderCombinedStrikeChartLegend(combinedPriceChart);
-    centerCombinedStrikeChart(combinedPriceChart, labels);
-    setQriChartRendererIdentity({ rendererKind: "formal",
-        sourceKind: sourceAvailability.rendererSourceKind || "formal",
-        displayOnly: false, contract: sourceAvailability.contract || qriFormalChartContract });
-
     updateWallCandidates(
-        labels,
-        numericCallValues,
-        numericPutValues
+        renderResult.labels,
+        renderResult.callOriginal,
+        renderResult.putOriginal
     );
 
     console.log(

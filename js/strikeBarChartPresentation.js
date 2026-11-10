@@ -7,6 +7,9 @@
 
     const SLOT_WIDTH = 12;
     const AXIS_ALLOWANCE = 80;
+    const ROW_HEIGHT = 24;
+    const MIRRORED_AXIS_ALLOWANCE = 56;
+    const MIRRORED_MIN_WIDTH = 720;
     const DATASET_OPTIONS = Object.freeze({
         categoryPercentage: 0.82,
         barPercentage: 0.90,
@@ -32,6 +35,31 @@
             Number.parseFloat(plot.style?.minWidth) || 0;
         const maximum = Math.max(0, plotWidth - viewportWidth);
         container.scrollLeft = Math.max(0, Math.min(maximum, center - viewportWidth / 2));
+        return true;
+    }
+
+    function prepareMirroredPlot({ container, plot, strikeCount } = {}) {
+        if (!container || !plot) return Object.freeze({ width: 0, height: 0 });
+        const availableWidth = Math.max(Number(container.clientWidth) || 0, 0);
+        const minimumHeight = Math.max(Number(strikeCount) || 0, 0) *
+            ROW_HEIGHT + MIRRORED_AXIS_ALLOWANCE;
+        const width = Math.max(availableWidth, MIRRORED_MIN_WIDTH);
+        plot.style.width = "100%";
+        plot.style.minWidth = `${MIRRORED_MIN_WIDTH}px`;
+        plot.style.height = `${Math.ceil(minimumHeight)}px`;
+        plot.style.minHeight = `${Math.ceil(minimumHeight)}px`;
+        return Object.freeze({ width, height: minimumHeight });
+    }
+
+    function centerVerticalIndex({ container, plot, chart, index } = {}) {
+        if (!container || !plot || !chart || !Number.isInteger(index) || index < 0) return false;
+        const center = chart.scales?.y?.getPixelForValue?.(index);
+        if (!Number.isFinite(center)) return false;
+        const viewportHeight = Number(container.clientHeight) || 0;
+        const plotHeight = Number(plot.scrollHeight) ||
+            Number.parseFloat(plot.style?.minHeight) || 0;
+        const maximum = Math.max(0, plotHeight - viewportHeight);
+        container.scrollTop = Math.max(0, Math.min(maximum, center - viewportHeight / 2));
         return true;
     }
 
@@ -64,6 +92,7 @@
         return items.length > 0;
     }
 
-    return Object.freeze({ SLOT_WIDTH, AXIS_ALLOWANCE, DATASET_OPTIONS,
-        preparePlot, centerIndex, renderLegend });
+    return Object.freeze({ SLOT_WIDTH, AXIS_ALLOWANCE, ROW_HEIGHT, MIRRORED_AXIS_ALLOWANCE,
+        MIRRORED_MIN_WIDTH, DATASET_OPTIONS, preparePlot, centerIndex,
+        prepareMirroredPlot, centerVerticalIndex, renderLegend });
 });

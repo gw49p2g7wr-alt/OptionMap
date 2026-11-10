@@ -36,6 +36,25 @@ test("現在値indexをviewport中央へ寄せ両端では安全にclampする",
     assert.equal(container.scrollLeft, 880);
 });
 
+test("mirror chartは24px/Strikeの縦plotと720px minimum幅を設定する", () => {
+    const container = { clientWidth: 640 };
+    const plot = { style: {} };
+    assert.deepEqual(Presentation.prepareMirroredPlot({ container, plot,
+        strikeCount: 100 }), { width: 720, height: 2456 });
+    assert.deepEqual(plot.style, { width: "100%", minWidth: "720px",
+        height: "2456px", minHeight: "2456px" });
+});
+
+test("mirror chartの現在値indexを縦viewport中央へ安全にclampする", () => {
+    const container = { clientHeight: 400, scrollTop: 0 };
+    const plot = { scrollHeight: 2456, style: { minHeight: "2456px" } };
+    const chart = { scales: { y: { getPixelForValue: index => index * 24 + 28 } } };
+    assert.equal(Presentation.centerVerticalIndex({ container, plot, chart, index: 50 }), true);
+    assert.equal(container.scrollTop, 1028);
+    Presentation.centerVerticalIndex({ container, plot, chart, index: 100 });
+    assert.equal(container.scrollTop, 2056);
+});
+
 test("HTML legendはdatasetのlabelと色から生成し空なら隠す", () => {
     const createElement = () => ({ className: "", textContent: "", style: {}, children: [],
         replaceChildren(...children) { this.children = children; } });
@@ -72,7 +91,6 @@ test("対象4 chartはscroll外HTML legendを使い内蔵legendを非表示に�
     ]) {
         assert.ok(html.indexOf(`id="${legendId}"`) < html.indexOf(`id="${containerId}"`));
     }
-    assert.equal((script.match(/renderCombinedStrikeChartLegend\(combinedPriceChart\)/g) || []).length, 2);
-    assert.equal((script.match(/plugins: \{ legend: \{ display: false \}/g) || []).length, 1);
+    assert.equal((script.match(/renderCombinedStrikeChartLegend\(combinedPriceChart\)/g) || []).length, 1);
     assert.match(script, /legend:\s*\{\s*display: false\s*\}/);
 });
