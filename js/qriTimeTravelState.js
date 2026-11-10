@@ -9,7 +9,8 @@
         Object.values(value).forEach(freeze); return Object.freeze(value); }
     function create(patch = {}) { return freeze({ mode: "historical", viewMode: "single_contract",
         selectedTradingDate: null, selectedContract: null, selectedContracts: [],
-        selectedRevision: { policy: "active", versionKey: null }, generation: 0, ...clone(patch) }); }
+        selectedRevision: { policy: "active", versionKey: null }, selectedMetric: "openInterest",
+        selectedVolumeObservationId: null, generation: 0, ...clone(patch) }); }
     function transition(state, patch = {}) { return create({ ...clone(state), ...clone(patch),
         generation: Number(state?.generation || 0) + 1 }); }
     function returnLive(state) { return freeze({ ...clone(state), mode: "live",

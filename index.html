@@ -1035,6 +1035,10 @@
                         </div>
                         <p id="historicalVolumeUnavailable">この保存断面には取引高履歴がありません</p>
                     </div>
+                    <div id="timeTravelVolumeObservationControl" class="time-travel-contract-control" hidden>
+                        <label class="time-travel-control-label" for="historyVolumeObservationSelect">取引高観測：</label>
+                        <select id="historyVolumeObservationSelect" disabled></select>
+                    </div>
                     <div id="timeTravelAggregateContracts" class="historical-qri-aggregation-contracts time-travel-contract-control" hidden></div>
                 </div>
                 <p id="historicalQriState" class="time-travel-empty-state" role="status" aria-live="polite">
@@ -1046,7 +1050,7 @@
                         <p id="timeTravelResultFeedback" class="time-travel-result-feedback" role="status" aria-live="polite"></p>
                         <p id="historicalQriMetadata" class="historical-qri-metadata"></p>
                     </header>
-                    <div class="time-travel-summary-grid">
+                    <div id="timeTravelOiSummary" class="time-travel-summary-grid">
                         <section><h4>CALL壁 TOP3</h4><ol id="timeTravelTopCall"></ol></section>
                         <section><h4>PUT壁 TOP3</h4><ol id="timeTravelTopPut"></ol></section>
                     </div>
@@ -1059,10 +1063,10 @@
                             <canvas id="historicalQriOpenInterestChart"></canvas>
                         </div>
                     </div>
-                    <section class="time-travel-comparison-block" aria-label="前回保存観測との比較">
+                    <section id="timeTravelOiComparison" class="time-travel-comparison-block" aria-label="前回保存観測との比較">
                         <p id="timeTravelComparison"></p>
                     </section>
-                    <section class="time-travel-quality-block" aria-label="データ品質">
+                    <section id="timeTravelQuality" class="time-travel-quality-block" aria-label="データ品質">
                         <h4>データ品質</h4>
                         <p id="timeTravelCoverage"></p>
                         <p id="timeTravelIvCoverage"></p>
@@ -1510,6 +1514,7 @@
 <script src="js/qriOptionsHistoricalAggregationView.js"></script>
 <script src="js/qriTimeTravelState.js"></script>
 <script src="js/qriTimeTravelProjection.js"></script>
+<script src="js/qriVolumeHistoricalProjection.js"></script>
 <script src="js/qriTimeTravelView.js"></script>
 <script src="js/formalOptionAvailabilityEvidence.js"></script>
 <script src="js/qriOptionsFormalComparisonEvidence.js"></script>
@@ -2239,8 +2244,10 @@ const qriHistoricalView = window.OptionMapQriTimeTravelView
         ChartConstructor: Chart,
         readHistory: () => window.getQriOptionsHistory(),
         readIvHistory: () => qriTimeTravelIvHistoryStore.loadHistory(),
+        readVolumeHistory: () => window.OptionMapQriVolumeHistoryStore.loadHistory(),
         stateApi: window.OptionMapQriTimeTravelState,
         projectionApi: window.OptionMapQriTimeTravelProjection,
+        volumeProjectionApi: window.OptionMapQriVolumeHistoricalProjection,
         selectionApi: window.OptionMapWallHistoryChartSelection,
         openWallHistory: input => window.wallHistoryDrawerRuntime?.openWall?.(input),
         optionColors: {

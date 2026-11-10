@@ -10,12 +10,17 @@
 })(typeof window !== "undefined" ? window : globalThis, function (presentation, mirror) {
     "use strict";
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
-    function create({ documentRef, ChartConstructor, readHistory, readIvHistory, stateApi, projectionApi,
-        selectionApi, openWallHistory, optionColors, now = () => new Date().toISOString() } = {}) {
+    function create({ documentRef, ChartConstructor, readHistory, readIvHistory, readVolumeHistory,
+        stateApi, projectionApi, volumeProjectionApi, selectionApi, openWallHistory, optionColors,
+        now = () => new Date().toISOString() } = {}) {
         const get = id => documentRef?.getElementById?.(id) || null;
         const dom = { panel: get("historicalQriPanel"), contract: get("historyContractSelect"),
             date: get("historyDateSelect"), prev: get("timeTravelPreviousDate"), next: get("timeTravelNextDate"),
             revision: get("historyRevisionSelect"), revisionControl: get("timeTravelRevisionControl"),
+            oiMetric: get("historyOpenInterestButton"), volumeMetric: get("historyVolumeButton"),
+            volumeUnavailable: get("historicalVolumeUnavailable"),
+            volumeObservation: get("historyVolumeObservationSelect"),
+            volumeObservationControl: get("timeTravelVolumeObservationControl"),
             current: get("timeTravelReturnCurrent"), single: get("timeTravelSingleMode"),
             aggregate: get("timeTravelAggregateMode"), contracts: get("timeTravelAggregateContracts"),
             singleContractControl: get("timeTravelSingleContractControl"),
@@ -26,10 +31,13 @@
             metadata: get("historicalQriMetadata"), topCall: get("timeTravelTopCall"),
             topPut: get("timeTravelTopPut"), comparison: get("timeTravelComparison"),
             coverage: get("timeTravelCoverage"), ivCoverage: get("timeTravelIvCoverage"),
+            oiSummary: get("timeTravelOiSummary"), oiComparison: get("timeTravelOiComparison"),
+            quality: get("timeTravelQuality"),
             legend: get("historicalQriChartLegend"),
             chartContainer: get("historicalQriChartContainer"), plot: get("historicalQriChartPlot"),
             canvas: get("historicalQriOpenInterestChart"), developer: get("historicalQriDeveloperDetails") };
-        let history = null, ivHistory = null, loading = null, chart = null, generation = 0, initialized = false;
+        let history = null, ivHistory = null, volumeHistory = null, volumeHistoryStatus = "empty",
+            historiesLoaded = false, loading = null, chart = null, generation = 0, initialized = false;
         let pendingNavigation = null, navigationSourceRevision = null;
         const gesture = selectionApi?.createGestureGuard?.();
         let session = stateApi.create(), current = Object.freeze({ status: "closed", session });
@@ -40,7 +48,7 @@
         function destroyChart() { chart?.destroy?.(); chart = null; }
         function option(select, value, label = value) { const node = documentRef.createElement("option");
             node.value = value; node.textContent = label; select.append(node); }
-        function renderSelectors(projection) {
+        function renderSelectors(projection, volumeProjection) {
             const contracts = projection.contracts || []; dom.contract.replaceChildren();
             contracts.forEach(value => option(dom.contract, value)); dom.contract.value = session.selectedContract || "";
             dom.contract.disabled = contracts.length === 0;
@@ -53,6 +61,20 @@
             dom.revision.value = typeof projection.selectedRevision === "string"
                 ? projection.selectedRevision : "";
             dom.revision.disabled = revisions.length === 0;
+            const volumeAvailable = session.viewMode === "single_contract" &&
+                volumeProjection?.status === "available";
+            if (dom.oiMetric) dom.oiMetric.setAttribute("aria-pressed",
+                String(session.selectedMetric !== "volume"));
+            if (dom.volumeMetric) { dom.volumeMetric.setAttribute("aria-pressed",
+                String(session.selectedMetric === "volume")); dom.volumeMetric.disabled = !volumeAvailable; }
+            if (dom.volumeUnavailable) dom.volumeUnavailable.hidden = volumeAvailable;
+            const observations = volumeProjection?.observationOptions || [];
+            if (dom.volumeObservation) { dom.volumeObservation.replaceChildren();
+                observations.forEach(item => option(dom.volumeObservation, item.value, item.label));
+                dom.volumeObservation.value = volumeProjection?.selectedObservationId || "";
+                dom.volumeObservation.disabled = observations.length < 2; }
+            if (dom.volumeObservationControl) dom.volumeObservationControl.hidden =
+                session.selectedMetric !== "volume" || observations.length < 2 || !volumeAvailable;
             dom.contracts.replaceChildren(...contracts.map(value => { const label = documentRef.createElement("label"),
                 input = documentRef.createElement("input"); input.type = "checkbox"; input.value = value;
                 input.checked = session.selectedContracts.includes(value); input.addEventListener("change", onAggregateContracts);
@@ -86,8 +108,20 @@
                     `${item.previousSavedObservationDelta.toLocaleString()}）`;
             li.textContent += item.iv?.status === "available" ? ` IV ${item.iv.value}` : " IV欠測";
             return li; })); }
+        function buildVolumeProjection(projection) {
+            if (!volumeProjectionApi?.build) return { status: "unavailable",
+                reason: "volume_history_read_failed", observationOptions: [] };
+            return volumeProjectionApi.build({ history: volumeHistory,
+                historyStatus: volumeHistoryStatus, oiProjection: projection,
+                selectedObservationId: session.selectedVolumeObservationId });
+        }
+        function showOiSections(show) { if (dom.oiSummary) dom.oiSummary.hidden = !show;
+            if (dom.oiComparison) dom.oiComparison.hidden = !show;
+            if (dom.quality) dom.quality.hidden = !show; }
         function renderProjection(projection) {
-            renderSelectors(projection); dom.banner.hidden = false; dom.bannerText.textContent = `過去表示：${selectionLabel()}`;
+            const volumeProjection = buildVolumeProjection(projection);
+            renderSelectors(projection, volumeProjection); dom.banner.hidden = false;
+            dom.bannerText.textContent = `過去表示：${selectionLabel()}`;
             if (projection.status !== "available") { destroyChart(); dom.content.hidden = true;
                 dom.state.hidden = false; const dates = navigationDates(projection),
                     previous = neighborDate(dates, session.selectedTradingDate, -1),
@@ -96,34 +130,52 @@
                     ? `${selectionLabel()}のsnapshotは保存されていません。現在値では補完しません。` +
                         (nearby.length ? ` 前後の保存日（${nearby.join("／")}）へは上の矢印ボタンで移動できます。` : "")
                     : "選択した保存断面を表示できません。"; return publish("unavailable", projection.reason, projection); }
-            dom.state.hidden = true; dom.content.hidden = false; list(dom.topCall, projection.top3.call);
+            const volumeMode = session.selectedMetric === "volume";
+            if (volumeMode && volumeProjection.status !== "available") { destroyChart();
+                dom.content.hidden = true; dom.state.hidden = false;
+                dom.state.textContent = "この保存断面には取引高履歴がありません";
+                return publish("unavailable", volumeProjection.reason,
+                    { ...projection, volumeProjection }); }
+            dom.state.hidden = true; dom.content.hidden = false; showOiSections(!volumeMode);
             dom.resultTitle.textContent = `${selectionLabel()}の保存断面`;
-            dom.chartTitle.textContent = `CALL・PUT建玉残 — ${selectionLabel()}`;
-            list(dom.topPut, projection.top3.put); dom.comparison.textContent = projection.previousTradingDate
-                ? `前回保存観測比：${projection.previousTradingDate} → ${session.selectedTradingDate}`
-                : "前回保存観測比：比較対象なし";
-            dom.coverage.textContent = `coverage：observed ${projection.coverage.observed}/${projection.coverage.total}` +
-                ` / notPublished ${projection.coverage.notPublished} / comparable ${projection.coverage.comparable}`;
-            dom.ivCoverage.textContent = projection.ivCoverage.reason === "aggregate_not_applicable"
-                ? "IV coverage：複数限月合算では対象外（IVは合成しません）"
-                : `IV coverage：observed ${projection.ivCoverage.observed}/${projection.ivCoverage.eligible}` +
-                    ` / missing ${projection.ivCoverage.missing}（完全一致のみ・補完なし）`;
-            dom.metadata.textContent = `active revision：${Array.isArray(projection.selectedRevision)
-                ? projection.selectedRevision.length + "限月" : projection.metadata.activeVersionKey}`;
-            if (!Array.isArray(projection.selectedRevision)) {
-                dom.metadata.textContent += ` / selected revision：${projection.selectedRevision}` +
+            if (!volumeMode) {
+                list(dom.topCall, projection.top3.call); list(dom.topPut, projection.top3.put);
+                dom.chartTitle.textContent = `CALL・PUT建玉残 — ${selectionLabel()}`;
+                dom.comparison.textContent = projection.previousTradingDate
+                    ? `前回保存観測比：${projection.previousTradingDate} → ${session.selectedTradingDate}`
+                    : "前回保存観測比：比較対象なし";
+                dom.coverage.textContent = `coverage：observed ${projection.coverage.observed}/${projection.coverage.total}` +
+                    ` / notPublished ${projection.coverage.notPublished} / comparable ${projection.coverage.comparable}`;
+                dom.ivCoverage.textContent = projection.ivCoverage.reason === "aggregate_not_applicable"
+                    ? "IV coverage：複数限月合算では対象外（IVは合成しません）"
+                    : `IV coverage：observed ${projection.ivCoverage.observed}/${projection.ivCoverage.eligible}` +
+                        ` / missing ${projection.ivCoverage.missing}（完全一致のみ・補完なし）`;
+                dom.metadata.textContent = `active revision：${Array.isArray(projection.selectedRevision)
+                    ? projection.selectedRevision.length + "限月" : projection.metadata.activeVersionKey}`;
+                if (!Array.isArray(projection.selectedRevision)) dom.metadata.textContent +=
+                    ` / selected revision：${projection.selectedRevision}` +
                     ` / confirmedAt：${projection.metadata.confirmedAt}` +
                     ` / Evidence：${projection.metadata.evidence.status === "available"
                         ? "available" : projection.metadata.evidence.reason}`;
+            } else {
+                dom.chartTitle.textContent = `CALL・PUT取引高 — ${selectionLabel()}`;
+                dom.metadata.textContent = `OI revision：${volumeProjection.metadata.relatedQriOiVersionKey}` +
+                    ` / Volume confirmedAt：${volumeProjection.metadata.confirmedAt}` +
+                    ` / Volume version：${volumeProjection.metadata.volumeVersionShort}` +
+                    ` / Evidence：${volumeProjection.metadata.evidenceStatus}`;
             }
             if (navigationSourceRevision && navigationSourceRevision !== projection.selectedRevision)
                 dom.metadata.textContent += " / 遷移元は旧revisionのためactive revisionで再表示";
-            dom.developer.textContent = JSON.stringify({ identity: projection.identity,
-                selectedRevision: projection.selectedRevision, metadata: projection.metadata,
-                quality: projection.quality }, null, 2);
-            const graph = mirror?.createModel?.({ strikes: projection.chartData.strikes,
-                callValues: projection.chartData.callOpenInterest,
-                putValues: projection.chartData.putOpenInterest, metric: "openInterest" });
+            dom.developer.textContent = JSON.stringify(volumeMode ? {
+                identity: projection.identity, selectedRevision: projection.selectedRevision,
+                volume: volumeProjection.metadata, quality: { missingPreserved: true }
+            } : { identity: projection.identity, selectedRevision: projection.selectedRevision,
+                metadata: projection.metadata, quality: projection.quality }, null, 2);
+            const metric = volumeMode ? "volume" : "openInterest";
+            const selectedChart = volumeMode ? volumeProjection.chartData : projection.chartData;
+            const graph = mirror?.createModel?.({ strikes: selectedChart.strikes,
+                callValues: volumeMode ? selectedChart.callVolume : selectedChart.callOpenInterest,
+                putValues: volumeMode ? selectedChart.putVolume : selectedChart.putOpenInterest, metric });
             if (graph?.status !== "available") { destroyChart(); dom.content.hidden = true;
                 dom.state.hidden = false; dom.state.textContent = "選択した保存断面を表示できません。";
                 return publish("unavailable", "historical_graph_invalid", projection); }
@@ -132,14 +184,15 @@
             const labels = graph.rows.map(row => row.strike.toLocaleString());
             const aggregate = Array.isArray(projection.selectedRevision);
             const tooltipContract = aggregate ? null : projection.metadata.contract;
+            const metricLabel = volumeMode ? "取引高" : "建玉残";
             chart = new ChartConstructor(dom.canvas, { type: "bar",
                 plugins: [mirror.createCenterStrikeLabelsPlugin()],
                 data: { labels, datasets: [
-                    { label: "CALL建玉残", optionSide: "call",
+                    { label: `CALL${metricLabel}`, optionSide: "call",
                         data: graph.rows.map(row => row.callDisplay),
                         originalValues: graph.rows.map(row => row.callOriginal), grouped: false,
                         backgroundColor: optionColors.call, borderColor: optionColors.call, borderWidth: 1,
-                        ...presentation.DATASET_OPTIONS }, { label: "PUT建玉残",
+                        ...presentation.DATASET_OPTIONS }, { label: `PUT${metricLabel}`,
                         optionSide: "put", data: graph.rows.map(row => row.putDisplay),
                         originalValues: graph.rows.map(row => row.putOriginal), grouped: false,
                         backgroundColor: optionColors.put, borderColor: optionColors.put,
@@ -154,36 +207,48 @@
                         y: { offset: true, ticks: { display: false }, grid: { display: false } } },
                     plugins: { legend: { display: false }, tooltip: { callbacks: {
                         title(items) { const row = graph.rows[items?.[0]?.dataIndex];
-                            const base = mirror.createTooltip({ row, side: "call",
-                                metric: "openInterest", contract: tooltipContract });
+                            const base = mirror.createTooltip({ row, side: "call", metric,
+                                contract: tooltipContract });
+                            if (volumeMode) return `${base?.title || ""} / 取引日 ${projection.metadata.tradingDate}` +
+                                ` / OI revision ${projection.metadata.selectedVersionShort}` +
+                                ` / Volume ${volumeProjection.metadata.volumeVersionShort}`;
                             return aggregate
                                 ? `${base?.title || ""} / 取引日 ${session.selectedTradingDate} / 複数限月合算`
                                 : `${base?.title || ""} / 取引日 ${projection.metadata.tradingDate}` +
                                     ` / revision ${projection.metadata.selectedVersionShort}`; },
-                        label(context) { const row = graph.rows[context.dataIndex];
-                            return mirror.createTooltip({ row,
-                                side: context.datasetIndex === 0 ? "call" : "put",
-                                metric: "openInterest", contract: tooltipContract })?.label || ""; },
-                        afterLabel() { return aggregate ? "保存済みFormal QRI合算（IV合成なし）"
-                            : `confirmedAt ${projection.metadata.confirmedAt}` +
-                                ` / Evidence ${projection.metadata.evidence.status === "available"
-                                    ? "available" : projection.metadata.evidence.reason}`; }
+                        label(context) { const row = graph.rows[context.dataIndex],
+                            side = context.datasetIndex === 0 ? "call" : "put",
+                            value = side === "call" ? row.callOriginal : row.putOriginal;
+                            if (volumeMode && value === null) return `${side === "call" ? "CALL" : "PUT"}取引高：未掲載`;
+                            return mirror.createTooltip({ row, side, metric,
+                                contract: tooltipContract })?.label || ""; },
+                        afterLabel() { if (volumeMode) return `Volume confirmedAt ${volumeProjection.metadata.confirmedAt}` +
+                            ` / Evidence ${volumeProjection.metadata.evidenceStatus}`;
+                            return aggregate ? "保存済みFormal QRI合算（IV合成なし）"
+                                : `confirmedAt ${projection.metadata.confirmedAt}` +
+                                    ` / Evidence ${projection.metadata.evidence.status === "available"
+                                        ? "available" : projection.metadata.evidence.reason}`; }
                     } } } } }); dom.chartContainer.hidden = false;
             presentation.renderLegend?.({ documentRef, legend: dom.legend, datasets: chart.data.datasets });
             showUpdatedFeedback();
-            return publish("available", null, projection);
+            return publish("available", null, volumeMode
+                ? { ...projection, volumeProjection } : projection);
         }
         function rebuild(patch = {}) { navigationSourceRevision = null;
             if (!dom.content.hidden) dom.resultFeedback.textContent = "表示条件を切り替えています…";
             session = stateApi.transition(session, patch);
             return renderProjection(projectionApi.build({ history, ivHistory, state: session })); }
-        async function ensureHistory() { if (history && ivHistory) return history; if (!loading) loading = Promise.all([
+        async function ensureHistory() { if (historiesLoaded) return history; if (!loading) loading = Promise.all([
             history ? { status: "ready", history } : Promise.resolve().then(() => readHistory()),
             ivHistory ? { status: "ready", history: ivHistory } :
-                Promise.resolve().then(() => readIvHistory?.()).catch(() => null)]).then(([oi, iv]) => {
+                Promise.resolve().then(() => readIvHistory?.()).catch(() => null),
+            Promise.resolve().then(() => readVolumeHistory?.()).catch(() =>
+                ({ status: "read_failed", history: null }))]).then(([oi, iv, volume]) => {
                 if (oi?.status !== "ready" || !oi.history) throw new Error("read_failed");
                 history = clone(oi.history); ivHistory = iv?.status === "ready" && iv.history
-                    ? clone(iv.history) : null; return history; }).finally(() => { loading = null; }); return loading; }
+                    ? clone(iv.history) : null; volumeHistoryStatus = volume?.status || "empty";
+                volumeHistory = volume?.history ? clone(volume.history) : null;
+                historiesLoaded = true; return history; }).finally(() => { loading = null; }); return loading; }
         async function open() { const own = ++generation; dom.content.hidden = true; dom.state.hidden = false;
             dom.state.textContent = "保存済みQRI履歴を読み込んでいます…"; publish("loading"); try { await ensureHistory();
             if (own !== generation || !dom.panel.open) return publish("stale_ignored", "stale_render");
@@ -206,21 +271,31 @@
         function latestDate(contract) { return projectionApi.inventory(history).availability
             .filter(item => item.contracts.includes(contract)).map(item => item.tradingDate).at(-1) || null; }
         function onContract() { const contract = dom.contract.value; rebuild({ selectedContract: contract,
-            selectedTradingDate: latestDate(contract), selectedRevision: { policy: "active", versionKey: null } }); }
+            selectedTradingDate: latestDate(contract), selectedRevision: { policy: "active", versionKey: null },
+            selectedVolumeObservationId: null }); }
         function onDate() { rebuild({ selectedTradingDate: dom.date.value,
-            selectedRevision: { policy: "active", versionKey: null } }); }
+            selectedRevision: { policy: "active", versionKey: null }, selectedVolumeObservationId: null }); }
         function onRevision() { rebuild({ selectedRevision: { policy: "version",
-            versionKey: dom.revision.value } }); }
+            versionKey: dom.revision.value }, selectedVolumeObservationId: null }); }
+        function onOpenInterestMetric() { return rebuild({ selectedMetric: "openInterest" }); }
+        function onVolumeMetric() { const oi = projectionApi.build({ history, ivHistory, state: session }),
+            volume = buildVolumeProjection(oi); if (volume.status !== "available") return getState();
+            return rebuild({ selectedMetric: "volume",
+                selectedVolumeObservationId: volume.selectedObservationId }); }
+        function onVolumeObservation() { return rebuild({ selectedMetric: "volume",
+            selectedVolumeObservationId: dom.volumeObservation?.value || null }); }
         function move(offset) { const projection = projectionApi.build({ history, state: session }),
             dates = navigationDates(projection), next = neighborDate(dates, session.selectedTradingDate, offset);
             if (next) rebuild({ selectedTradingDate: next,
-                selectedRevision: { policy: "active", versionKey: null } }); }
+                selectedRevision: { policy: "active", versionKey: null },
+                selectedVolumeObservationId: null }); }
         function onAggregateContracts() { const selected = [...dom.contracts.querySelectorAll("input:checked")]
             .map(input => input.value); rebuild({ selectedContracts: selected }); }
         function historicalIdentity() { return { rendererKind: "formal", displayOnly: false,
-            mode: "openInterest", contract: session.viewMode === "single_contract"
+            mode: session.selectedMetric, contract: session.viewMode === "single_contract"
                 ? session.selectedContract : null, generation: session.generation }; }
-        function onChartClick(event) { if (gesture?.shouldSuppressClick?.() || session.viewMode !== "single_contract") return;
+        function onChartClick(event) { if (gesture?.shouldSuppressClick?.() ||
+            session.viewMode !== "single_contract" || session.selectedMetric !== "openInterest") return;
             const identity = historicalIdentity(), selected = selectionApi?.select?.({ chart, event,
                 rendererIdentity: identity, currentIdentity: historicalIdentity() });
             if (!selected || typeof openWallHistory !== "function") return;
@@ -239,18 +314,23 @@
             dom.panel.addEventListener("toggle", () => dom.panel.open ? void open() : close());
             dom.contract.addEventListener("change", onContract); dom.date.addEventListener("change", onDate);
             dom.revision.addEventListener("change", onRevision);
+            dom.oiMetric?.addEventListener?.("click", onOpenInterestMetric);
+            dom.volumeMetric?.addEventListener?.("click", onVolumeMetric);
+            dom.volumeObservation?.addEventListener?.("change", onVolumeObservation);
             dom.prev.addEventListener("click", () => move(-1)); dom.next.addEventListener("click", () => move(1));
             dom.current.addEventListener("click", () => { dom.panel.open = false; close(); });
             dom.single.addEventListener("click", () => rebuild({ viewMode: "single_contract",
                 selectedRevision: { policy: "active", versionKey: null } }));
-            dom.aggregate.addEventListener("click", () => rebuild({ viewMode: "aggregate" }));
+            dom.aggregate.addEventListener("click", () => rebuild({ viewMode: "aggregate",
+                selectedMetric: "openInterest", selectedVolumeObservationId: null }));
             dom.canvas.addEventListener("pointerdown", event => gesture?.pointerDown?.(event));
             dom.canvas.addEventListener("pointermove", event => gesture?.pointerMove?.(event));
             dom.canvas.addEventListener("pointerup", event => gesture?.pointerUp?.(event));
             dom.canvas.addEventListener("pointercancel", event => gesture?.pointerUp?.(event));
             dom.canvas.addEventListener("click", onChartClick); return getState(); }
         return Object.freeze({ initialize, open, close, getState, selectContract: onContract,
-            selectDate: onDate, selectRevision: onRevision,
+            selectDate: onDate, selectRevision: onRevision, selectOpenInterest: onOpenInterestMetric,
+            selectVolume: onVolumeMetric, selectVolumeObservation: onVolumeObservation,
             previousDate: () => move(-1), nextDate: () => move(1), navigate });
     }
     return Object.freeze({ create });
