@@ -39,19 +39,19 @@ test("UI1-5 Current and Historical containers retain vertical scrolling", () => 
     assert.match(style, /\.historical-qri-chart-container\.strike-bar-chart-scroll\s*\{[^}]*overflow-y:\s*auto/s);
 });
 
-test("UI1-6 mirrored graph row density remains 24px per Strike", () => {
-    assert.equal(Presentation.ROW_HEIGHT, 24);
+test("UI1-6 viewport remains compatible with the active mirrored row density", () => {
+    assert.equal(Presentation.ROW_HEIGHT, 20);
     assert.deepEqual(Presentation.prepareMirroredPlot({
         container: { clientWidth: 640 }, plot: { style: {} }, strikeCount: 20
-    }), { width: 720, height: 536 });
+    }), { width: 720, height: 456 });
 });
 
 test("UI1-7 Current auto-centering uses the taller viewport midpoint", () => {
     const container = { clientHeight: 532, scrollTop: 0 };
-    const plot = { scrollHeight: 2456, style: { minHeight: "2456px" } };
-    const chart = { scales: { y: { getPixelForValue: index => index * 24 + 28 } } };
+    const plot = { scrollHeight: 2056, style: { minHeight: "2056px" } };
+    const chart = { scales: { y: { getPixelForValue: index => index * 20 + 28 } } };
     assert.equal(Presentation.centerVerticalIndex({ container, plot, chart, index: 50 }), true);
-    assert.equal(container.scrollTop, 962);
+    assert.equal(container.scrollTop, 762);
 });
 
 test("UI1-8 Current OI and Volume switch does not resize the container", () => {

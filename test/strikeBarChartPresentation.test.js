@@ -36,23 +36,23 @@ test("現在値indexをviewport中央へ寄せ両端では安全にclampする",
     assert.equal(container.scrollLeft, 880);
 });
 
-test("mirror chartは24px/Strikeの縦plotと720px minimum幅を設定する", () => {
+test("mirror chartは20px/Strikeの縦plotと720px minimum幅を設定する", () => {
     const container = { clientWidth: 640 };
     const plot = { style: {} };
     assert.deepEqual(Presentation.prepareMirroredPlot({ container, plot,
-        strikeCount: 100 }), { width: 720, height: 2456 });
+        strikeCount: 100 }), { width: 720, height: 2056 });
     assert.deepEqual(plot.style, { width: "100%", minWidth: "720px",
-        height: "2456px", minHeight: "2456px" });
+        height: "2056px", minHeight: "2056px" });
 });
 
 test("mirror chartの現在値indexを縦viewport中央へ安全にclampする", () => {
     const container = { clientHeight: 400, scrollTop: 0 };
-    const plot = { scrollHeight: 2456, style: { minHeight: "2456px" } };
-    const chart = { scales: { y: { getPixelForValue: index => index * 24 + 28 } } };
+    const plot = { scrollHeight: 2056, style: { minHeight: "2056px" } };
+    const chart = { scales: { y: { getPixelForValue: index => index * 20 + 28 } } };
     assert.equal(Presentation.centerVerticalIndex({ container, plot, chart, index: 50 }), true);
-    assert.equal(container.scrollTop, 1028);
+    assert.equal(container.scrollTop, 828);
     Presentation.centerVerticalIndex({ container, plot, chart, index: 100 });
-    assert.equal(container.scrollTop, 2056);
+    assert.equal(container.scrollTop, 1656);
 });
 
 test("HTML legendはdatasetのlabelと色から生成し空なら隠す", () => {
