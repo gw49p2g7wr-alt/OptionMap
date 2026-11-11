@@ -17,13 +17,15 @@ const baselineRowHeight = 20;
 const labelHeight = 16;
 const currentMarkerFontHeight = 13;
 const currentMarkerOffset = 3;
+const stickyAxisHeight = 30;
 
 function contentHeight(strikeCount, rowHeight = Presentation.ROW_HEIGHT) {
     return strikeCount * rowHeight + Presentation.MIRRORED_AXIS_ALLOWANCE;
 }
 
 function visibleRows(rowHeight = Presentation.ROW_HEIGHT) {
-    return Math.floor((viewportHeight - Presentation.MIRRORED_AXIS_ALLOWANCE) / rowHeight);
+    return Math.floor((viewportHeight - stickyAxisHeight -
+        Presentation.MIRRORED_AXIS_ALLOWANCE) / rowHeight);
 }
 
 test("UI3-1 row height is exactly 18px", () => {
@@ -36,7 +38,7 @@ test("UI3-2 viewport remains bounded at 532px and 70vh", () => {
 
 test("UI3-3 visible rows increase over the 20px baseline", () => {
     assert.deepEqual({ current: visibleRows(), baseline: visibleRows(baselineRowHeight) },
-        { current: 26, baseline: 23 });
+        { current: 24, baseline: 22 });
 });
 
 test("UI3-4 scroll extent is lower than the 20px baseline and still exceeds the viewport", () => {

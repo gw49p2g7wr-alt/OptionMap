@@ -195,14 +195,14 @@ body{
 .historical-qri-chart-container,
 .combined-chart-container {
     height: min(532px, 70vh);
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
 }
 
 .historical-qri-chart-container {
     position: relative;
     width: 100%;
-    overflow-x: auto;
-    overflow-y: auto;
-    overscroll-behavior: contain;
 }
 
 .historical-qri-chart-container .strike-bar-chart-plot {
@@ -214,15 +214,40 @@ body{
     height: 100% !important;
 }
 
-.strike-bar-chart-scroll {
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-inline: contain;
-}
-
-.historical-qri-chart-container.strike-bar-chart-scroll {
+.strike-bar-chart-scroll-region {
+    min-width: 0;
+    min-height: 0;
     overflow-x: auto;
     overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.strike-bar-chart-sticky-axis {
+    position: relative;
+    z-index: 2;
+    height: 30px;
+    overflow: hidden;
+    border-top: 1px solid rgba(71, 84, 103, 0.2);
+    background: #ffffff;
+    color: #475467;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.strike-bar-chart-sticky-axis-track {
+    position: relative;
+    height: 100%;
+    transform-origin: left top;
+    will-change: transform;
+}
+
+.strike-bar-chart-sticky-axis-tick {
+    position: absolute;
+    top: 9px;
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
 }
 
 .strike-bar-chart-legend {
@@ -1282,9 +1307,6 @@ canvas {
 
 .combined-chart-container {
     width: 100%;
-    overflow-x: auto;
-    overflow-y: auto;
-    overscroll-behavior: contain;
 }
 
 .combined-chart-container .strike-bar-chart-plot {

@@ -3060,7 +3060,7 @@ function mirroredHighlightColors(rows, key, normalColor, strongColor) {
 function prepareCombinedStrikeChart(strikeCount) {
     const presentation = window.OptionMapStrikeBarChartPresentation;
     presentation?.prepareMirroredPlot?.({
-        container: document.getElementById("combinedPriceChartContainer"),
+        container: document.getElementById("combinedPriceChartScroll"),
         plot: document.getElementById("combinedPriceChartPlot"),
         strikeCount
     });
@@ -3075,7 +3075,7 @@ function centerCombinedStrikeChart(chart, labels) {
         currentPrice
     ) ?? -1;
     presentation?.centerVerticalIndex?.({
-        container: document.getElementById("combinedPriceChartContainer"),
+        container: document.getElementById("combinedPriceChartScroll"),
         plot: document.getElementById("combinedPriceChartPlot"),
         chart,
         index: priceIndex
@@ -6946,6 +6946,12 @@ function renderCurrentCallPutMirror({ strikes, callValues, putValues, isVolumeMo
     const canvas = document.getElementById("combinedPriceChart");
     if (!canvas || model?.status !== "available") return null;
     const strikeChartPresentation = prepareCombinedStrikeChart(model.rows.length);
+    const syncStickyAxis = chart => strikeChartPresentation?.renderStickyAxis?.({
+        documentRef: document,
+        axis: document.getElementById("combinedPriceChartAxis"),
+        scroller: document.getElementById("combinedPriceChartScroll"),
+        plot: document.getElementById("combinedPriceChartPlot"), chart
+    });
     if (combinedPriceChart) {
         combinedPriceChart.destroy();
         clearQriChartRendererIdentity();
@@ -6976,11 +6982,13 @@ function renderCurrentCallPutMirror({ strikes, callValues, putValues, isVolumeMo
         ] },
         options: {
             indexAxis: "y", responsive: true, maintainAspectRatio: false, animation: false,
+            onResize: chart => syncStickyAxis(chart),
             layout: { padding: { left: 10, right: 25, top: 10, bottom: 5 } },
             scales: {
                 x: { stacked: false, min: -model.displayMaximum, max: model.displayMaximum,
                     ticks: { autoSkip: true, maxTicksLimit: 9, maxRotation: 0, minRotation: 0,
                         padding: 6, font: { size: CHART_TEXT_SIZE.axis },
+                        color: "rgba(0, 0, 0, 0)",
                         callback: value => mirror.formatAbsolute(value) },
                     grid: { color: context => Number(context.tick.value) === 0
                         ? "rgba(0, 0, 0, 0.75)" : "rgba(0, 0, 0, 0.1)",
@@ -6999,6 +7007,7 @@ function renderCurrentCallPutMirror({ strikes, callValues, putValues, isVolumeMo
                 } } }
         }
     });
+    syncStickyAxis(combinedPriceChart);
     renderCombinedStrikeChartLegend(combinedPriceChart);
     centerCombinedStrikeChart(combinedPriceChart, labels);
     setQriChartRendererIdentity(rendererIdentity);

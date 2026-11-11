@@ -35,8 +35,9 @@ test("UI1-4 narrow viewports retain the exact 70vh cap", () => {
 });
 
 test("UI1-5 Current and Historical containers retain vertical scrolling", () => {
-    assert.match(style, /\.combined-chart-container\s*\{[^}]*overflow-y:\s*auto/s);
-    assert.match(style, /\.historical-qri-chart-container\.strike-bar-chart-scroll\s*\{[^}]*overflow-y:\s*auto/s);
+    assert.match(style, /\.strike-bar-chart-scroll-region\s*\{[^}]*overflow-y:\s*auto/s);
+    assert.match(html, /id="combinedPriceChartScroll"[^>]*class="strike-bar-chart-scroll-region"/s);
+    assert.match(html, /id="historicalQriChartScroll"[^>]*class="strike-bar-chart-scroll-region"/s);
 });
 
 test("UI1-6 viewport remains compatible with the active mirrored row density", () => {
@@ -59,6 +60,7 @@ test("UI1-8 Current OI and Volume switch does not resize the container", () => {
         currentRenderer.indexOf("function updateOpenInterestDataStatus"));
     assert.doesNotMatch(switcher, /style\.(?:height|minHeight|maxHeight)/);
     assert.equal((html.match(/id="combinedPriceChartContainer"/g) || []).length, 1);
+    assert.equal((html.match(/id="combinedPriceChartScroll"/g) || []).length, 1);
 });
 
 test("UI1-9 History revision and metric switches do not resize the container", () => {
@@ -68,6 +70,7 @@ test("UI1-9 History revision and metric switches do not resize the container", (
 });
 
 test("UI1-10 Current and Historical layouts share one height declaration", () => {
-    assert.match(style, /\.historical-qri-chart-container,\s*\n\.combined-chart-container\s*\{\s*height:\s*min\(532px,\s*70vh\);\s*\}/);
+    assert.match(viewportRule, /height:\s*min\(532px,\s*70vh\)/);
+    assert.match(viewportRule, /grid-template-rows:\s*minmax\(0, 1fr\) auto/);
     assert.equal((style.match(/height:\s*min\(532px,\s*70vh\)/g) || []).length, 1);
 });

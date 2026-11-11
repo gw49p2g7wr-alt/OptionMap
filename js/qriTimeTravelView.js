@@ -34,7 +34,9 @@
             oiSummary: get("timeTravelOiSummary"), oiComparison: get("timeTravelOiComparison"),
             quality: get("timeTravelQuality"),
             legend: get("historicalQriChartLegend"),
-            chartContainer: get("historicalQriChartContainer"), plot: get("historicalQriChartPlot"),
+            chartContainer: get("historicalQriChartContainer"),
+            chartScroller: get("historicalQriChartScroll"), axis: get("historicalQriChartAxis"),
+            plot: get("historicalQriChartPlot"),
             canvas: get("historicalQriOpenInterestChart"), developer: get("historicalQriDeveloperDetails") };
         let history = null, ivHistory = null, volumeHistory = null, volumeHistoryStatus = "empty",
             historiesLoaded = false, loading = null, chart = null, generation = 0, initialized = false;
@@ -45,7 +47,8 @@
             session: stateApi.create(session), projection: projection ? clone(projection) : null,
             readOnly: true, renderedAt: projection ? now() : null }); return current; };
         const getState = () => Object.freeze(clone(current));
-        function destroyChart() { chart?.destroy?.(); chart = null; }
+        function destroyChart() { chart?.destroy?.(); chart = null;
+            presentation?.clearStickyAxis?.({ axis: dom.axis, scroller: dom.chartScroller }); }
         function option(select, value, label = value) { const node = documentRef.createElement("option");
             node.value = value; node.textContent = label; select.append(node); }
         function renderSelectors(projection, volumeProjection) {
@@ -179,7 +182,8 @@
             if (graph?.status !== "available") { destroyChart(); dom.content.hidden = true;
                 dom.state.hidden = false; dom.state.textContent = "選択した保存断面を表示できません。";
                 return publish("unavailable", "historical_graph_invalid", projection); }
-            destroyChart(); presentation?.prepareMirroredPlot?.({ container: dom.chartContainer,
+            destroyChart(); dom.chartContainer.hidden = false;
+            presentation?.prepareMirroredPlot?.({ container: dom.chartScroller,
                 plot: dom.plot, strikeCount: graph.rows.length });
             const labels = graph.rows.map(row => row.strike.toLocaleString());
             const aggregate = Array.isArray(projection.selectedRevision);
@@ -198,9 +202,13 @@
                         backgroundColor: optionColors.put, borderColor: optionColors.put,
                         borderWidth: 1, ...presentation.DATASET_OPTIONS }] },
                 options: { indexAxis: "y", responsive: true, maintainAspectRatio: false,
-                    animation: false, scales: {
+                    animation: false, onResize: chartInstance =>
+                        presentation.renderStickyAxis?.({ documentRef, axis: dom.axis,
+                            scroller: dom.chartScroller, plot: dom.plot, chart: chartInstance }),
+                    scales: {
                         x: { min: -graph.displayMaximum, max: graph.displayMaximum,
-                            ticks: { callback: value => mirror.formatAbsolute(value) },
+                            ticks: { color: "rgba(0, 0, 0, 0)",
+                                callback: value => mirror.formatAbsolute(value) },
                             grid: { color: context => Number(context.tick.value) === 0
                                 ? "rgba(0, 0, 0, 0.75)" : "rgba(0, 0, 0, 0.1)",
                                 lineWidth: context => Number(context.tick.value) === 0 ? 2 : 1 } },
@@ -228,7 +236,9 @@
                                 : `confirmedAt ${projection.metadata.confirmedAt}` +
                                     ` / Evidence ${projection.metadata.evidence.status === "available"
                                         ? "available" : projection.metadata.evidence.reason}`; }
-                    } } } } }); dom.chartContainer.hidden = false;
+                    } } } } });
+            presentation.renderStickyAxis?.({ documentRef, axis: dom.axis,
+                scroller: dom.chartScroller, plot: dom.plot, chart });
             presentation.renderLegend?.({ documentRef, legend: dom.legend, datasets: chart.data.datasets });
             showUpdatedFeedback();
             return publish("available", null, volumeMode

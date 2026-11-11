@@ -34,7 +34,8 @@ test("the whole native summary has pointer hover focus and open-state feedback",
 
 test("native keyboard behavior is preserved without custom click or key handling", () => {
     assert.doesNotMatch(html, /<summary\b[^>]*(?:onclick|onkeydown|role="button")/);
-    assert.doesNotMatch(css, /pointer-events:\s*none/);
+    const summaryRule = css.match(/\.container details > summary\s*\{([^}]*)\}/)?.[1] || "";
+    assert.doesNotMatch(summaryRule, /pointer-events:\s*none/);
 });
 
 test("hidden disclosure conditions and nested visual hierarchy are retained", () => {

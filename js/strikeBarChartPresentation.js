@@ -10,6 +10,7 @@
     const ROW_HEIGHT = 18;
     const MIRRORED_AXIS_ALLOWANCE = 56;
     const MIRRORED_MIN_WIDTH = 720;
+    const stickyAxisBindings = new WeakMap();
     const DATASET_OPTIONS = Object.freeze({
         categoryPercentage: 0.82,
         barPercentage: 0.90,
@@ -63,6 +64,59 @@
         return true;
     }
 
+    function clearStickyAxis({ axis, scroller } = {}) {
+        const binding = axis && stickyAxisBindings.get(axis);
+        if (binding?.scroller?.removeEventListener) {
+            binding.scroller.removeEventListener("scroll", binding.sync);
+        }
+        if (axis) {
+            stickyAxisBindings.delete(axis);
+            axis.replaceChildren?.();
+            axis.hidden = true;
+        }
+        if (scroller && binding?.scroller !== scroller && binding?.sync &&
+            scroller.removeEventListener) scroller.removeEventListener("scroll", binding.sync);
+        return Boolean(axis);
+    }
+
+    function renderStickyAxis({ documentRef, axis, scroller, plot, chart } = {}) {
+        clearStickyAxis({ axis });
+        const scale = chart?.scales?.x;
+        const ticks = Array.isArray(scale?.ticks) ? scale.ticks : [];
+        if (!documentRef?.createElement || !axis?.replaceChildren ||
+            !scroller?.addEventListener || !plot || !scale || ticks.length === 0) return false;
+        const callback = chart?.options?.scales?.x?.ticks?.callback;
+        const track = documentRef.createElement("div");
+        track.className = "strike-bar-chart-sticky-axis-track";
+        const plotWidth = Number(plot.scrollWidth) || Number.parseFloat(plot.style?.minWidth) ||
+            Number(scroller.scrollWidth) || Number(scroller.clientWidth) || MIRRORED_MIN_WIDTH;
+        track.style.width = `${Math.max(MIRRORED_MIN_WIDTH, plotWidth)}px`;
+        const labels = ticks.map((tick, index) => {
+            const x = scale.getPixelForValue?.(tick.value);
+            if (!Number.isFinite(x)) return null;
+            const label = documentRef.createElement("span");
+            label.className = "strike-bar-chart-sticky-axis-tick";
+            label.style.left = `${x}px`;
+            const formatted = typeof callback === "function"
+                ? callback.call(scale, tick.value, index, ticks)
+                : scale.getLabelForValue?.(tick.value) ?? String(tick.value);
+            label.textContent = formatted == null ? "" : String(formatted);
+            return label;
+        }).filter(Boolean);
+        if (labels.length === 0) return false;
+        track.replaceChildren(...labels);
+        axis.replaceChildren(track);
+        axis.hidden = false;
+        const sync = () => {
+            const offset = Math.max(0, Number(scroller.scrollLeft) || 0);
+            track.style.transform = `translateX(${-offset}px)`;
+        };
+        scroller.addEventListener("scroll", sync, { passive: true });
+        stickyAxisBindings.set(axis, { scroller, sync });
+        sync();
+        return true;
+    }
+
     function firstColor(value) {
         return Array.isArray(value) ? value.find(color => typeof color === "string") : value;
     }
@@ -94,5 +148,6 @@
 
     return Object.freeze({ SLOT_WIDTH, AXIS_ALLOWANCE, ROW_HEIGHT, MIRRORED_AXIS_ALLOWANCE,
         MIRRORED_MIN_WIDTH, DATASET_OPTIONS, preparePlot, centerIndex,
-        prepareMirroredPlot, centerVerticalIndex, renderLegend });
+        prepareMirroredPlot, centerVerticalIndex, renderStickyAxis, clearStickyAxis,
+        renderLegend });
 });

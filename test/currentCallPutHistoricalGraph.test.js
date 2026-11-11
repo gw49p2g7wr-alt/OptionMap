@@ -181,7 +181,7 @@ test("G2 UIはhistorical Volumeを明示unavailableにし新storage/live authori
     assert.match(block, /id="historyVolumeButton"[^>]*disabled/);
     assert.match(block, /この保存断面には取引高履歴がありません/);
     assert.match(block, /<select id="historyDateSelect"/);
-    assert.match(style, /historical-qri-chart-container\.strike-bar-chart-scroll\s*\{[^}]*overflow-y:\s*auto/);
+    assert.match(style, /strike-bar-chart-scroll-region\s*\{[^}]*overflow-y:\s*auto/);
     assert.doesNotMatch(source, /currentPriceLinePlugin|\bcurrentPrice\b|livePrice|latestJpx/);
     assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|fetch\s*\(|persist|write/);
 });

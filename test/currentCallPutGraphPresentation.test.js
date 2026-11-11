@@ -112,7 +112,7 @@ test("current graph wiringは水平mirror、中央Strike、vertical scrollを明
     assert.match(marker, /getPixelForValue\(priceIndex\)/);
     assert.match(marker, /moveTo\(chart\.chartArea\.left, y\)/);
     assert.match(marker, /lineTo\(chart\.chartArea\.right, y\)/);
-    assert.match(style, /\.combined-chart-container[\s\S]*overflow-y:\s*auto/);
+    assert.match(style, /\.strike-bar-chart-scroll-region[\s\S]*overflow-y:\s*auto/);
 });
 
 test("current rendererはrefresh時に旧Chartを破棄しmetric切替でauthorityを変更しない", () => {

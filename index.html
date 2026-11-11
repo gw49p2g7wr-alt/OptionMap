@@ -1058,10 +1058,15 @@
                     <div id="historicalQriChartLegend"
                         class="strike-bar-chart-legend" aria-label="グラフの凡例" hidden></div>
                     <div id="historicalQriChartContainer"
-                        class="historical-qri-chart-container strike-bar-chart-scroll" hidden>
-                        <div id="historicalQriChartPlot" class="strike-bar-chart-plot">
-                            <canvas id="historicalQriOpenInterestChart"></canvas>
+                        class="historical-qri-chart-container" hidden>
+                        <div id="historicalQriChartScroll"
+                            class="strike-bar-chart-scroll-region">
+                            <div id="historicalQriChartPlot" class="strike-bar-chart-plot">
+                                <canvas id="historicalQriOpenInterestChart"></canvas>
+                            </div>
                         </div>
+                        <div id="historicalQriChartAxis"
+                            class="strike-bar-chart-sticky-axis" aria-hidden="true" hidden></div>
                     </div>
                     <section id="timeTravelOiComparison" class="time-travel-comparison-block" aria-label="前回保存観測との比較">
                         <p id="timeTravelComparison"></p>
@@ -1162,11 +1167,16 @@
             <div id="combinedPriceChartLegend"
                 class="strike-bar-chart-legend" aria-label="グラフの凡例" hidden></div>
             <div id="combinedPriceChartContainer"
-                class="chart-container combined-chart-container strike-bar-chart-scroll">
-                <div id="combinedPriceChartPlot" class="strike-bar-chart-plot">
-                    <canvas id="combinedPriceChart" tabindex="0"
-                        aria-label="CALL左・PUT右の建玉残グラフ。建玉の棒を選ぶとWall Historyを表示します"></canvas>
+                class="chart-container combined-chart-container">
+                <div id="combinedPriceChartScroll"
+                    class="strike-bar-chart-scroll-region">
+                    <div id="combinedPriceChartPlot" class="strike-bar-chart-plot">
+                        <canvas id="combinedPriceChart" tabindex="0"
+                            aria-label="CALL左・PUT右の建玉残グラフ。建玉の棒を選ぶとWall Historyを表示します"></canvas>
+                    </div>
                 </div>
+                <div id="combinedPriceChartAxis"
+                    class="strike-bar-chart-sticky-axis" aria-hidden="true" hidden></div>
             </div>
 
             <div id="wallHistoryDrawerBackdrop" class="wall-history-drawer-backdrop" hidden></div>

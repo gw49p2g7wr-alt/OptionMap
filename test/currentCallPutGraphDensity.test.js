@@ -41,8 +41,9 @@ test("UI2-4 Historical graph still uses the same increased visible range", () =>
 });
 
 test("UI2-5 vertical scrolling remains enabled for Current and Historical", () => {
-    assert.match(style, /\.combined-chart-container\s*\{[^}]*overflow-y:\s*auto/s);
-    assert.match(style, /\.historical-qri-chart-container\.strike-bar-chart-scroll\s*\{[^}]*overflow-y:\s*auto/s);
+    assert.match(style, /\.strike-bar-chart-scroll-region\s*\{[^}]*overflow-y:\s*auto/s);
+    assert.match(currentRenderer, /combinedPriceChartScroll/);
+    assert.match(historyRenderer, /historicalQriChartScroll/);
 });
 
 test("UI2-6 total scroll extent is reduced from the 24px baseline", () => {
