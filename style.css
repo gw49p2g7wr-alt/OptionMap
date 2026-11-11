@@ -192,11 +192,14 @@ body{
     color: #46515f;
 }
 
+.historical-qri-chart-container,
+.combined-chart-container {
+    height: min(532px, 70vh);
+}
+
 .historical-qri-chart-container {
     position: relative;
     width: 100%;
-    height: 400px;
-    min-height: 360px;
     overflow-x: auto;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1278,7 +1281,6 @@ canvas {
 }
 
 .combined-chart-container {
-    height: 400px;
     width: 100%;
     overflow-x: auto;
     overflow-y: auto;
