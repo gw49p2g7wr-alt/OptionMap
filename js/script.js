@@ -3686,7 +3686,7 @@ const combinedWallRankPlugin = {
                 const y = bar.y;
 
                 ctx.beginPath();
-                ctx.arc(x, y, 9, 0, Math.PI * 2);
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
 
                 ctx.fillStyle =
                     datasetIndex === 0
@@ -3696,7 +3696,7 @@ const combinedWallRankPlugin = {
                 ctx.fill();
 
                 ctx.fillStyle = "#ffffff";
-                ctx.font = "bold 11px sans-serif";
+                ctx.font = "bold 10px sans-serif";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
 

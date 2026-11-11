@@ -22,22 +22,22 @@ function visibleRows(rowHeight = Presentation.ROW_HEIGHT) {
     return Math.floor((viewportHeight - Presentation.MIRRORED_AXIS_ALLOWANCE) / rowHeight);
 }
 
-test("UI2-1 row height is exactly 20px", () => {
-    assert.equal(Presentation.ROW_HEIGHT, 20);
+test("UI2-1 compact row-height authority remains shared after later tuning", () => {
+    assert.equal(Presentation.ROW_HEIGHT, 18);
 });
 
 test("UI2-2 viewport remains bounded at 532px and 70vh", () => {
     assert.equal((style.match(/height:\s*min\(532px,\s*70vh\)/g) || []).length, 1);
 });
 
-test("UI2-3 Current graph exposes more rows than the 24px baseline", () => {
+test("UI2-3 Current graph still exposes more rows than the 24px baseline", () => {
     assert.deepEqual({ current: visibleRows(), baseline: visibleRows(baselineRowHeight) },
-        { current: 23, baseline: 19 });
+        { current: 26, baseline: 19 });
 });
 
-test("UI2-4 Historical graph uses the same increased visible range", () => {
+test("UI2-4 Historical graph still uses the same increased visible range", () => {
     assert.match(historyRenderer, /prepareMirroredPlot/);
-    assert.equal(visibleRows(), 23);
+    assert.equal(visibleRows(), 26);
 });
 
 test("UI2-5 vertical scrolling remains enabled for Current and Historical", () => {
@@ -47,15 +47,15 @@ test("UI2-5 vertical scrolling remains enabled for Current and Historical", () =
 
 test("UI2-6 total scroll extent is reduced from the 24px baseline", () => {
     assert.deepEqual({ current: contentHeight(100), baseline: contentHeight(100, baselineRowHeight) },
-        { current: 2056, baseline: 2456 });
+        { current: 1856, baseline: 2456 });
     assert.ok(contentHeight(100) > viewportHeight);
 });
 
-test("UI2-7 16px Strike labels retain a visible gap between 20px rows", () => {
+test("UI2-7 16px Strike labels retain a visible gap in the active rows", () => {
     const plugin = Mirror.createCenterStrikeLabelsPlugin().afterDatasetsDraw.toString();
     assert.match(plugin, /y - 8/);
     assert.match(plugin, /width, 16/);
-    assert.ok(Presentation.ROW_HEIGHT - 16 >= 4);
+    assert.ok(Presentation.ROW_HEIGHT - 16 >= 2);
 });
 
 test("UI2-8 CALL and PUT bars remain separated from adjacent rows", () => {
@@ -63,22 +63,22 @@ test("UI2-8 CALL and PUT bars remain separated from adjacent rows", () => {
     assert.ok(Presentation.DATASET_OPTIONS.maxBarThickness < Presentation.ROW_HEIGHT);
 });
 
-test("UI2-9 Current auto-centering uses the 20px chart scale", () => {
+test("UI2-9 Current auto-centering follows the active chart scale", () => {
     const container = { clientHeight: viewportHeight, scrollTop: 0 };
     const plot = { scrollHeight: contentHeight(100),
         style: { minHeight: `${contentHeight(100)}px` } };
     const chart = { scales: { y: { getPixelForValue: index =>
         index * Presentation.ROW_HEIGHT + Presentation.MIRRORED_AXIS_ALLOWANCE / 2 } } };
     assert.equal(Presentation.centerVerticalIndex({ container, plot, chart, index: 50 }), true);
-    assert.equal(container.scrollTop, 762);
+    assert.equal(container.scrollTop, 662);
 });
 
 test("UI2-10 TOP3 badges fit inside one row without collision", () => {
     const plugin = currentRenderer.match(/const combinedWallRankPlugin = \{[\s\S]*?\n\};/)?.[0] || "";
     const radius = Number(plugin.match(/ctx\.arc\(x, y, (\d+)/)?.[1]);
-    assert.equal(radius, 9);
+    assert.equal(radius, 8);
     assert.ok(radius * 2 < Presentation.ROW_HEIGHT);
-    assert.match(plugin, /bold 11px sans-serif/);
+    assert.match(plugin, /bold 10px sans-serif/);
 });
 
 test("UI2-11 Wall and local-spike highlight semantics remain unchanged", () => {

@@ -7,7 +7,7 @@
 
     const SLOT_WIDTH = 12;
     const AXIS_ALLOWANCE = 80;
-    const ROW_HEIGHT = 20;
+    const ROW_HEIGHT = 18;
     const MIRRORED_AXIS_ALLOWANCE = 56;
     const MIRRORED_MIN_WIDTH = 720;
     const DATASET_OPTIONS = Object.freeze({
