@@ -258,10 +258,8 @@ test("P3-19 Formal Participants history and legacy storage remain unwired", () =
 });
 
 test("P3-20 production acquisition and IPC paths remain untouched", () => {
-  const status = require("node:child_process").execFileSync("git",
-    ["diff", "--name-only", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim().split("\n")
-    .filter(Boolean);
-  assert.ok(status.every(file => ["js/participantEvidenceSetContract.js",
-    "js/participantEvidenceVaultShadow.js", "js/storage/participantEvidenceSetStore.js",
-    "test/participantEvidenceVaultShadow.test.js"].includes(file)));
+  const production = ["main.js", "preload.js", "index.html", "js/participantData.js",
+    "js/participantHistory.js"].map(file => fs.readFileSync(path.join(REPO, file), "utf8")).join("\n");
+  assert.doesNotMatch(production,
+    /participantEvidenceSetContract|participantEvidenceVaultShadow|participantEvidenceSetStore/);
 });

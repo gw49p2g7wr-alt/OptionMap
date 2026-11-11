@@ -32,7 +32,26 @@
         new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
     const timestamp = value => typeof value === "string" && Number.isFinite(Date.parse(value));
     const text = value => typeof value === "string" && value.length > 0;
+    const digest = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
     const entryKeyFor = sourceDate => `participant|${sourceDate}`;
+    const EVIDENCE_BINDING_VERSION = "participants-formal-evidence-binding-v1";
+    const EVIDENCE_FIELDS = Object.freeze(["contractVersion", "state", "evidenceSetId",
+        "evidenceSetHash", "sourceFamily", "sourceId", "sourceDate", "runId",
+        "semanticVersionKey", "semanticSignature", "boundAt", "parserLineage",
+        "authorityKeyId", "bindingHash", "authoritySignature"]);
+    function validateSourceEvidence(value, revision) {
+        return object(value) && Object.keys(value).length === EVIDENCE_FIELDS.length &&
+            EVIDENCE_FIELDS.every(field => Object.hasOwn(value, field)) &&
+            value.contractVersion === EVIDENCE_BINDING_VERSION && value.state === "available" &&
+            /^participants-evidence-set-v1\|sha256:[0-9a-f]{64}$/.test(value.evidenceSetId || "") &&
+            digest(value.evidenceSetHash) && value.evidenceSetId.endsWith(value.evidenceSetHash) &&
+            value.sourceFamily === "participants" && value.sourceId === "jpx-daily-participant-volume" &&
+            value.sourceDate === revision.sourceDate && /^participants-run-v1\|sha256:[0-9a-f]{64}$/
+                .test(value.runId || "") && value.semanticVersionKey === revision.versionKey &&
+            value.semanticSignature === revision.signature && timestamp(value.boundAt) &&
+            object(value.parserLineage) && text(value.authorityKeyId) &&
+            digest(value.bindingHash) && digest(value.authoritySignature);
+    }
     function validateMetadata(value) {
         return object(value) && value.id === META_KEY && value.archiveSchemaVersion === ARCHIVE_SCHEMA_VERSION &&
             value.dataset === DATASET && value.authorityClass === AUTHORITY_CLASS &&
@@ -52,10 +71,13 @@
                 `${value.entryKey}|${value.versionKey}` || !/^[0-9a-f]{64}$/.test(value.signature || "") ||
             value.contentSignature !== value.signature ||
             value.signatureAlgorithm !== "sha256" || !timestamp(value.confirmedAt) ||
-            !["active", "replaced"].includes(value.revisionState) || !object(value.completeSet)) return false;
+            !["active", "replaced"].includes(value.revisionState) || !object(value.completeSet) ||
+            Object.hasOwn(value, "sourceEvidence") &&
+                !validateSourceEvidence(value.sourceEvidence, value)) return false;
         return value.revisionState === "active" ? value.replacedAt === null : timestamp(value.replacedAt);
     }
     return Object.freeze({ DATABASE_NAME, DATABASE_VERSION, ARCHIVE_SCHEMA_VERSION, DATASET,
         AUTHORITY_CLASS, RETENTION_POLICY, META_STORE, ENTRY_STORE, REVISION_STORE, META_KEY,
-        STORE_DEFINITIONS, entryKeyFor, validateMetadata, validateEntry, validateRevision });
+        STORE_DEFINITIONS, EVIDENCE_BINDING_VERSION, EVIDENCE_FIELDS, entryKeyFor,
+        validateSourceEvidence, validateMetadata, validateEntry, validateRevision });
 });
