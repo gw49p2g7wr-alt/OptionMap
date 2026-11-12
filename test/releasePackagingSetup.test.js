@@ -29,6 +29,17 @@ test("private beta package metadata preserves application identity", () => {
   assert.doesNotMatch(html, /OptionMap v1\.0(?:<|\s)/);
 });
 
+test("main fixes canonical Electron identity before profile-dependent initialization", () => {
+  const identity = 'require("electron").app.setName("OptionMap");';
+  assert.equal(main.match(/\.app\.setName\("OptionMap"\)/g)?.length, 1);
+  assert.equal(main.indexOf(identity), 0);
+  assert.ok(main.indexOf(identity) < main.indexOf("const auditCoordinator"));
+  assert.ok(main.indexOf(identity) < main.indexOf('app.getPath("userData")'));
+  assert.ok(main.indexOf(identity) < main.indexOf("app.whenReady()"));
+  assert.equal(packageJson.build.productName, "OptionMap");
+  assert.match(main, /title:\s*"OptionMap"/);
+});
+
 test("RC dependencies pin Electron patch and exclude unused OpenAI", () => {
   assert.equal(packageJson.devDependencies.electron, "42.5.1");
   assert.equal(packageLock.packages["node_modules/electron"].version, "42.5.1");

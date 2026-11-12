@@ -1,3 +1,4 @@
+require("electron").app.setName("OptionMap");
 const auditCoordinator = require("./js/marketCalendarHistory/readOnlyAuditCoordinator.js");
 const auditArguments = auditCoordinator.classifyArguments(process.argv);
 auditCoordinator.configureDevelopmentProfile();

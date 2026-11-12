@@ -18,7 +18,8 @@ async function bootstrap({ readFailure = false } = {}) {
   let options;
   const f = await F.setup({ store, readFormal: readFailure ? async () => ({ status: "unavailable", reason: "readonly_failed" }) : undefined,
     compose: config => { options = config; return Runtime.create(config); } });
-  const handlers = new Map(), windows = [], audit = { productionAccess: 0, network: 0, factory: 0 };
+  const handlers = new Map(), windows = [], audit = { productionAccess: 0, network: 0,
+    factory: 0, appName: null };
   class Window {
     constructor() { this.webContents = { on() {}, setWindowOpenHandler() {} }; windows.push(this); }
     on() {} loadFile() {}
@@ -26,7 +27,8 @@ async function bootstrap({ readFailure = false } = {}) {
   }
   let instance;
   const modules = {
-    electron: { app: { requestSingleInstanceLock: () => true, on() {}, whenReady: () => ({ then: f => f() }),
+    electron: { app: { setName(name) { assert.equal(audit.appName, null); audit.appName = name; },
+      requestSingleInstanceLock: () => true, on() {}, whenReady: () => ({ then: f => f() }),
       getPath() { audit.productionAccess++; throw Error("production_path_forbidden"); } }, BrowserWindow: Window, ipcMain: { handle: (k, v) => handlers.set(k, v) },
       net: { fetch() { audit.network++; throw Error("external_network_forbidden"); } } },
     "./js/marketCalendarHistory/readOnlyAuditCoordinator.js": { classifyArguments: () => "normal", configureDevelopmentProfile() {} },
@@ -56,6 +58,7 @@ async function bootstrap({ readFailure = false } = {}) {
       if (["node:path", "node:crypto", "node:url"].includes(id)) return require(id);
       if (id === "node:fs/promises") return {}; throw Error("unexpected_main_dependency:" + id); }
   });
+  assert.equal(audit.appName, "OptionMap");
   let bridge;
   vm.runInNewContext(fs.readFileSync(path.join(root, "preload.js"), "utf8"), { require: id => {
     if (id === "electron") return { contextBridge: { exposeInMainWorld: (_, api) => { bridge = api; } },
