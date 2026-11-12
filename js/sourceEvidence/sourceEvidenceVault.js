@@ -272,6 +272,28 @@ function createVault({ profileRoot, targetEnvironment, crashAt }) {
     }
   }
 
+  function verifyContentMetadata(sha256) {
+    contentAddressParts(sha256);
+    try {
+      if (!structure(false)) return status("missing", { sha256 });
+      const rawPath = objectFile(sha256), metaPath = metadataFile(sha256),
+        rawExists = rawPath && exists(rawPath), metaExists = metaPath && exists(metaPath);
+      if (!rawExists && !metaExists) return status("missing", { sha256 });
+      if (!rawExists || !metaExists) return status("metadata_mismatch", { sha256 });
+      const metadata = parseJson(metaPath), metadataStatus = validateContentMetadata(metadata);
+      if (metadataStatus !== "valid") return status(metadataStatus, { sha256 });
+      if (metadata.contentObject.sha256 !== sha256) return status("metadata_mismatch", { sha256 });
+      const rawStat = secureStat(rawPath);
+      if (rawStat.size !== metadata.contentObject.byteLength)
+        return status("length_mismatch", { sha256 });
+      return status("valid", { sha256, metadata: freeze(clone(metadata)),
+        verificationScope: "metadata_and_file_size" });
+    } catch (error) {
+      if (error.message === "vault_path_unsafe") return status("path_unsafe", { sha256 });
+      throw error;
+    }
+  }
+
   function verifyOccurrence(occurrenceId) {
     occurrenceDigest(occurrenceId);
     try {
@@ -291,6 +313,30 @@ function createVault({ profileRoot, targetEnvironment, crashAt }) {
     } catch (error) {
       if (error.message === "vault_path_unsafe") return status("path_unsafe", { occurrenceId });
       if (error.message === "vault_metadata_invalid") return status("metadata_mismatch", { occurrenceId });
+      throw error;
+    }
+  }
+
+  function verifyOccurrenceMetadata(occurrenceId) {
+    occurrenceDigest(occurrenceId);
+    try {
+      if (!structure(false)) return status("missing", { occurrenceId });
+      const file = occurrenceFile(occurrenceId), record = parseJson(file);
+      if (record === null) return status("missing", { occurrenceId });
+      const recordStatus = validateOccurrenceRecord(record);
+      if (recordStatus !== "valid") return status(recordStatus, { occurrenceId });
+      if (record.occurrence.occurrenceId !== occurrenceId)
+        return status("metadata_mismatch", { occurrenceId });
+      const content = verifyContentMetadata(record.occurrence.contentSha256);
+      if (content.status !== "valid") return status(content.status, { occurrenceId });
+      if (content.metadata.contentObject.byteLength !== record.occurrence.byteLength)
+        return status("metadata_mismatch", { occurrenceId });
+      return status("valid", { occurrenceId, record: freeze(clone(record)),
+        contentMetadata: content.metadata, verificationScope: "metadata_and_file_size" });
+    } catch (error) {
+      if (error.message === "vault_path_unsafe") return status("path_unsafe", { occurrenceId });
+      if (error.message === "vault_metadata_invalid")
+        return status("metadata_mismatch", { occurrenceId });
       throw error;
     }
   }
@@ -456,7 +502,8 @@ function createVault({ profileRoot, targetEnvironment, crashAt }) {
 
   return freeze({ vaultSchemaVersion: VAULT_SCHEMA_VERSION, storeAcceptedEvidence,
     readContentMetadata, readRawBytes, readOccurrence, occurrencesByContentSha256,
-    verifyContent, verifyOccurrence, verifyEvidence: verifyOccurrence,
+    verifyContent, verifyContentMetadata, verifyOccurrence, verifyOccurrenceMetadata,
+    verifyEvidence: verifyOccurrence,
     listOrphanContentObjects, vaultStatus });
 }
 

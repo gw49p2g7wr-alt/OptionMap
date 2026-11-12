@@ -45,6 +45,8 @@ test("range and revision reads are lazy and cursor based", async () => {
         afterSourceDate: first.nextCursor }); assert.deepEqual(second.entries.map(item => item.sourceDate),
         ["2026-09-14"]);
     assert.equal((await store.readRevision(rows[0].revision.revisionKey)).status, "available");
+    assert.deepEqual((await store.readEntryRevisions("2026-09-10")).revisions.map(
+        revision => revision.revisionKey), [rows[0].revision.revisionKey]);
     assert.equal((await store.readLatest()).entry.sourceDate, "2026-09-14"); store.closeArchive();
 });
 test("integrity and capacity diagnostics are explicit read operations", async () => {

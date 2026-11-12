@@ -53,6 +53,19 @@
             const value = await requestValue(transaction.objectStore(schema.REVISION_STORE).get(revisionKey));
             await done; return { status: !value ? "unavailable" : schema.validateRevision(value) ?
                 "available" : "corrupted", revision: clone(value || null) }; } catch (error) { return failure(error); } }
+        async function readEntryRevisions(sourceDate) { try {
+            if (!/^20\d{2}-\d{2}-\d{2}$/.test(sourceDate || ""))
+                return { status: "invalid", reason: "source_date_invalid", revisions: [] };
+            const db = await openArchive(), transaction = db.transaction(schema.REVISION_STORE, "readonly"),
+                done = transactionDone(transaction), values = await requestValue(transaction
+                    .objectStore(schema.REVISION_STORE).index("byEntryKey")
+                    .getAll(schema.entryKeyFor(sourceDate))); await done;
+            const revisions = values.map(clone).sort((left, right) =>
+                String(left.confirmedAt).localeCompare(String(right.confirmedAt)) ||
+                String(left.revisionKey).localeCompare(String(right.revisionKey)));
+            return { status: revisions.length === 0 ? "empty" :
+                revisions.every(schema.validateRevision) ? "available" : "corrupted", revisions };
+        } catch (error) { return failure(error); } }
         async function readActiveRevision(sourceDate) { try { const db = await openArchive(), entryKey =
             schema.entryKeyFor(sourceDate), first = db.transaction(schema.ENTRY_STORE, "readonly"),
             firstDone = transactionDone(first), entry = await requestValue(
@@ -132,7 +145,8 @@
                 originUsageBytes: estimate?.usage ?? null, originQuotaBytes: estimate?.quota ?? null,
                 measurement: "serialized_payload_estimate_not_leveldb_disk_size" };
         } catch (error) { return failure(error); } }
-        return Object.freeze({ openArchive, closeArchive, readMetadata, readLatest, readRange, readRevision,
+        return Object.freeze({ openArchive, closeArchive, readMetadata, readLatest, readRange,
+            readRevision, readEntryRevisions,
             readActiveRevision, readIntegrity, readCapacityDiagnostic });
     }
     return Object.freeze({ createParticipantFormalArchiveStore });

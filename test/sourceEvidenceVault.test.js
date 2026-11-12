@@ -71,6 +71,17 @@ test("R2-1 first exact text object and occurrence survive a fresh restart", t =>
   assert.equal(restarted.vaultStatus().status, "active");
 });
 
+test("metadata-only verification validates occurrence lineage without returning raw bytes", t => {
+  const { vault } = fixture(t), input = bundle();
+  vault.storeAcceptedEvidence(input);
+  const contentStatus = vault.verifyContentMetadata(input.contentObject.sha256),
+    occurrenceStatus = vault.verifyOccurrenceMetadata(input.occurrence.occurrenceId);
+  assert.deepEqual([contentStatus.status, contentStatus.verificationScope,
+    occurrenceStatus.status, occurrenceStatus.verificationScope],
+  ["valid", "metadata_and_file_size", "valid", "metadata_and_file_size"]);
+  assert.equal(JSON.stringify({ contentStatus, occurrenceStatus }).includes("exact\r\nbytes"), false);
+});
+
 test("R2-2 exact binary object survives restart without decoding", t => {
   const { root, vault } = fixture(t), binary = Buffer.from([0x50, 0x4b, 0, 1, 255]),
     sourcePolicy = policy({ allowedMediaTypes:
