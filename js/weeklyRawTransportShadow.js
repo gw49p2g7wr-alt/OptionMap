@@ -384,6 +384,19 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
       bodyTimeoutMs < 1 || bodyTimeoutMs > BODY_TIMEOUT_MS)
     throw new TypeError("weekly_transport_configuration_invalid");
 
+  async function observeRaw(observer, event) {
+    if (observer === null) return;
+    const fetched = event.fetched;
+    await observer(freeze({ kind: event.kind, intentId: event.intent.intentId,
+      requestId: event.requestId, listingYear: event.listingYear,
+      manifest: event.manifest ? clone(event.manifest) : null,
+      acquisition: event.acquisition ? clone(event.acquisition) : null,
+      transport: { finalUrl: fetched.finalUrl, redirects: clone(fetched.redirects),
+        status: fetched.status, mime: fetched.mime, bytes: new Uint8Array(fetched.bytes),
+        byteLength: fetched.byteLength, rawSha256: fetched.rawSha256,
+        fetchedAt: fetched.fetchedAt } }));
+  }
+
   async function fetchRoute(route, type, role = null) {
     const listing = type === "listing";
     const routeValid = listing ? Authority.validateListingRoute(route) :
@@ -515,7 +528,7 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
     return freeze(result);
   }
 
-  async function acquireDomain(manifest, acquisition, listedUrl) {
+  async function acquireDomain(manifest, acquisition, listedUrl, observer, intent, requestId) {
     const rolePrefix = acquisition.role === "weekly_futures_workbook" ? "futures" : "options";
     if (!Authority.validateManifest(manifest, authority) ||
         !Authority.validateDomainAcquisition(acquisition, manifest.runId) ||
@@ -524,6 +537,8 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
         sourceDate: acquisition.sourceDate });
     const fetched = await fetchRoute(acquisition.route, "workbook", acquisition.role);
     if (!fetched.success) return fetched;
+    await observeRaw(observer, { kind: acquisition.role, intent, requestId,
+      listingYear: null, manifest, acquisition, fetched });
     if (!isXlsx(fetched.bytes)) return failure("workbook_signature_rejected",
       { stage: "signature", role: acquisition.role, sourceDate: acquisition.sourceDate,
         httpStatus: fetched.status, redirectCount: fetched.redirects.length });
@@ -535,7 +550,7 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
     return buildWorkbookResult(fetched, manifest, acquisition, preview);
   }
 
-  async function acquireIntent(input) {
+  async function acquireIntentInternal(input, observer) {
     if (!exact(input, ["intent", "requestId"]) ||
         !Authority.validateAcquisitionIntent(input.intent))
       return freeze({ success: false, contractVersion: SHADOW_RESULT_VERSION,
@@ -553,6 +568,9 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
       if (!fetched.success) return freeze({ success: false,
         contractVersion: SHADOW_RESULT_VERSION, status: "failed", reason: fetched.reason,
         runs: [], diagnostics: fetched.diagnostics });
+      await observeRaw(observer, { kind: "official_listing", intent: input.intent,
+        requestId: input.requestId, listingYear: year, manifest: null,
+        acquisition: null, fetched });
       let parsed;
       try { parsed = parseListingBytes(fetched.bytes, year); }
       catch (_error) { return freeze({ success: false,
@@ -585,8 +603,10 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
       }
       const listingResult = buildListingResult(source.fetched, manifest, discovery);
       const [futures, options] = await Promise.all([
-        acquireDomain(manifest, manifest.futuresDescriptor, entry.futuresUrl),
-        acquireDomain(manifest, manifest.optionsDescriptor, entry.optionsUrl)
+        acquireDomain(manifest, manifest.futuresDescriptor, entry.futuresUrl,
+          observer, input.intent, input.requestId),
+        acquireDomain(manifest, manifest.optionsDescriptor, entry.optionsUrl,
+          observer, input.intent, input.requestId)
       ]);
       runs.push(freeze({ sourceDate: selectedDate, discovery, manifest, listing: listingResult,
         futures, options, status: futures.success && options.success ? "complete" :
@@ -600,7 +620,14 @@ function createWeeklyRawTransportShadow({ fetchImpl = globalThis.fetch, authorit
       runs, diagnostics: [] });
   }
 
-  return freeze({ acquireIntent });
+  const acquireIntent = input => acquireIntentInternal(input, null);
+  function acquireIntentForEvidence(input, observer) {
+    if (typeof observer !== "function")
+      throw new TypeError("weekly_evidence_observer_invalid");
+    return acquireIntentInternal(input, observer);
+  }
+
+  return freeze({ acquireIntent, acquireIntentForEvidence });
 }
 
 module.exports = freeze({
