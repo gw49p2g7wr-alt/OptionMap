@@ -7,6 +7,7 @@ const ParticipantData = require("./participantData.js");
 
 const TRANSPORT_RESULT_VERSION = "participants-raw-transport-result-v1";
 const TRANSPORT_SET_VERSION = "participants-raw-transport-set-v1";
+const RAW_RESULT_VERSION = "participants-raw-acquisition-result-v1";
 const MAX_REDIRECTS = 3;
 const MAX_BYTES = 2_000_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -43,6 +44,68 @@ function freeze(value) {
 }
 
 const rawSha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+
+const RAW_RESULT_FIELDS = Object.freeze([
+  "success", "contractVersion", "rawResultId", "manifestId", "runId", "requestId",
+  "acquisitionId", "routeIdentity", "sourceFamily", "sourceId", "sourceDate", "role",
+  "initialUrl", "finalUrl", "redirects", "status", "mime", "encoding", "byteLength",
+  "rawSha256", "fetchedAt", "authorityKeyId", "integritySha256", "authoritySignature",
+  "bytes", "diagnostics"
+]);
+
+function rawResultMaterial(value) {
+  return Object.fromEntries(RAW_RESULT_FIELDS.filter(field =>
+    !["rawResultId", "integritySha256", "authoritySignature", "bytes"].includes(field))
+    .map(field => [field, value[field]]));
+}
+
+function validateRawResult(value, manifest, acquisition, authority) {
+  if (!exact(value, RAW_RESULT_FIELDS) || value.success !== true ||
+      value.contractVersion !== RAW_RESULT_VERSION ||
+      !P1.validateAcquisitionManifest(manifest, authority) ||
+      !P1.validateWorkbookAcquisition(acquisition, manifest, authority) ||
+      !identity(value.rawResultId, RAW_RESULT_VERSION) ||
+      value.manifestId !== manifest.manifestId || value.runId !== manifest.runId ||
+      value.requestId !== manifest.requestId || value.acquisitionId !== acquisition.acquisitionId ||
+      value.routeIdentity !== acquisition.routeIdentity || value.sourceFamily !== P1.SOURCE_FAMILY ||
+      value.sourceId !== P1.SOURCE_ID || value.sourceDate !== acquisition.sourceDate ||
+      value.role !== acquisition.role || value.initialUrl !== acquisition.canonicalUrl ||
+      value.finalUrl !== acquisition.canonicalUrl || !Array.isArray(value.redirects) ||
+      value.redirects.length > MAX_REDIRECTS || value.redirects.some(redirect =>
+        !exact(redirect, ["status", "from", "to"]) || redirect.status < 300 ||
+        redirect.status >= 400 || redirect.from !== acquisition.canonicalUrl ||
+        redirect.to !== acquisition.canonicalUrl) || value.status !== 200 || value.mime !== MIME ||
+      value.encoding !== null || !(value.bytes instanceof Uint8Array) ||
+      value.byteLength !== value.bytes.byteLength || value.byteLength <= 0 ||
+      value.byteLength > MAX_BYTES || !digest(value.rawSha256) ||
+      value.rawSha256 !== rawSha256(value.bytes) || !isoTime(value.fetchedAt) ||
+      value.authorityKeyId !== authority.keyId || !digest(value.integritySha256) ||
+      !digest(value.authoritySignature) || !Array.isArray(value.diagnostics) ||
+      value.diagnostics.length !== 0) return false;
+  const integrity = P1.sha256(rawResultMaterial(value));
+  return value.integritySha256 === integrity &&
+    value.rawResultId === `${RAW_RESULT_VERSION}|sha256:${integrity}` &&
+    authority.verify("participants_raw_acquisition_result", integrity, value.authoritySignature);
+}
+
+function buildRawResult({ manifest, acquisition, route, finalUrl, redirects, bytes,
+    acquiredByteLength, acquiredRawSha256, fetchedAt }, authority) {
+  const result = { success: true, contractVersion: RAW_RESULT_VERSION, rawResultId: "",
+    manifestId: manifest.manifestId, runId: manifest.runId, requestId: manifest.requestId,
+    acquisitionId: acquisition.acquisitionId, routeIdentity: route.routeIdentity,
+    sourceFamily: P1.SOURCE_FAMILY, sourceId: P1.SOURCE_ID, sourceDate: route.sourceDate,
+    role: route.role, initialUrl: route.canonicalUrl, finalUrl, redirects, status: 200,
+    mime: MIME, encoding: null, byteLength: acquiredByteLength, rawSha256: acquiredRawSha256,
+    fetchedAt, authorityKeyId: authority.keyId, integritySha256: "", authoritySignature: "",
+    bytes: new Uint8Array(bytes), diagnostics: [] };
+  result.integritySha256 = P1.sha256(rawResultMaterial(result));
+  result.rawResultId = `${RAW_RESULT_VERSION}|sha256:${result.integritySha256}`;
+  result.authoritySignature = authority.sign("participants_raw_acquisition_result",
+    result.integritySha256);
+  if (!validateRawResult(result, manifest, acquisition, authority))
+    throw new TypeError("participants_raw_result_invalid");
+  return freeze(result);
+}
 
 function failure(reason, details = {}) {
   return freeze({ success: false, reason, transportResult: null,
@@ -233,7 +296,7 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
       !Number.isInteger(bodyTimeoutMs) || bodyTimeoutMs < 1 || bodyTimeoutMs > BODY_TIMEOUT_MS)
     throw new TypeError("participants_transport_configuration_invalid");
 
-  async function fetchRoute(route) {
+  async function fetchRawRoute(route) {
     if (!P1.validateRouteDescriptor(route)) return failure("route_rejected",
       { stage: "route", role: route?.role, sourceDate: route?.sourceDate });
     const redirects = [];
@@ -280,16 +343,20 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
         sourceDate: route.sourceDate, httpStatus: response.status,
         redirectCount: redirects.length }); }
       const acquiredByteLength = bytes.byteLength, acquiredRawSha256 = rawSha256(bytes);
-      let parsed;
-      try { parsed = parseWorkbook(bytes, route.sourceDate); }
-      catch (_error) { return failure("workbook_parse_rejected", { stage: "parser",
-        role: route.role, sourceDate: route.sourceDate, httpStatus: response.status,
-        redirectCount: redirects.length }); }
       return { success: true, route, response, finalUrl: currentUrl, redirects, bytes,
-        acquiredByteLength, acquiredRawSha256, parsed };
+        acquiredByteLength, acquiredRawSha256, fetchedAt: now().toISOString() };
     }
     return failure("redirect_rejected", { stage: "redirect", role: route.role,
       sourceDate: route.sourceDate, redirectCount: redirects.length });
+  }
+
+  async function fetchRoute(route) {
+    const fetched = await fetchRawRoute(route);
+    if (!fetched.success) return fetched;
+    try { return { ...fetched, parsed: parseWorkbook(fetched.bytes, route.sourceDate) }; }
+    catch (_error) { return failure("workbook_parse_rejected", { stage: "parser",
+      role: route.role, sourceDate: route.sourceDate, httpStatus: fetched.response.status,
+      redirectCount: fetched.redirects.length }); }
   }
 
   async function resolveDiscovery({ intent, indexFacts = null, probeStartDate = null,
@@ -342,27 +409,62 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
     } catch (_error) { return failure("route_rejected", { stage: "manifest" }); }
   }
 
-  async function acquireManifest(manifest) {
+  async function acquireRawManifest(manifest) {
     if (!P1.validateAcquisitionManifest(manifest, authority))
-      return failure("route_rejected", { stage: "manifest" });
+      return { success: false, reason: "route_rejected", results: [], diagnostics: [] };
     const acquisitions = P1.createWorkbookAcquisitions(manifest, authority);
     const raw = await Promise.all(acquisitions.map(async acquisition => {
       const route = routeFor(manifest, acquisition);
       if (!route || !P1.validateRouteDescriptor(route)) return failure("route_rejected",
         { stage: "route", role: acquisition.role, sourceDate: acquisition.sourceDate });
-      const fetched = await fetchRoute(route);
+      const fetched = await fetchRawRoute(route);
       if (!fetched.success) return fetched;
-      return buildTransportResult({ manifest, acquisition, route, response: fetched.response,
+      return buildRawResult({ manifest, acquisition, route,
         finalUrl: fetched.finalUrl, redirects: fetched.redirects, bytes: fetched.bytes,
         acquiredByteLength: fetched.acquiredByteLength,
-        acquiredRawSha256: fetched.acquiredRawSha256, parsed: fetched.parsed, now }, authority);
+        acquiredRawSha256: fetched.acquiredRawSha256, fetchedAt: fetched.fetchedAt }, authority);
     }));
+    const results = raw.filter((value, index) => value.success === true &&
+      validateRawResult(value, manifest, acquisitions[index], authority));
     const failed = raw.find(value => value.success !== true);
-    if (failed) return failed;
-    return assembleTransportSet({ manifest, acquisitions, results: raw }, authority);
+    return freeze({ success: !failed && results.length === P1.ROLE_ORDER.length,
+      reason: failed?.reason || (results.length === P1.ROLE_ORDER.length ? null : "incomplete_set"),
+      results, diagnostics: failed?.diagnostics || [] });
   }
 
-  return freeze({ resolveDiscovery, resolveManifest, acquireManifest });
+  function parseRawManifest(manifest, rawBatch) {
+    if (!P1.validateAcquisitionManifest(manifest, authority) || !object(rawBatch) ||
+        rawBatch.success !== true || !Array.isArray(rawBatch.results) ||
+        rawBatch.results.length !== P1.ROLE_ORDER.length)
+      return failure("incomplete_set", { stage: "assembly", sourceDate: manifest?.sourceDate });
+    const acquisitions = P1.createWorkbookAcquisitions(manifest, authority), results = [];
+    for (const [index, rawResult] of rawBatch.results.entries()) {
+      const acquisition = acquisitions[index], route = routeFor(manifest, acquisition);
+      if (!route || !validateRawResult(rawResult, manifest, acquisition, authority))
+        return failure("mixed_run", { stage: "assembly", sourceDate: manifest.sourceDate });
+      let parsed;
+      try { parsed = parseWorkbook(rawResult.bytes, route.sourceDate); }
+      catch (_error) { return failure("workbook_parse_rejected", { stage: "parser",
+        role: route.role, sourceDate: route.sourceDate, httpStatus: rawResult.status,
+        redirectCount: rawResult.redirects.length }); }
+      results.push(buildTransportResult({ manifest, acquisition, route,
+        response: { status: rawResult.status }, finalUrl: rawResult.finalUrl,
+        redirects: rawResult.redirects, bytes: rawResult.bytes,
+        acquiredByteLength: rawResult.byteLength, acquiredRawSha256: rawResult.rawSha256,
+        parsed, now: () => new Date(rawResult.fetchedAt) }, authority));
+    }
+    return assembleTransportSet({ manifest, acquisitions, results }, authority);
+  }
+
+  async function acquireManifest(manifest) {
+    const rawBatch = await acquireRawManifest(manifest);
+    if (!rawBatch.success) return failure(rawBatch.reason || "incomplete_set",
+      rawBatch.diagnostics?.[0] || { stage: "transport", sourceDate: manifest?.sourceDate });
+    return parseRawManifest(manifest, rawBatch);
+  }
+
+  return freeze({ resolveDiscovery, resolveManifest, acquireRawManifest, parseRawManifest,
+    acquireManifest });
 }
 
 const SET_FIELDS = Object.freeze([
@@ -432,7 +534,8 @@ function assembleTransportSet({ manifest, acquisitions, results } = {}, authorit
   return freeze(set);
 }
 
-module.exports = freeze({ TRANSPORT_RESULT_VERSION, TRANSPORT_SET_VERSION, MAX_REDIRECTS,
+module.exports = freeze({ TRANSPORT_RESULT_VERSION, TRANSPORT_SET_VERSION, RAW_RESULT_VERSION,
+  RAW_RESULT_FIELDS, validateRawResult, MAX_REDIRECTS,
   MAX_BYTES, REQUEST_TIMEOUT_MS, BODY_TIMEOUT_MS, MIME, REQUEST_POLICY, rawSha256,
   parseWorkbook, validateTransportResult, validateTransportSet, assembleTransportSet,
   createParticipantsRawTransportShadow });

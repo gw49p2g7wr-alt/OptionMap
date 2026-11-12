@@ -154,8 +154,17 @@ test("browser Node-off modules compose without Node globals; API input contract 
   assert.equal((await instance.restore()).state, "idle"); assert.equal(instance.diagnostics().successfulCreates, 0);
   let api, calls = 0;
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8"), {
-    require: () => ({ contextBridge: { exposeInMainWorld: (_, value) => { api = value; } },
-      ipcRenderer: { invoke: async () => { calls++; return {}; } } }) });
+    require: id => {
+      if (id === "electron") return { contextBridge: { exposeInMainWorld: (_, value) => { api = value; } },
+        ipcRenderer: { invoke: async () => { calls++; return {}; }, on() {}, send() {} } };
+      if (id === "./js/participantFormalMainBridge.js") return {
+        COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
+      if (id === "./js/participantFormalProductionWriter.js") return {
+        createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};
+      if (id === "./js/formalArchive/participantFormalArchiveSchema.js") return {
+        DATABASE_NAME:"OptionMapParticipantFormalArchive"};
+      throw new Error(`unexpected_preload_dependency:${id}`);
+    } });
   assert.equal(Object.keys(api).length, 15);
   for (const request of [{ trigger: "scheduler" }, { databaseName: "other" }, { runtimeStates: [] },
     { sessionStates: null }, { trigger: "startup", url: "https://bad.invalid" }])

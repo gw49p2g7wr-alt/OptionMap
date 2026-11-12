@@ -70,11 +70,22 @@ test("preload keeps Electron authority and the exact immutable fifteen-method su
     const calls = [];
     const sandbox = {
         require(id) {
-            assert.equal(id, "electron");
-            return {
+            if (id === "electron") return {
                 contextBridge: { exposeInMainWorld: (key, api) => { exposed = { key, api }; } },
-                ipcRenderer: { invoke: (...args) => { calls.push(args); return Promise.resolve(args); } }
+                ipcRenderer: { on() {}, send() {},
+                    invoke: (...args) => { calls.push(args); return Promise.resolve(args); } }
             };
+            if (id.endsWith("participantFormalMainBridge.js")) return {
+                COMMAND_CHANNEL: "optionmap:participants-formal:commit",
+                RESULT_CHANNEL: "optionmap:participants-formal:result"
+            };
+            if (id.endsWith("participantFormalProductionWriter.js")) return {
+                createParticipantFormalProductionWriter: () => ({ commit: async () => ({}) })
+            };
+            if (id.endsWith("participantFormalArchiveSchema.js")) return {
+                DATABASE_NAME: "optionMapFormalArchive"
+            };
+            throw new Error(`unexpected preload require: ${id}`);
         },
         Promise,
         Object
@@ -82,8 +93,8 @@ test("preload keeps Electron authority and the exact immutable fifteen-method su
     vm.runInNewContext(preloadSource, sandbox, { filename: "preload.js" });
     assert.equal(exposed.key, "optionMapBridge");
     assert.deepEqual(Object.keys(exposed.api).sort(), [
-        "acquireQriPage", "checkCalendarSources", "downloadJpxExcel", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "fetchJpxPage", "fetchOpenInterestListing",
-        "fetchParticipantListing", "finalizeQriPage", "getRuntimeMetadata", "readMorningV5Formal", "readOverallV2Trace", "requestCalendarSource",
+        "acquireParticipants", "acquireQriPage", "checkCalendarSources", "downloadJpxExcel", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "fetchJpxPage", "fetchOpenInterestListing",
+        "finalizeQriPage", "getRuntimeMetadata", "readMorningV5Formal", "readOverallV2Trace", "requestCalendarSource",
         "saveCalendarExportJson", "saveFullExportJson"
     ]);
     assert.equal(Object.isFrozen(exposed.api), true);
@@ -198,7 +209,8 @@ test("hidden windows and Security 0C/0D remain isolated and fail-closed", () => 
     assert.match(mainSource, /requireAllowedUrl/);
     assert.match(mainSource, /ipcMain\.handle\("acquire-qri-page"/);
     assert.doesNotMatch(mainSource, /ipcMain\.handle\("fetch-option-page"/);
-    assert.doesNotMatch(preloadSource, /\bfetch\s*\(|localStorage|sessionStorage|indexedDB/);
+    assert.doesNotMatch(preloadSource, /\bfetch\s*\(|localStorage|sessionStorage/);
+    assert.match(preloadSource, /participantFormalProductionWriter/);
 });
 
 test("contract suite itself performs no fetch or storage mutation", () => {

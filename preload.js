@@ -1,8 +1,12 @@
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
+const participantFormalBridge = require("./js/participantFormalMainBridge.js");
+const participantFormalWriterApi = require("./js/participantFormalProductionWriter.js");
+const participantFormalSchema = require("./js/formalArchive/participantFormalArchiveSchema.js");
 // Private preload state: not exposed through the immutable narrow API.
 let pendingStartupReceipt=null;
+let participantFormalWriter=null;
 const startupTicket=typeof window!=="undefined"&&typeof window.addEventListener==="function"
   ? ipcRenderer.invoke("optionmap:mof-startup:claim").catch(()=>null) : Promise.resolve(null);
 if(typeof window!=="undefined"&&typeof window.addEventListener==="function"){
@@ -20,6 +24,42 @@ const INVALID_ARGUMENT_RESPONSE = Object.freeze({
 const validCalendarDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(`${value}T00:00:00.000Z`)) &&
   new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+
+function participantWriter() {
+  if (!participantFormalWriter) participantFormalWriter =
+    participantFormalWriterApi.createParticipantFormalProductionWriter({ indexedDB: window.indexedDB,
+      IDBKeyRange: window.IDBKeyRange, databaseName: participantFormalSchema.DATABASE_NAME });
+  return participantFormalWriter;
+}
+
+ipcRenderer.on(participantFormalBridge.COMMAND_CHANNEL, async (_event, command) => {
+  if (!command || typeof command !== "object" || Array.isArray(command) ||
+      Object.keys(command).sort().join("|") !== "commandId|payload" ||
+      typeof command.commandId !== "string") return;
+  let result;
+  try { result = await participantWriter().commit(command.payload); }
+  catch (_error) { result = { status: "rejected", reason: "archive_write_failed",
+    classification: null, revisionWriteCount: 0, transactionCount: 0, revision: null }; }
+  ipcRenderer.send(participantFormalBridge.RESULT_CHANNEL, { commandId: command.commandId, result });
+});
+
+function invokeParticipantAcquisition(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request))
+    return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  const keys = Object.keys(request).sort().join("|");
+  const latest = keys === "requestKind" && request.requestKind === "latest_available";
+  const explicit = keys === "requestKind|targetDate" &&
+    request.requestKind === "explicit_source_date" && validCalendarDay(request.targetDate);
+  const range = keys === "endDate|requestKind|startDate" &&
+    request.requestKind === "historical_backfill_range" &&
+    validCalendarDay(request.startDate) && validCalendarDay(request.endDate) &&
+    request.startDate <= request.endDate &&
+    (Date.parse(`${request.endDate}T00:00:00.000Z`) -
+      Date.parse(`${request.startDate}T00:00:00.000Z`)) / 86_400_000 <= 366;
+  if (!latest && !explicit && !range) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("acquire-participants", Object.freeze({ ...request }));
+}
 
 function invokeUrlChannel(channel, args) {
   const url = args[0];
@@ -170,12 +210,11 @@ async function invokeCalendarCheck(args) {
 
 contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   acquireQriPage: (...args) => invokeQriAcquisition(args),
+  acquireParticipants: (...args) => invokeParticipantAcquisition(args),
   finalizeQriPage: (...args) => invokeQriFinalization(args),
   fetchJpxPage: (...args) => invokeUrlChannel("fetch-daytrading-page", args),
   fetchOpenInterestListing: (...args) =>
     invokeUrlChannel("fetch-jpx-open-interest-json", args),
-  fetchParticipantListing: (...args) =>
-    invokeUrlChannel("fetch-jpx-participant-json", args),
   downloadJpxExcel: (...args) =>
     invokeUrlChannel("download-daytrading-excel", args),
   getRuntimeMetadata: (...args) => invokeRuntimeMetadata(args),

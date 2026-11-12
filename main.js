@@ -64,6 +64,8 @@ let overallTraceMainWriter = null;
 let overallTraceMainAuthorityBinding = null;
 let overallTraceReadService = null;
 let qriProductionAcquisitionService = null;
+let participantProductionAcquisitionService = null;
+let participantFormalBridge = null;
 
 function ensureQriProductionAcquisition() {
   if (qriProductionAcquisitionService) return qriProductionAcquisitionService;
@@ -110,6 +112,45 @@ function ensureQriProductionAcquisition() {
     createRequestId: () => `qri-production-request-${randomUUID()}`
   });
   return qriProductionAcquisitionService;
+}
+
+function ensureParticipantProductionAcquisition() {
+  if (participantProductionAcquisitionService) return participantProductionAcquisitionService;
+  if (!safeStorage.isEncryptionAvailable())
+    throw new Error("participants_authority_protection_unavailable");
+  const Authority = require("./js/participantProductionAuthority.js");
+  const Transport = require("./js/participantRawTransportShadow.js");
+  const EvidenceShadow = require("./js/participantEvidenceVaultShadow.js");
+  const Production = require("./js/participantProductionAcquisition.js");
+  const Bridge = require("./js/participantFormalMainBridge.js");
+  const Vault = require("./js/sourceEvidence/sourceEvidenceVault.js");
+  const SetStore = require("./js/storage/participantEvidenceSetStore.js");
+  const authorityState = Authority.createProductionAuthority({
+    getUserDataPath: () => app.getPath("userData"),
+    protector: Object.freeze({
+      protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
+      unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
+    }),
+    randomBytes
+  }), authority = authorityState.authority,
+    fetchImpl = (url, options) => net.fetch(url, options),
+    transportShadow = Transport.createParticipantsRawTransportShadow({ fetchImpl, authority }),
+    vaultAuthority = Object.freeze({ getUserDataPath: () => app.getPath("userData") }),
+    vault = Vault.createProductionVault(vaultAuthority),
+    setStore = SetStore.createProductionParticipantEvidenceSetStore(vaultAuthority),
+    evidenceShadow = EvidenceShadow.createParticipantsEvidenceVaultShadow({ transportShadow,
+      vault, setStore, authority, testHooks: null }),
+    createId = kind => `participants-${kind}-${randomUUID()}`,
+    discovery = Production.createProductionDiscovery({ fetchImpl, now: () => new Date(), createId });
+  if (!participantFormalBridge) participantFormalBridge =
+    Bridge.createParticipantFormalMainBridge({ ipcMain,
+      getWebContents: () => mainWindow?.webContents || null,
+      timeoutMs: Bridge.DEFAULT_TIMEOUT_MS });
+  participantProductionAcquisitionService =
+    Production.createParticipantProductionAcquisition({ authority, transportShadow,
+      evidenceShadow, formalBridge: participantFormalBridge, vault, setStore, discovery,
+      now: () => new Date(), createId });
+  return participantProductionAcquisitionService;
 }
 
 function ensureOverallTraceRuntime() {
@@ -443,25 +484,13 @@ ipcMain.handle("read-formal-overall-trace", async (event, request) => {
   }
 });
 
-ipcMain.handle("fetch-jpx-participant-json", async (event, jsonUrl) => {
-  try {
-    const requestedUrl = requireAllowedUrl(
-      networkUrlPolicy.validateParticipantJsonUrl, jsonUrl
-    );
-    const response = await net.fetch(requestedUrl, { cache: "no-store" });
-    const finalUrl = networkUrlPolicy.validateFinalUrl(
-      networkUrlPolicy.validateParticipantJsonUrl, requestedUrl, response.url
-    );
-    if (!finalUrl.ok) throw securityError("invalid_redirect");
-    if (!response.ok) {
-      throw new Error(
-        `JPX参加者別JSONの取得に失敗しました（HTTP ${response.status}）`
-      );
-    }
-    return { success: true, data: await response.json() };
-  } catch (error) {
-    return safeIpcFailure(error, "JPX参加者別JSONを取得できませんでした");
-  }
+ipcMain.handle("acquire-participants", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { status: "unavailable", reason: "invalid_sender",
+    sourceDate: null, completeSet: null, classification: null, formalWriteCount: 0 };
+  try { return await ensureParticipantProductionAcquisition().acquire(request); }
+  catch (_error) { return { status: "unavailable", reason: "acquisition_unavailable",
+    sourceDate: null, completeSet: null, classification: null, formalWriteCount: 0 }; }
 });
 
 ipcMain.handle("acquire-qri-page", async (event, request) => {
@@ -794,11 +823,11 @@ void legacyFetchQriOptionPage;
     try {
         console.log("日中Excelダウンロード開始");
         const requestedUrl = requireAllowedUrl(
-            networkUrlPolicy.validateExcelUrl, excelUrl
+            networkUrlPolicy.validateRendererExcelUrl, excelUrl
         );
         const response = await fetch(requestedUrl);
         const finalUrl = networkUrlPolicy.validateFinalUrl(
-            networkUrlPolicy.validateExcelUrl,
+            networkUrlPolicy.validateRendererExcelUrl,
             requestedUrl,
             response.url
         );
@@ -907,6 +936,9 @@ app.on("before-quit", () => {
   overallTraceMainWriter?.close();
   overallTraceMainWriter = null;
   overallTraceMainAuthorityBinding = null;
+  participantFormalBridge?.close();
+  participantFormalBridge = null;
+  participantProductionAcquisitionService = null;
 });
 }
 }

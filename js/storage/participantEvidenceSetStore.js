@@ -25,17 +25,19 @@ function setDigest(value) {
   return match[1];
 }
 
-function createIsolatedParticipantEvidenceSetStore(options = {}) {
+function createParticipantEvidenceSetStore(options = {}) {
   if (!exact(options, ["root", "targetEnvironment"]) ||
-      options.targetEnvironment !== "isolated_test" || typeof options.root !== "string" ||
-      !path.isAbsolute(options.root)) fail("participants_evidence_set_store_options_invalid");
+      !["isolated_test", "production"].includes(options.targetEnvironment) ||
+      typeof options.root !== "string" || !path.isAbsolute(options.root))
+    fail("participants_evidence_set_store_options_invalid");
   let profile;
   try { profile = fs.realpathSync(options.root); }
   catch (_error) { fail("participants_evidence_set_profile_invalid"); }
   const stat = fs.lstatSync(profile);
   if (!Filesystem.samePath(profile, options.root) ||
       !Filesystem.secureDirectoryStat(stat) || stat.isSymbolicLink() ||
-      !Filesystem.samePath(path.dirname(profile), fs.realpathSync(os.tmpdir())))
+      (options.targetEnvironment === "isolated_test" &&
+        !Filesystem.samePath(path.dirname(profile), fs.realpathSync(os.tmpdir()))))
     fail("participants_evidence_set_profile_invalid");
   const vaultParent = path.join(profile, Vault.VAULT_DIRECTORY),
     vaultRoot = path.join(vaultParent, Vault.VAULT_VERSION_DIRECTORY),
@@ -145,5 +147,19 @@ function createIsolatedParticipantEvidenceSetStore(options = {}) {
   return Object.freeze({ store, read, directoryName: DIRECTORY_NAME });
 }
 
+function createIsolatedParticipantEvidenceSetStore(options = {}) {
+  if (!exact(options, ["root", "targetEnvironment"]) ||
+      options.targetEnvironment !== "isolated_test")
+    fail("participants_evidence_set_store_options_invalid");
+  return createParticipantEvidenceSetStore(options);
+}
+
+function createProductionParticipantEvidenceSetStore(authority = {}) {
+  if (!exact(authority, ["getUserDataPath"]) || typeof authority.getUserDataPath !== "function")
+    fail("participants_evidence_set_production_authority_invalid");
+  return createParticipantEvidenceSetStore({ root: authority.getUserDataPath(),
+    targetEnvironment: "production" });
+}
+
 module.exports = Object.freeze({ DIRECTORY_NAME, MAX_SET_BYTES, setDigest,
-  createIsolatedParticipantEvidenceSetStore });
+  createIsolatedParticipantEvidenceSetStore, createProductionParticipantEvidenceSetStore });

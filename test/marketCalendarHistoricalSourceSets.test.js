@@ -151,8 +151,17 @@ test("H9 arbitrary request fields and renderer startup cannot enable a source", 
   const f = future(); assert.deepEqual(f.spoof, ORDER); assert(!f.calls.includes(MOF));
   let bridge, calls = 0;
   vm.runInNewContext(fs.readFileSync(path.join(root, "preload.js"), "utf8"), {
-    require: id => { assert.equal(id, "electron"); return {contextBridge:{exposeInMainWorld:(_, api)=>{bridge=api;}},
-      ipcRenderer:{invoke:()=>{calls++;}}}; }
+    require: id => {
+      if (id === "electron") return {contextBridge:{exposeInMainWorld:(_, api)=>{bridge=api;}},
+        ipcRenderer:{invoke:()=>{calls++;},on(){},send(){}}};
+      if (id === "./js/participantFormalMainBridge.js") return {
+        COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
+      if (id === "./js/participantFormalProductionWriter.js") return {
+        createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};
+      if (id === "./js/formalArchive/participantFormalArchiveSchema.js") return {
+        DATABASE_NAME:"OptionMapParticipantFormalArchive"};
+      throw new Error(`unexpected_preload_dependency:${id}`);
+    }
   });
   for (const request of [{enabledSourceIds:[MOF]}, {acquisitionEnabled:true}, {sourceSetVersion:2}, {authorityVersion:3}])
     assert.equal((await bridge.checkCalendarSources(request)).errorCode, "invalid_argument");

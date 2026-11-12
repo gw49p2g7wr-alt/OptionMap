@@ -309,12 +309,14 @@ test("content-length mismatch and malformed workbook retain distinct diagnostics
   assert.equal(malformed.reason, "workbook_parse_rejected");
 });
 
-test("P2-23 shadow is unwired and cannot write Vault history Formal IPC or renderer state", () => {
+test("P2-23 production activation keeps the transport free of storage IPC and renderer state", () => {
   const shadow = fs.readFileSync(path.join(root, "js/participantRawTransportShadow.js"), "utf8");
   for (const forbidden of ["ipcMain", "ipcRenderer", "localStorage", "indexedDB",
     "sourceEvidenceVault", "participantHistory", "FormalArchive", "writeFile", "appendFile"])
     assert.equal(shadow.includes(forbidden), false, forbidden);
-  for (const runtime of ["main.js", "preload.js", "index.html"])
+  const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
+  assert.equal(main.includes("participantRawTransportShadow"), true);
+  for (const runtime of ["preload.js", "index.html"])
     assert.equal(fs.readFileSync(path.join(root, runtime), "utf8")
       .includes("participantRawTransportShadow"), false, runtime);
   assert.equal(require(path.join(root, "package.json")).build.files.includes("js/**/*"), true);

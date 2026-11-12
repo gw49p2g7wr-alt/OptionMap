@@ -1,6 +1,6 @@
 (function (root, factory) {
     const api = factory();
-    if (typeof module === "object" && module.exports && !(root && root.document)) module.exports = api;
+    if (typeof module === "object" && module.exports) module.exports = api;
     if (root) root.OptionMapParticipantFormalArchiveSchema = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
     "use strict";

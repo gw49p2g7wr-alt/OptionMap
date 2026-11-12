@@ -267,9 +267,9 @@ test("Electron hybrid bootstrapはXLSX guardを通過しstartup refresh scheduli
 });
 
 test("XLSX read・sheet selection・sheet_to_json production semanticsを維持", () => {
-    assert.equal((html.match(/XLSX\.read\([^\n]+\{ type: "array" \}\)/g) || []).length, 7);
-    assert.equal((html.match(/workbook\.Sheets\[workbook\.SheetNames\[0\]\]/g) || []).length, 7);
-    assert.equal((html.match(/XLSX\.utils\.sheet_to_json\(sheet, \{ header: 1 \}\)/g) || []).length, 7);
+    assert.equal((html.match(/XLSX\.read\([^\n]+\{ type: "array" \}\)/g) || []).length, 4);
+    assert.equal((html.match(/workbook\.Sheets\[workbook\.SheetNames\[0\]\]/g) || []).length, 4);
+    assert.equal((html.match(/XLSX\.utils\.sheet_to_json\(sheet, \{ header: 1 \}\)/g) || []).length, 4);
     assert.match(html, /sheet\?\.A2\?\.v/);
     assert.match(html, /sheet\?\.A3\?\.v/);
 });

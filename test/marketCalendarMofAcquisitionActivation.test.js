@@ -58,8 +58,16 @@ async function bootstrap({ readFailure = false } = {}) {
   });
   let bridge;
   vm.runInNewContext(fs.readFileSync(path.join(root, "preload.js"), "utf8"), { require: id => {
-    assert.equal(id, "electron"); return { contextBridge: { exposeInMainWorld: (_, api) => { bridge = api; } },
-      ipcRenderer: { invoke: (channel, request) => handlers.get(channel)({ sender: windows[0].webContents }, request) } };
+    if (id === "electron") return { contextBridge: { exposeInMainWorld: (_, api) => { bridge = api; } },
+      ipcRenderer: { invoke: (channel, request) => handlers.get(channel)({ sender: windows[0].webContents }, request),
+        on() {}, send() {} } };
+    if (id === "./js/participantFormalMainBridge.js") return {
+      COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
+    if (id === "./js/participantFormalProductionWriter.js") return {
+      createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};
+    if (id === "./js/formalArchive/participantFormalArchiveSchema.js") return {
+      DATABASE_NAME:"OptionMapParticipantFormalArchive"};
+    throw new Error(`unexpected_preload_dependency:${id}`);
   } });
   const browser = vm.createContext({ document: {}, indexedDB, console, structuredClone, setTimeout, clearTimeout, URL }); browser.window = browser;
   for (const p of ["marketCalendar/sourceRegistry.js", "marketCalendarRuntime/sourceUpdateState.js", "storage/marketCalendarRuntimeStateStore.js",

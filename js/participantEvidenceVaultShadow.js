@@ -46,12 +46,60 @@ function validateOptions(options) {
 function createParticipantsEvidenceVaultShadow(options) {
   if (!validateOptions(options)) throw new TypeError("participants_evidence_shadow_options_invalid");
 
-  async function capture(manifest) {
+  async function captureRawResults(manifest, rawResults) {
+    if (!P1.validateAcquisitionManifest(manifest, options.authority) ||
+        !Array.isArray(rawResults)) return failure("manifest_invalid");
+    const acquisitions = P1.createWorkbookAcquisitions(manifest, options.authority),
+      byRole = new Map(acquisitions.map(acquisition => [acquisition.role, acquisition]));
+    let contentWriteCount = 0, occurrenceWriteCount = 0, retainedOccurrenceCount = 0;
+    for (const rawResult of rawResults) {
+      const acquisition = byRole.get(rawResult?.role);
+      if (!acquisition || !P2.validateRawResult(rawResult, manifest, acquisition,
+        options.authority)) return failure("raw_transport_result_invalid", { contentWriteCount,
+          occurrenceWriteCount, retainedOccurrenceCount });
+      let contentObject, occurrence;
+      try {
+        contentObject = Evidence.createContentObject({ bytes: rawResult.bytes,
+          mediaType: rawResult.mime, encoding: null, policy: Contract.POLICY });
+        occurrence = Evidence.createAcquisitionOccurrence({ sourceFamily: P1.SOURCE_FAMILY,
+          sourceId: P1.SOURCE_ID, initialUrl: rawResult.initialUrl,
+          sourceUrl: rawResult.finalUrl, fetchedAt: rawResult.fetchedAt,
+          httpStatus: rawResult.status, contentObject,
+          transportVersion: P2.RAW_RESULT_VERSION, publishedAt: null,
+          requestRole: rawResult.role,
+          redirectHops: rawResult.redirects.map(hop => ({ status: hop.status, url: hop.to })),
+          sourceDocumentRole: `participants-raw-v1|sha256:${P1.sha256({
+            acquisitionId: rawResult.acquisitionId, rawSha256: rawResult.rawSha256
+          })}`, runId: rawResult.runId,
+          acquisitionContext: Contract.ACQUISITION_CONTEXT }, Contract.POLICY);
+      } catch (_error) { return failure("evidence_contract_invalid", { contentWriteCount,
+        occurrenceWriteCount, retainedOccurrenceCount }); }
+      let stored;
+      try { stored = options.vault.storeAcceptedEvidence({ bytes: rawResult.bytes,
+        contentObject, occurrence, policy: Contract.POLICY }); }
+      catch (_error) { return failure("evidence_persistence_failed", { contentWriteCount,
+        occurrenceWriteCount, retainedOccurrenceCount }); }
+      contentWriteCount += stored.contentWriteCount;
+      occurrenceWriteCount += stored.occurrenceWriteCount;
+      try {
+        if (options.vault.verifyContent(contentObject.sha256).status !== "valid" ||
+            options.vault.verifyOccurrence(occurrence.occurrenceId).status !== "valid" ||
+            !Evidence.verifyContentBytes(options.vault.readRawBytes(contentObject.sha256),
+              contentObject.sha256, contentObject.byteLength).valid)
+          throw new Error("raw_evidence_readback_invalid");
+      } catch (_error) { return failure("evidence_readback_failed", { contentWriteCount,
+        occurrenceWriteCount, retainedOccurrenceCount: retainedOccurrenceCount + 1 }); }
+      retainedOccurrenceCount += 1;
+    }
+    return freeze({ contractVersion: SHADOW_VERSION, status: "available", reason: null,
+      evidenceSet: null, diagnostics: { contentWriteCount, occurrenceWriteCount,
+        evidenceSetWriteCount: 0, retainedOccurrenceCount, formalWriteCount: 0,
+        historyWriteCount: 0, rawPayloadExposed: false, storageLocationExposed: false } });
+  }
+
+  async function captureTransportSet(manifest, transportSet) {
     if (!P1.validateAcquisitionManifest(manifest, options.authority))
       return failure("manifest_invalid");
-    let transportSet;
-    try { transportSet = await options.transportShadow.acquireManifest(manifest); }
-    catch (_error) { return failure("raw_transport_failed"); }
     const acquisitions = P1.createWorkbookAcquisitions(manifest, options.authority);
     if (!transportSet?.success ||
         !P2.validateTransportSet(transportSet, manifest, acquisitions, options.authority))
@@ -141,6 +189,15 @@ function createParticipantsEvidenceVaultShadow(options) {
         storageLocationExposed: false } });
   }
 
+  async function capture(manifest) {
+    if (!P1.validateAcquisitionManifest(manifest, options.authority))
+      return failure("manifest_invalid");
+    let transportSet;
+    try { transportSet = await options.transportShadow.acquireManifest(manifest); }
+    catch (_error) { return failure("raw_transport_failed"); }
+    return captureTransportSet(manifest, transportSet);
+  }
+
   function resolve(evidenceSetId) {
     let evidenceSet;
     try { evidenceSet = options.setStore.read(evidenceSetId, options.authority); }
@@ -159,7 +216,7 @@ function createParticipantsEvidenceVaultShadow(options) {
         rawPayloadExposed: false, storageLocationExposed: false } });
   }
 
-  return freeze({ capture, resolve });
+  return freeze({ capture, captureRawResults, captureTransportSet, resolve });
 }
 
 module.exports = freeze({ SHADOW_VERSION, createParticipantsEvidenceVaultShadow });

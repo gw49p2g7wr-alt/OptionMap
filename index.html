@@ -1672,12 +1672,12 @@ import {
 
 const optionMapBridge = window.optionMapBridge;
 const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
+    "acquireParticipants",
     "acquireQriPage",
     "checkCalendarSources",
     "downloadJpxExcel",
     "fetchJpxPage",
     "fetchOpenInterestListing",
-    "fetchParticipantListing",
     "finalizeQriPage",
     "getRuntimeMetadata",
     "evaluateMorningV5Formal",
@@ -2767,31 +2767,6 @@ function validateParticipantBackfillRange() {
     return { startDate, endDate };
 }
 
-async function fetchParticipantBackfillJson(sourceUrl) {
-    const result = await optionMapBridge.fetchParticipantListing(sourceUrl);
-    if (!result?.success) {
-        throw new Error(result?.error || "JPX参加者別公式一覧を取得できませんでした");
-    }
-    return result.data;
-}
-
-async function fetchParticipantBackfillExcel(sourceUrl) {
-    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
-    if (!result?.success) {
-        throw new Error(result?.error || "JPX参加者別Excelを取得できませんでした");
-    }
-    return result.data;
-}
-
-function parseParticipantBackfillExcel(bytes, candidate) {
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    return window.OptionMapParticipantData.parseParticipantExcel(
-        rows, candidate.sourceDate
-    );
-}
-
 async function previewParticipantBackfill() {
     try {
         const range = validateParticipantBackfillRange();
@@ -2799,20 +2774,22 @@ async function previewParticipantBackfill() {
         participantBackfillStartButton.disabled = true;
         participantBackfillWarning.hidden = true;
         participantBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
-        const manifest = await window.OptionMapParticipantBackfill
-            .enumerateCandidates({
-                ...range,
-                fetchJson: fetchParticipantBackfillJson
-            });
+        const manifest = await optionMapBridge.acquireParticipants({
+            requestKind: "historical_backfill_range",
+            ...range
+        });
+        if (manifest?.status !== "available") {
+            throw new Error(manifest?.reason || "JPX参加者別公式一覧を取得できませんでした");
+        }
         participantBackfillCandidates = manifest.candidates;
         const impact = window.OptionMapParticipantBackfill.previewImpact(
             participantHistory,
             participantBackfillCandidates
         );
-        const failureText = manifest.failures.length
-            ? `　一覧取得失敗：${manifest.failures.length}か月` : "";
-        const unavailableText = manifest.unavailableMonths.length
-            ? `　公式一覧非掲載：${manifest.unavailableMonths.length}か月` : "";
+        const failureText = manifest.failureCount
+            ? `　一覧取得失敗：${manifest.failureCount}か月` : "";
+        const unavailableText = manifest.unavailableMonthCount
+            ? `　公式一覧非掲載：${manifest.unavailableMonthCount}か月` : "";
         participantBackfillStatus.textContent =
             `公式掲載候補：${impact.officialCandidateCount}日　` +
             `推定ファイル数：${impact.estimatedFileCount}　` +
@@ -2847,43 +2824,61 @@ async function startParticipantBackfill() {
     participantBackfillCancelButton.disabled = false;
     const originalHistory = participantHistory;
     try {
-        const result = await window.OptionMapParticipantBackfill.runBackfill({
-            history: originalHistory,
-            candidates: participantBackfillCandidates,
-            fetchExcel: fetchParticipantBackfillExcel,
-            parseExcel: parseParticipantBackfillExcel,
-            isCancelled: () => participantBackfillCancelled,
-            onProgress: progress => {
-                const phaseLabels = {
-                    fetch: "取得", parse: "解析", validated: "検証",
-                    staging: "全体検証"
-                };
-                participantBackfillStatus.textContent =
-                    `${progress.current} / ${progress.total}日　` +
-                    `${phaseLabels[progress.phase] || progress.phase}` +
-                    (progress.sourceDate ? `：${progress.sourceDate}` : "");
+        const staged = [], results = [];
+        for (let index = 0; index < participantBackfillCandidates.length; index += 1) {
+            const candidate = participantBackfillCandidates[index];
+            if (participantBackfillCancelled) break;
+            participantBackfillStatus.textContent =
+                `${index + 1} / ${participantBackfillCandidates.length}日　取得：${candidate.sourceDate}`;
+            const acquired = await optionMapBridge.acquireParticipants({
+                requestKind: "explicit_source_date", targetDate: candidate.sourceDate
+            });
+            if (acquired?.status !== "available" || !acquired.completeSet) {
+                results.push({ sourceDate: candidate.sourceDate, status: "failed" });
+                continue;
             }
-        });
-        if (result.status === "cancelled") {
+            const completeSet = acquired.completeSet;
+            staged.push({ completeSet, officialMetadata: {
+                origin: "jpx_participant_month_listing", listingUrl: null,
+                listingUpdatedAt: completeSet.fetchedAt,
+                listingTradeDate: completeSet.sourceDate,
+                sourceUrls: Object.fromEntries(window.OptionMapParticipantData.FILE_KEYS.map(
+                    key => [key, completeSet.files[key].sourceUrl])),
+                currentOfficialRefetch: true,
+                dateEvidence: { listingTradeDate: completeSet.sourceDate,
+                    excelSourceDates: window.OptionMapParticipantData.FILE_KEYS.map(
+                        key => completeSet.files[key].data.sourceDate),
+                    excelDateKinds: window.OptionMapParticipantData.FILE_KEYS.map(
+                        key => completeSet.files[key].data.sourceDateKind),
+                    urlDates: window.OptionMapParticipantData.FILE_KEYS.map(
+                        () => completeSet.sourceDate), consistent: true }
+            } });
+            results.push({ sourceDate: candidate.sourceDate, status: "success" });
+        }
+        if (participantBackfillCancelled) {
             participantBackfillStatus.textContent =
                 "中止しました。正式historyは変更していません。";
             return;
         }
-        if (result.status === "staging_failed") {
+        const merged = await window.OptionMapParticipantHistory.mergeOfficialCandidates(
+            originalHistory, staged, new Date().toISOString(),
+            window.OptionMapParticipantData.validateParticipantCache
+        );
+        if (merged.outcome !== "merged") {
             throw new Error("stagingまたはhistory全体の検証に失敗しました");
         }
         participantBackfillStatus.textContent = "正式historyを保存中…";
         const saved = await window.OptionMapParticipantBackfill.commitHistory(
             localStorage,
             PARTICIPANT_HISTORY_STORAGE_KEY,
-            result.history
+            merged.history
         );
         if (!saved.saved) {
             throw new Error(saved.reason === "storage_failed"
                 ? "正式historyを保存できませんでした"
                 : "正式historyの最終検証に失敗しました");
         }
-        participantHistory = result.history;
+        participantHistory = merged.history;
         const summary = window.OptionMapParticipantHistory
             .summarizeHistory(participantHistory);
         window.updateParticipantHistoryState({
@@ -2892,16 +2887,16 @@ async function startParticipantBackfill() {
             error: null
         });
         window.setParticipantActivityHistory(participantHistory);
-        const succeeded = result.results.filter(item =>
+        const succeeded = results.filter(item =>
             item.status === "success"
         ).length;
-        const partial = result.results.filter(item =>
+        const partial = results.filter(item =>
             item.status === "partial"
         ).length;
-        const communicationFailed = result.results.filter(item =>
+        const communicationFailed = results.filter(item =>
             item.status === "failed"
         ).length;
-        const validationFailed = result.results.filter(item =>
+        const validationFailed = results.filter(item =>
             item.status === "validation_failed"
         ).length;
         participantBackfillStatus.textContent =
@@ -3120,59 +3115,6 @@ function updateParticipantRemoteObservation(observation, succeeded) {
     }
 }
 
-function getParticipantVolumePage(targetDate) {
-    const [year, month] = targetDate.split("-").map(Number);
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-
-    if (year === currentYear && month === currentMonth) {
-        return PARTICIPANT_PAGE_URL;
-    }
-
-    const archiveNo =
-        (currentYear - year) * 12 +
-        (currentMonth - month);
-
-    return `https://www.jpx.co.jp/markets/derivatives/participant-volume/00-archives-${String(archiveNo).padStart(2, "0")}.html`;
-}
-
-function makeParticipantUrls(dateStr) {
-    const compactDate = dateStr.replaceAll("-", "");
-    const ym = compactDate.slice(0, 6);
-    const base =
-        `https://www.jpx.co.jp/automation/markets/derivatives/participant-volume/files/daily/${ym}/`;
-
-    return {
-        dayAuctionUrl:
-            `${base}${compactDate}_volume_by_participant_whole_day.xlsx`,
-        dayJnetUrl:
-            `${base}${compactDate}_volume_by_participant_whole_day_J-NET.xlsx`,
-        nightAuctionUrl:
-            `${base}${compactDate}_volume_by_participant_night.xlsx`,
-        nightJnetUrl:
-            `${base}${compactDate}_volume_by_participant_night_J-NET.xlsx`
-    };
-}
-
-async function downloadAndParseHistoricalExcel(excelUrl, label) {
-    const excelResult = await optionMapBridge.downloadJpxExcel(excelUrl);
-
-    if (!excelResult.success) {
-        throw new Error(
-            excelResult.error || `${label}の取得に失敗しました`
-        );
-    }
-
-    const workbook = XLSX.read(excelResult.data, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    const parsedData = parseDayTradingExcel(json);
-
-    console.log(`📦 ${label}解析完了`, parsedData);
-    return parsedData;
-}
-
 const historicalStartDate =
     document.getElementById("historicalStartDate");
 const historicalEndDate =
@@ -3187,123 +3129,6 @@ if (fetchHistoricalDataButton) {
         "click",
         handleHistoricalDataClick
     );
-}
-
-function getPreviousWeekday(date = new Date()) {
-    const previousDate = new Date(date);
-    previousDate.setDate(previousDate.getDate() - 1);
-
-    while (
-        previousDate.getDay() === 0 ||
-        previousDate.getDay() === 6
-    ) {
-        previousDate.setDate(previousDate.getDate() - 1);
-    }
-
-    const year = previousDate.getFullYear();
-    const month = String(previousDate.getMonth() + 1).padStart(2, "0");
-    const day = String(previousDate.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-}
-
-async function findLatestParticipantDate(startDate, maxDays = 10) {
-    const date = new Date(startDate);
-
-    for (let index = 0; index < maxDays; index++) {
-        if (date.getDay() !== 0 && date.getDay() !== 6) {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, "0");
-            const day = String(date.getDate()).padStart(2, "0");
-            const dateStr = `${year}-${month}-${day}`;
-            const urls = makeParticipantUrls(dateStr);
-
-            console.log("🔎 手口データ確認中 =", dateStr);
-
-            const result = await optionMapBridge.downloadJpxExcel(
-                urls.dayAuctionUrl
-            );
-
-            if (result.success) {
-                console.log("✅ 手口データ発見 =", dateStr);
-                return dateStr;
-            }
-        }
-
-        date.setDate(date.getDate() - 1);
-    }
-
-    throw new Error("直近10日以内に手口データが見つかりませんでした");
-}
-
-async function downloadAndParseParticipantExcel(
-    excelUrl,
-    label,
-    detail,
-    requestId,
-    targetDate
-) {
-    if (!isCurrentFetchRequest("participant", requestId)) {
-        return null;
-    }
-
-    window.updateFetchDetail("participant", detail, {
-        status: window.FETCH_STATUS.LOADING,
-        startedAt: new Date().toISOString(),
-        fetchedAt: null,
-        sourceUrl: excelUrl || null,
-        error: null
-    });
-
-    if (!excelUrl) {
-        console.warn(`${label}のURLがありません`);
-        window.updateFetchDetail("participant", detail, {
-            status: window.FETCH_STATUS.UNAVAILABLE,
-            fetchedAt: new Date().toISOString()
-        });
-        const error = new Error(`${label}は公式ページに掲載されていません`);
-        error.participantStatus = "unavailable";
-        throw error;
-    }
-
-    console.log(`${label} URL:`, excelUrl);
-
-    try {
-        const excelResult = await optionMapBridge.downloadJpxExcel(excelUrl);
-
-        console.log(`${label}取得結果:`, excelResult);
-
-        if (!excelResult.success) {
-            throw new Error(
-                excelResult.error || `${label}の取得に失敗しました`
-            );
-        }
-
-        const workbook = XLSX.read(excelResult.data, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const parsedData = window.OptionMapParticipantData
-            .parseParticipantExcel(json, targetDate);
-
-        if (isCurrentFetchRequest("participant", requestId)) {
-            window.updateFetchDetail("participant", detail, {
-                status: window.FETCH_STATUS.SUCCESS,
-                fetchedAt: new Date().toISOString(),
-                error: null
-            });
-        }
-
-        console.log(`${label}解析結果:`, parsedData);
-        return parsedData;
-    } catch (error) {
-        if (isCurrentFetchRequest("participant", requestId)) {
-            window.updateFetchDetail("participant", detail, {
-                status: window.FETCH_STATUS.FAILED,
-                fetchedAt: new Date().toISOString(),
-                error: error?.message || String(error)
-            });
-        }
-        throw error;
-    }
 }
 
 async function handleHistoricalDataClick() {
@@ -3329,75 +3154,30 @@ async function handleHistoricalDataClick() {
     historicalDataStatus.textContent =
         `${startDate} ～ ${endDate} を取得準備中`;
 
-    const currentDate = new Date(startDate + "T00:00:00");
-    const lastDate = new Date(endDate + "T00:00:00");
     const counts = { saved: 0, skipped: 0, failed: 0 };
-
-    while (currentDate <= lastDate) {
-        const dateStr =
-            currentDate.getFullYear() +
-            "-" +
-            String(currentDate.getMonth() + 1).padStart(2, "0") +
-            "-" +
-            String(currentDate.getDate()).padStart(2, "0");
-        const urls = makeParticipantUrls(dateStr);
-
-        console.log("📅 過去データ巡回 =", dateStr);
-
-        let checkResult;
+    const manifest = await optionMapBridge.acquireParticipants({
+        requestKind: "historical_backfill_range", startDate, endDate
+    });
+    if (manifest?.status !== "available") {
+        historicalDataStatus.textContent = manifest?.reason || "公式掲載一覧を取得できませんでした";
+        return;
+    }
+    for (const candidate of manifest.candidates) {
+        const dateStr = candidate.sourceDate;
         try {
-            checkResult = await optionMapBridge.downloadJpxExcel(urls.dayAuctionUrl);
-        } catch (error) {
-            console.error("❌ 過去データ掲載確認失敗 =", dateStr, error);
-            counts.failed += 1;
-            currentDate.setDate(currentDate.getDate() + 1);
-            continue;
-        }
-
-        if (!checkResult.success) {
-            console.log("⏭️ データなし・スキップ =", dateStr);
-            counts.skipped += 1;
-            currentDate.setDate(currentDate.getDate() + 1);
-            continue;
-        }
-
-        console.log("✅ データあり =", dateStr);
-
-        try {
-            const [
-                dayAuction,
-                dayJnet,
-                nightAuction,
-                nightJnet
-            ] = await Promise.all([
-                downloadAndParseHistoricalExcel(
-                    urls.dayAuctionUrl,
-                    `${dateStr} 日中立会`
-                ),
-                downloadAndParseHistoricalExcel(
-                    urls.dayJnetUrl,
-                    `${dateStr} 日中J-NET`
-                ),
-                downloadAndParseHistoricalExcel(
-                    urls.nightAuctionUrl,
-                    `${dateStr} 夜間立会`
-                ),
-                downloadAndParseHistoricalExcel(
-                    urls.nightJnetUrl,
-                    `${dateStr} 夜間J-NET`
-                )
-            ]);
+            const acquired = await optionMapBridge.acquireParticipants({
+                requestKind: "explicit_source_date", targetDate: dateStr
+            });
+            if (acquired?.status !== "available" || !acquired.completeSet)
+                throw new Error(acquired?.reason || "参加者別データを取得できませんでした");
+            const parsedDayData = window.OptionMapParticipantData
+                .cacheToParsedDayData(acquired.completeSet);
             const historicalSnapshot = {
                 sourceDate: `${dateStr}T00:00:00.000Z`,
                 savedAt: new Date().toISOString(),
                 tags: ["過去自動取得"],
                 memo: "",
-                parsedDayData: {
-                    dayAuction,
-                    dayJnet,
-                    nightAuction,
-                    nightJnet
-                }
+                parsedDayData
             };
             const storageKey = "optionMapJpxSnapshots";
             const parsedSnapshots = window.OptionMapJpxSnapshotSafety.parseSnapshotList(
@@ -3409,12 +3189,6 @@ async function handleHistoricalDataClick() {
                 snapshot.sourceDate.slice(0, 10) === dateStr
             );
 
-            console.log("🎉 過去4種類解析完了 =", dateStr, {
-                dayAuction,
-                dayJnet,
-                nightAuction,
-                nightJnet
-            });
             console.log("💾 過去snapshot作成 =", historicalSnapshot);
 
             if (existingIndex >= 0) {
@@ -3444,8 +3218,6 @@ async function handleHistoricalDataClick() {
             );
         }
 
-        console.log("🔎 JPX確認 =", { date: dateStr, urls });
-        currentDate.setDate(currentDate.getDate() + 1);
     }
 
     console.log("✅ 日付巡回完了");
@@ -6496,172 +6268,49 @@ async function fetchParticipantData({
         successCount: null
     });
 
-    const result = await optionMapBridge.fetchJpxPage(PARTICIPANT_PAGE_URL);
-
-        console.log("日中データ取得結果:", result);
-
-        if (typeof beforeParticipantData === "function") {
-            await beforeParticipantData();
-        }
-
-        if (result.success) {
-            console.log(
-                "日中データページHTML文字数:",
-                result.html.length
-            );
-        }
-
-const officialObservation = result.success
-    ? parseLatestParticipantListing(result.html)
-    : null;
-const officialObservationSucceeded = Boolean(
-    officialObservation?.sourceDate
-);
-let targetDate;
-let participantUrls;
-
-if (officialObservationSucceeded) {
-    targetDate = officialObservation.sourceDate;
-    participantUrls = officialObservation.urls;
-} else {
-    targetDate = await findLatestParticipantDate(
-        getPreviousWeekday()
-    );
-    const fallbackUrls = makeParticipantUrls(targetDate);
-    participantUrls = {
-        dayAuction: fallbackUrls.dayAuctionUrl,
-        dayJnet: fallbackUrls.dayJnetUrl,
-        nightAuction: fallbackUrls.nightAuctionUrl,
-        nightJnet: fallbackUrls.nightJnetUrl
-    };
-}
-console.log("手口データ対象日 =", targetDate);
-
-if (!isCurrentFetchRequest("participant", participantRequestId)) {
-    return {
-        source: "participant",
-        status: "stale",
-        requestId: participantRequestId,
-        sourceDate: targetDate,
-        fetchedAt: null,
-        data: null,
-        error: null
-    };
-}
-
-window.updateFetchState("participant", {
-    sourceDate: targetDate
-});
-updateParticipantRemoteObservation(
-    officialObservation,
-    officialObservationSucceeded
-);
-
-        console.log("参加者別データURL", participantUrls);
-
-const participantFiles = [
-    downloadAndParseParticipantExcel(
-        participantUrls.dayAuction,
-        "日中立会",
-        "dayRegular",
-        participantRequestId,
-        targetDate
-    ),
-    downloadAndParseParticipantExcel(
-        participantUrls.dayJnet,
-        "日中J-NET",
-        "dayJnet",
-        participantRequestId,
-        targetDate
-    ),
-    downloadAndParseParticipantExcel(
-        participantUrls.nightAuction,
-        "夜間立会",
-        "nightRegular",
-        participantRequestId,
-        targetDate
-    ),
-    downloadAndParseParticipantExcel(
-        participantUrls.nightJnet,
-        "夜間J-NET",
-        "nightJnet",
-        participantRequestId,
-        targetDate
-    )
-];
-
-const participantSettledResults = await Promise.allSettled(
-    participantFiles
-);
-
-if (!isCurrentFetchRequest("participant", participantRequestId)) {
-    return {
-        source: "participant",
-        status: "stale",
-        requestId: participantRequestId,
-        sourceDate: targetDate,
-        fetchedAt: null,
-        data: null,
-        error: null
-    };
-}
-    
-
-
-const participantResult = window.OptionMapParticipantData
-    .buildParticipantResult(participantSettledResults, targetDate);
-const parsedParticipantData = participantResult.data;
-const participantMetadata = participantResult.metadata;
-
-const detailKeys = {
-    dayAuction: "dayRegular",
-    dayJnet: "dayJnet",
-    nightAuction: "nightRegular",
-    nightJnet: "nightJnet"
-};
-
-for (const [fileKey, fileStatus] of Object.entries(
-    participantMetadata.fileStatuses
-)) {
-    if (fileStatus === window.FETCH_STATUS.SUCCESS) continue;
-
-    window.updateFetchDetail(
-        "participant",
-        detailKeys[fileKey],
-        {
-            status: fileStatus,
-            fetchedAt: new Date().toISOString(),
-            error: participantMetadata.errors[fileKey] || "取得失敗"
-        }
-    );
-}
-
-let liveCache = null;
-let versionComparison = null;
-
-if (
-    participantMetadata.status === window.FETCH_STATUS.SUCCESS
-) {
-    liveCache = await window.OptionMapParticipantData.createCompleteCache({
-        data: parsedParticipantData,
-        sourceUrls: participantUrls,
-        sourceDate: targetDate,
-        fetchedAt: new Date().toISOString()
+    const acquisitionPromise = optionMapBridge.acquireParticipants({
+        requestKind: "latest_available"
     });
-
-    if (
-        liveCache &&
-        await window.OptionMapParticipantData.validateParticipantCache(liveCache) &&
-        officialObservationSucceeded &&
-        officialObservation.complete === true
-    ) {
-        versionComparison = window.OptionMapParticipantData.compareVersions(
-            activeParticipantCache || lastValidParticipantCache,
-            liveCache,
-            true
-        );
+    if (typeof beforeParticipantData === "function") await beforeParticipantData();
+    const result = await acquisitionPromise;
+    if (result?.status !== "available" || !result.completeSet) {
+        throw new Error(result?.reason || "参加者別データを取得できませんでした");
     }
-}
+    const liveCache = result.completeSet;
+    if (!await window.OptionMapParticipantData.validateParticipantCache(liveCache)) {
+        throw new Error("参加者別complete版の検証に失敗しました");
+    }
+    const targetDate = result.sourceDate;
+    const participantUrls = Object.fromEntries(
+        window.OptionMapParticipantData.FILE_KEYS.map(key => [key, liveCache.files[key].sourceUrl])
+    );
+    const parsedParticipantData = window.OptionMapParticipantData.cacheToParsedDayData(liveCache);
+    const officialObservation = { sourceDate: targetDate, urls: participantUrls, complete: true };
+    const participantMetadata = {
+        status: window.FETCH_STATUS.SUCCESS,
+        sourceDate: targetDate,
+        successCount: 4,
+        fileCount: 4,
+        fileStatuses: Object.fromEntries(
+            window.OptionMapParticipantData.FILE_KEYS.map(key => [key, window.FETCH_STATUS.SUCCESS])
+        ),
+        errors: {}
+    };
+    const detailKeys = { dayAuction: "dayRegular", dayJnet: "dayJnet",
+        nightAuction: "nightRegular", nightJnet: "nightJnet" };
+    for (const [fileKey, detail] of Object.entries(detailKeys)) {
+        window.updateFetchDetail("participant", detail, {
+            status: window.FETCH_STATUS.SUCCESS,
+            fetchedAt: liveCache.fetchedAt,
+            sourceUrl: liveCache.files[fileKey].sourceUrl,
+            error: null
+        });
+    }
+    window.updateFetchState("participant", { sourceDate: targetDate });
+    updateParticipantRemoteObservation(officialObservation, true);
+    const versionComparison = window.OptionMapParticipantData.compareVersions(
+        activeParticipantCache || lastValidParticipantCache, liveCache, true
+    );
 
 if (!isCurrentFetchRequest("participant", participantRequestId)) {
     return {
@@ -6675,7 +6324,7 @@ if (!isCurrentFetchRequest("participant", participantRequestId)) {
     };
 }
 
-const liveCanBeApplied = liveCache && versionComparison && ![
+const liveCanBeApplied = ![
     "older_or_inconsistent",
     "indeterminate"
 ].includes(versionComparison.assessment);
@@ -6742,70 +6391,24 @@ if (liveCanBeApplied) {
         }
     }
 } else if (activeParticipantCache) {
-    const newerAvailable = officialObservationSucceeded &&
-        targetDate > activeParticipantCache.sourceDate;
-    const inconsistentVersion = [
-        "older_or_inconsistent",
-        "indeterminate"
-    ].includes(versionComparison?.assessment);
+    const newerAvailable = targetDate > activeParticipantCache.sourceDate;
     window.updateParticipantDataState({
-        dataStatus: newerAvailable || participantMetadata.status !== "success"
+        dataStatus: newerAvailable
             ? "waiting_update"
             : window.participantDataState.dataStatus,
         remoteCheckStatus: newerAvailable
             ? "newer_available"
-            : officialObservationSucceeded && !inconsistentVersion
-                ? "current"
-                : "failed",
-        observedLatestDate: officialObservationSucceeded
-            ? targetDate
-            : window.participantDataState.observedLatestDate
-    });
-} else if (participantMetadata.successCount > 0) {
-    window.setLatestParsedDayData(parsedParticipantData, participantMetadata);
-    window.updateParticipantDataState({
-        sourceDate: targetDate,
-        versionKey: null,
-        signature: null,
-        origin: "live",
-        dataStatus: "partial",
-        remoteCheckStatus: officialObservationSucceeded ? "current" : "failed",
-        observedLatestDate: officialObservationSucceeded ? targetDate : null
-    });
-} else {
-    window.setLatestParsedDayData(null, null);
-    window.updateParticipantDataState({
-        sourceDate: null,
-        versionKey: null,
-        signature: null,
-        origin: null,
-        dataStatus: null,
-        remoteCheckStatus: officialObservationSucceeded ? "current" : "failed",
-        observedLatestDate: officialObservationSucceeded ? targetDate : null
+            : "failed",
+        observedLatestDate: targetDate
     });
 }
 
-const completeValidationFailed =
-    participantMetadata.status === window.FETCH_STATUS.SUCCESS &&
-    officialObservationSucceeded &&
-    officialObservation.complete === true &&
-    (!liveCache || !versionComparison);
-const participantFetchStatus = completeValidationFailed
-    ? window.FETCH_STATUS.FAILED
-    : participantMetadata.status;
-
 window.updateFetchState("participant", {
-    status: participantFetchStatus,
+    status: window.FETCH_STATUS.SUCCESS,
     fetchedAt: new Date().toISOString(),
-    successCount: participantMetadata.successCount,
-    error: participantFetchStatus === window.FETCH_STATUS.FAILED
-        ? completeValidationFailed
-            ? "参加者別complete版の検証に失敗しました"
-            : "参加者別4ファイルを取得できませんでした"
-        : null
+    successCount: 4,
+    error: null
 });
-
-participantMetadata.status = participantFetchStatus;
 
 if (typeof window.setParticipantFetchDisplayState === "function") {
     window.setParticipantFetchDisplayState(participantMetadata);
@@ -6822,14 +6425,10 @@ return {
     requestId: participantRequestId,
     sourceDate: targetDate,
     fetchedAt: window.dataFetchState.participant.fetchedAt,
-    data: participantMetadata.successCount > 0
-        ? parsedParticipantData
-        : null,
+    data: parsedParticipantData,
     metadata: participantMetadata,
     versionComparison,
-    error: participantMetadata.status === window.FETCH_STATUS.FAILED
-        ? "参加者別4ファイルを取得できませんでした"
-        : null
+    error: null
 };
 }
 
@@ -7018,16 +6617,6 @@ void initialMarketBootstrap.then(
     () => initializeFormalBaselineRetryScheduler().start(),
     () => initializeFormalBaselineRetryScheduler().start()
 );
-
-function parseLatestParticipantListing(html) {
-    if (typeof html !== "string" || html.trim() === "") return null;
-
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const hrefs = [...doc.querySelectorAll("a[href]")]
-        .map(link => link.getAttribute("href"));
-    return window.OptionMapParticipantData
-        .selectLatestParticipantListing(hrefs);
-}
 
     function parseDayTradingHtml(html) {
     const doc = new DOMParser().parseFromString(html, "text/html");

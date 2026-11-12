@@ -99,6 +99,11 @@ test("Participant Excelは公式4種類だけを許可する", () => {
     "volume_by_participant_night_J-NET.xlsx"
   ]) accepted(policy.validateExcelUrl, `${base}${suffix}`);
   rejected(policy.validateExcelUrl, `${base}volume_by_participant_other.xlsx`);
+  rejected(policy.validateRendererExcelUrl,
+    `${base}volume_by_participant_whole_day.xlsx`);
+  accepted(policy.validateRendererExcelUrl,
+    "https://www.jpx.co.jp/automation/markets/derivatives/open-interest/files/2026/" +
+    "20260828_indexfut_oi_by_tp.xlsx");
 });
 
 test("Excelはarbitrary file・wrong directory・invalid date・directory mismatchを拒否する", () => {
@@ -153,7 +158,7 @@ test("requested/finalの同一policy検証で不正redirectを拒否する", () 
 test("listing JSONはredirect禁止、Excelはbody読取前にresponse.urlを再検証する", () => {
   const openBlock = mainSource.slice(
     mainSource.indexOf('ipcMain.handle("fetch-jpx-open-interest-json"'),
-    mainSource.indexOf('ipcMain.handle("fetch-jpx-participant-json"')
+    mainSource.indexOf('ipcMain.handle("acquire-participants"')
   );
   const excelBlock = mainSource.slice(
     mainSource.indexOf('ipcMain.handle("download-daytrading-excel"'),

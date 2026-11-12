@@ -249,17 +249,18 @@ test("P3-18 renderer cannot supply bytes, paths, or arbitrary records", () => {
   assert.match(source, /transportShadow\.acquireManifest\(manifest\)/);
 });
 
-test("P3-19 Formal Participants history and legacy storage remain unwired", () => {
+test("P3-19 production activation keeps Evidence separate from legacy renderer history", () => {
   const files = ["main.js", "preload.js", "index.html"].map(file =>
     fs.readFileSync(path.join(REPO, file), "utf8")).join("\n");
-  assert.doesNotMatch(files, /participantEvidenceVaultShadow|participantEvidenceSetStore/);
+  assert.match(files, /participantEvidenceVaultShadow/);
   assert.doesNotMatch(fs.readFileSync(path.join(REPO, "js/participantEvidenceVaultShadow.js"), "utf8"),
     /participantHistory|formalParticipant|saveParticipant/);
 });
 
-test("P3-20 production acquisition and IPC paths remain untouched", () => {
+test("P3-20 production activation is main-owned behind a bounded Participants IPC", () => {
   const production = ["main.js", "preload.js", "index.html", "js/participantData.js",
     "js/participantHistory.js"].map(file => fs.readFileSync(path.join(REPO, file), "utf8")).join("\n");
-  assert.doesNotMatch(production,
-    /participantEvidenceSetContract|participantEvidenceVaultShadow|participantEvidenceSetStore/);
+  assert.match(production, /participantEvidenceVaultShadow|participantEvidenceSetStore/);
+  assert.match(production, /acquire-participants/);
+  assert.doesNotMatch(production, /fetch-jpx-participant-json|fetchParticipantListing/);
 });

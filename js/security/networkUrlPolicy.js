@@ -158,6 +158,13 @@ function validateExcelUrl(value) {
     : result(false, null, ERROR_CODES.INVALID_PATH);
 }
 
+function validateRendererExcelUrl(value) {
+  const validated = validateExcelUrl(value);
+  return validated.ok && validated.kind === "participant_excel"
+    ? result(false, null, ERROR_CODES.INVALID_PATH)
+    : validated;
+}
+
 function validateDailyOpenInterestExcelUrl(value, discoveredUrl) {
   const parsed = parseHttpsUrl(value, "www.jpx.co.jp");
   if (!parsed.ok) return parsed;
@@ -189,6 +196,7 @@ module.exports = Object.freeze({
   validateOpenInterestJsonUrl,
   validateParticipantJsonUrl,
   validateExcelUrl,
+  validateRendererExcelUrl,
   validateDailyOpenInterestExcelUrl,
   validateFinalUrl
 });

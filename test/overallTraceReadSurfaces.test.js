@@ -220,6 +220,6 @@ test("main exposes a sender-validated read-only trace IPC separate from the writ
     assert.match(main, /ipcMain\.handle\("read-formal-overall-trace", async \(event, request\)/);
     assert.match(main, /overallTraceReadService\.read\(request\)/);
     const block = main.slice(main.indexOf('ipcMain.handle("read-formal-overall-trace"'),
-        main.indexOf('ipcMain.handle("fetch-jpx-participant-json"'));
+        main.indexOf('ipcMain.handle("acquire-participants"'));
     assert.doesNotMatch(block, /registerMainAcceptedObservation|commitAcceptedObservation|\.commit\(/);
 });

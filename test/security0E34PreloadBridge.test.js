@@ -10,6 +10,7 @@ const preloadSource = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const expectedKeys = [
+  "acquireParticipants",
   "acquireQriPage",
   "checkCalendarSources",
   "downloadJpxExcel",
@@ -17,7 +18,6 @@ const expectedKeys = [
   "evaluateOverallV2Trace",
   "fetchJpxPage",
   "fetchOpenInterestListing",
-  "fetchParticipantListing",
   "finalizeQriPage",
   "getRuntimeMetadata",
   "readMorningV5Formal",
@@ -26,12 +26,11 @@ const expectedKeys = [
   "saveCalendarExportJson",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["acquireQriPage", "checkCalendarSources", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "finalizeQriPage", "getRuntimeMetadata", "readOverallV2Trace", "readMorningV5Formal", "requestCalendarSource",
+const urlKeys = expectedKeys.filter(key => !["acquireParticipants", "acquireQriPage", "checkCalendarSources", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "finalizeQriPage", "getRuntimeMetadata", "readOverallV2Trace", "readMorningV5Formal", "requestCalendarSource",
   "saveCalendarExportJson", "saveFullExportJson"].includes(key));
 const mapping = {
   fetchJpxPage: "fetch-daytrading-page",
   fetchOpenInterestListing: "fetch-jpx-open-interest-json",
-  fetchParticipantListing: "fetch-jpx-participant-json",
   downloadJpxExcel: "download-daytrading-excel",
   saveCalendarExportJson: "save-calendar-export-json",
   saveFullExportJson: "save-full-export-json"
@@ -60,6 +59,8 @@ function loadPreload(invokeImplementation = async (channel, url) => ({ channel, 
       }
     },
     ipcRenderer: {
+      on() {},
+      send() {},
       invoke(channel, url) {
         calls.push([channel, url]);
         return invokeImplementation(channel, url);
@@ -68,8 +69,18 @@ function loadPreload(invokeImplementation = async (channel, url) => ({ channel, 
   };
   const context = vm.createContext({
     require(id) {
-      assert.equal(id, "electron");
-      return electron;
+      if (id === "electron") return electron;
+      if (id.endsWith("participantFormalMainBridge.js")) return {
+        COMMAND_CHANNEL: "optionmap:participants-formal:commit",
+        RESULT_CHANNEL: "optionmap:participants-formal:result"
+      };
+      if (id.endsWith("participantFormalProductionWriter.js")) return {
+        createParticipantFormalProductionWriter() { return { commit: async () => ({}) }; }
+      };
+      if (id.endsWith("participantFormalArchiveSchema.js")) return {
+        DATABASE_NAME: "optionMapFormalArchive"
+      };
+      throw new Error(`unexpected preload require: ${id}`);
     },
     Promise,
     Object
@@ -200,6 +211,15 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
   const metadataCount = calls.length;
   assert.equal((await api.getRuntimeMetadata({ fake: true })).errorCode, "invalid_argument");
   assert.equal(calls.length, metadataCount);
+  const participant = { requestKind: "explicit_source_date", targetDate: "2026-11-10" };
+  await api.acquireParticipants(participant);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),
+    ["acquire-participants", participant]);
+  const participantCount = calls.length;
+  for (const value of [null, {}, { requestKind: "latest_available", sourceUrl: "https://evil" },
+    { requestKind: "explicit_source_date", targetDate: "2026-99-99" }])
+    assert.equal((await api.acquireParticipants(value)).errorCode, "invalid_argument");
+  assert.equal(calls.length, participantCount);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {
@@ -229,15 +249,15 @@ test("renderer bridge verification normalizes order but rejects missing extra an
   assert.equal(verify({ ...bridge, readOverallV2Trace: null }, expectedKeys), false);
 });
 
-test("all 18 renderer callsites use the narrow bridge with no raw Electron access", () => {
-  const calls = html.match(/optionMapBridge\.(?:acquireQriPage|finalizeQriPage|fetchJpxPage|fetchOpenInterestListing|fetchParticipantListing|downloadJpxExcel)\(/g) || [];
-  assert.equal(calls.length, 18);
+test("all renderer acquisition callsites use the narrow bridge with no raw Electron access", () => {
+  const calls = html.match(/optionMapBridge\.(?:acquireParticipants|acquireQriPage|finalizeQriPage|fetchJpxPage|fetchOpenInterestListing|downloadJpxExcel)\(/g) || [];
+  assert.equal(calls.length, 16);
+  assert.equal((html.match(/optionMapBridge\.acquireParticipants\(/g) || []).length, 5);
   assert.equal((html.match(/optionMapBridge\.acquireQriPage\(/g) || []).length, 2);
   assert.equal((html.match(/optionMapBridge\.finalizeQriPage\(/g) || []).length, 1);
-  assert.equal((html.match(/optionMapBridge\.fetchJpxPage\(/g) || []).length, 2);
+  assert.equal((html.match(/optionMapBridge\.fetchJpxPage\(/g) || []).length, 1);
   assert.equal((html.match(/optionMapBridge\.fetchOpenInterestListing\(/g) || []).length, 3);
-  assert.equal((html.match(/optionMapBridge\.fetchParticipantListing\(/g) || []).length, 1);
-  assert.equal((html.match(/optionMapBridge\.downloadJpxExcel\(/g) || []).length, 9);
+  assert.equal((html.match(/optionMapBridge\.downloadJpxExcel\(/g) || []).length, 4);
   assert.doesNotMatch(html, /require\(["']electron["']\)|ipcRenderer/);
 });
 
@@ -264,5 +284,6 @@ test("hidden windows and Security 0C/0D remain independent of the main preload",
   assert.match(mainSource, /redirect:\s*"error"/);
   assert.match(mainSource, /requireAllowedUrl/);
   assert.doesNotMatch(mainSource, /ipcMain\.handle\("fetch-option-page"/);
-  assert.doesNotMatch(preloadSource, /\bfetch\s*\(|localStorage|sessionStorage|indexedDB|validate[A-Z].*Url/);
+  assert.doesNotMatch(preloadSource, /\bfetch\s*\(|localStorage|sessionStorage|validate[A-Z].*Url/);
+  assert.match(preloadSource, /participantFormalProductionWriter/);
 });

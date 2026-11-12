@@ -178,10 +178,20 @@ test("workbook safetyは正常XLSXを受理しZIP・bomb・path・macro・extern
 
 test("preloadはURLなしの限定APIだけを公開しmain requestも再検証される", async () => {
   let exposed, invoked;
-  const sandbox = { require: name => name === "electron" ? {
-    contextBridge: { exposeInMainWorld: (key, value) => { exposed = { key, value }; } },
-    ipcRenderer: { invoke: (...args) => { invoked = args; return Promise.resolve({ success: true }); } }
-  } : require(name), Object };
+  const sandbox = { require: name => {
+    if (name === "electron") return {
+      contextBridge: { exposeInMainWorld: (key, value) => { exposed = { key, value }; } },
+      ipcRenderer: { invoke: (...args) => { invoked = args; return Promise.resolve({ success: true }); },
+        on() {}, send() {} }
+    };
+    if (name === "./js/participantFormalMainBridge.js") return {
+      COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
+    if (name === "./js/participantFormalProductionWriter.js") return {
+      createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};
+    if (name === "./js/formalArchive/participantFormalArchiveSchema.js") return {
+      DATABASE_NAME:"OptionMapParticipantFormalArchive"};
+    throw new Error(`unexpected_preload_dependency:${name}`);
+  }, Object };
   vm.runInNewContext(fs.readFileSync(path.join(root, "preload.js"), "utf8"), sandbox);
   assert.equal(typeof exposed.value.requestCalendarSource, "function");
   await exposed.value.requestCalendarSource({ sourceId: "jp-boj-calendar",
