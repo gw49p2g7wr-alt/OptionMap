@@ -10,9 +10,9 @@ const Builder = require("../scripts/buildPreloadBundle.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const EXPECTED_KEYS = Object.freeze([
-  "acquireParticipants", "acquireQriPage", "checkCalendarSources", "downloadJpxExcel",
-  "evaluateMorningV5Formal", "evaluateOverallV2Trace", "fetchJpxPage",
-  "fetchOpenInterestListing", "finalizeQriPage", "getRuntimeMetadata",
+  "acquireParticipants", "acquireQriPage", "acquireWeekly", "checkCalendarSources",
+  "evaluateMorningV5Formal", "evaluateOverallV2Trace",
+  "finalizeQriPage", "getRuntimeMetadata",
   "readMorningV5Formal", "readOverallV2Trace", "requestCalendarSource",
   "saveCalendarExportJson", "saveFullExportJson"
 ].sort());

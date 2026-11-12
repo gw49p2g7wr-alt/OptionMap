@@ -68,17 +68,22 @@ function invokeParticipantAcquisition(args) {
   return ipcRenderer.invoke("acquire-participants", Object.freeze({ ...request }));
 }
 
-function invokeUrlChannel(channel, args) {
-  const url = args[0];
-  if (
-    args.length !== 1 ||
-    typeof url !== "string" ||
-    url.trim() === "" ||
-    url.length > 4096
-  ) {
+function invokeWeeklyAcquisition(args) {
+  const request = args[0];
+  if (args.length !== 1 || !request || typeof request !== "object" || Array.isArray(request))
     return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
-  }
-  return ipcRenderer.invoke(channel, url);
+  const keys = Object.keys(request).sort().join("|");
+  const latest = keys === "requestKind" && request.requestKind === "latest_available";
+  const explicit = keys === "requestKind|targetDate" &&
+    request.requestKind === "explicit_source_date" && validCalendarDay(request.targetDate);
+  const range = keys === "endDate|requestKind|startDate" &&
+    request.requestKind === "historical_backfill_range" &&
+    validCalendarDay(request.startDate) && validCalendarDay(request.endDate) &&
+    request.startDate <= request.endDate &&
+    (Date.parse(`${request.endDate}T00:00:00.000Z`) -
+      Date.parse(`${request.startDate}T00:00:00.000Z`)) / 86_400_000 <= 366;
+  if (!latest && !explicit && !range) return Promise.resolve(INVALID_ARGUMENT_RESPONSE);
+  return ipcRenderer.invoke("acquire-weekly", Object.freeze({ ...request }));
 }
 
 function invokeQriAcquisition(args) {
@@ -218,12 +223,8 @@ async function invokeCalendarCheck(args) {
 contextBridge.exposeInMainWorld("optionMapBridge", Object.freeze({
   acquireQriPage: (...args) => invokeQriAcquisition(args),
   acquireParticipants: (...args) => invokeParticipantAcquisition(args),
+  acquireWeekly: (...args) => invokeWeeklyAcquisition(args),
   finalizeQriPage: (...args) => invokeQriFinalization(args),
-  fetchJpxPage: (...args) => invokeUrlChannel("fetch-daytrading-page", args),
-  fetchOpenInterestListing: (...args) =>
-    invokeUrlChannel("fetch-jpx-open-interest-json", args),
-  downloadJpxExcel: (...args) =>
-    invokeUrlChannel("download-daytrading-excel", args),
   getRuntimeMetadata: (...args) => invokeRuntimeMetadata(args),
   checkCalendarSources: (...args) => invokeCalendarCheck(args),
   requestCalendarSource: (...args) => invokeCalendarSource(args),

@@ -165,7 +165,7 @@ test("browser Node-off modules compose without Node globals; API input contract 
         DATABASE_NAME:"OptionMapParticipantFormalArchive"};
       throw new Error(`unexpected_preload_dependency:${id}`);
     } });
-  assert.equal(Object.keys(api).length, 15);
+  assert.equal(Object.keys(api).length, 13);
   for (const request of [{ trigger: "scheduler" }, { databaseName: "other" }, { runtimeStates: [] },
     { sessionStates: null }, { trigger: "startup", url: "https://bad.invalid" }])
     assert.equal((await api.checkCalendarSources(request)).errorCode, "invalid_argument");

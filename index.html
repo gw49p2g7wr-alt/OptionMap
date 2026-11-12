@@ -1674,10 +1674,8 @@ const optionMapBridge = window.optionMapBridge;
 const OPTION_MAP_BRIDGE_KEYS = Object.freeze([
     "acquireParticipants",
     "acquireQriPage",
+    "acquireWeekly",
     "checkCalendarSources",
-    "downloadJpxExcel",
-    "fetchJpxPage",
-    "fetchOpenInterestListing",
     "finalizeQriPage",
     "getRuntimeMetadata",
     "evaluateMorningV5Formal",
@@ -1885,6 +1883,20 @@ let weeklyFuturesBackfillCandidates = [];
 let weeklyFuturesBackfillCancelled = false;
 let weeklyOptionsBackfillCandidates = [];
 let weeklyOptionsBackfillCancelled = false;
+
+window.getWeeklyProductionHistorySnapshot = async function () {
+    if (weeklyFuturesHistoryStorageInvalid || !weeklyFuturesHistory) {
+        throw new Error("weekly_futures_history_unavailable");
+    }
+    const futuresValid = await window.OptionMapWeeklyFuturesHistory
+        .validateHistory(weeklyFuturesHistory);
+    const options = await window.OptionMapWeeklyOptionsHistoryStore
+        .readWeeklyOptionsHistory();
+    if (!futuresValid || !["empty", "ready"].includes(options.status)) {
+        throw new Error("weekly_history_snapshot_invalid");
+    }
+    return structuredClone({ futures: weeklyFuturesHistory, options: options.history });
+};
 
 function getQriReferenceReadinessBinding() {
     const next = initializeQriReferenceAcquisitionRuntime().getState().runtime;
@@ -2409,36 +2421,15 @@ function validateWeeklyOptionsBackfillRange() {
     }
     return { startDate, endDate };
 }
-async function fetchWeeklyOptionsBackfillListing(listingUrl) {
-    const result = await optionMapBridge.fetchOpenInterestListing(listingUrl);
-    if (!result?.success) throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
-    return result.data;
-}
-async function fetchWeeklyOptionsBackfillExcel(sourceUrl) {
-    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
-    if (!result?.success) throw new Error(result?.error || "JPX週次オプションExcelを取得できませんでした");
-    return result.data;
-}
-function parseWeeklyOptionsBackfillExcel(bytes) {
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    return { data: window.OptionMapWeeklyOptions.parseWeeklyOptionsRows(rows) };
-}
 async function previewWeeklyOptionsBackfill() {
     try {
         const range = validateWeeklyOptionsBackfillRange();
         weeklyOptionsBackfillPreviewButton.disabled = true;
         weeklyOptionsBackfillStartButton.disabled = true;
-        weeklyOptionsBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
-        const manifest = await window.OptionMapWeeklyOptionsBackfill.enumerateCandidates({
-            ...range, fetchListing: fetchWeeklyOptionsBackfillListing
-        });
-        weeklyOptionsBackfillCandidates = manifest.candidates;
+        weeklyOptionsBackfillCandidates = [range];
         weeklyOptionsBackfillStatus.textContent =
-            `公式掲載候補：${manifest.candidates.length}週` +
-            (manifest.failures.length ? `（一覧取得失敗 ${manifest.failures.length}年）` : "");
-        weeklyOptionsBackfillStartButton.disabled = manifest.candidates.length === 0;
+            `${range.startDate} ～ ${range.endDate} をmain-owned正式取得で確認します`;
+        weeklyOptionsBackfillStartButton.disabled = false;
     } catch (error) {
         weeklyOptionsBackfillCandidates = [];
         weeklyOptionsBackfillStatus.textContent = error?.message || String(error);
@@ -2451,37 +2442,25 @@ async function startWeeklyOptionsBackfill() {
     weeklyOptionsBackfillStartButton.disabled = true;
     weeklyOptionsBackfillCancelButton.disabled = false;
     try {
-        const stored = await window.OptionMapWeeklyOptionsHistoryStore.readWeeklyOptionsHistory();
-        if (!["empty", "ready"].includes(stored.status)) throw new Error("正式historyが安全に更新できる状態ではありません");
-        const result = await window.OptionMapWeeklyOptionsBackfill.runBackfill({
-            history: stored.history, candidates: weeklyOptionsBackfillCandidates,
-            fetchExcel: fetchWeeklyOptionsBackfillExcel, parseExcel: parseWeeklyOptionsBackfillExcel,
-            isCancelled: () => weeklyOptionsBackfillCancelled,
-            onProgress: progress => {
-                const labels = { fetch: "取得中", fetched: "取得済み", parse: "解析中",
-                    parsed: "解析済み", validated: "検証済み" };
-                weeklyOptionsBackfillStatus.textContent =
-                    `${progress.current} / ${progress.total}週　${labels[progress.phase]}：${progress.sourceDate}` +
-                    `　取得済み ${progress.fetched || 0}、解析済み ${progress.parsed || 0}、` +
-                    `検証済み ${progress.validated || 0}`;
-            }
+        const range = weeklyOptionsBackfillCandidates[0];
+        weeklyOptionsBackfillStatus.textContent = "main-owned Evidence取得・検証中…";
+        const result = await optionMapBridge.acquireWeekly({
+            requestKind: "historical_backfill_range", ...range
         });
-        if (result.status === "cancelled") {
+        if (weeklyOptionsBackfillCancelled) {
             weeklyOptionsBackfillStatus.textContent = "中止しました。正式historyは変更していません。";
             return;
         }
-        if (result.status === "staging_failed") throw new Error("staging全体の検証に失敗しました");
-        const saved = result.staged.length
-            ? await window.OptionMapWeeklyOptionsHistoryStore.persistWeeklyOptionsHistoryCandidates(
-                result.staged, { confirmedAt: new Date().toISOString() })
-            : { saved: false, outcome: "no_candidates" };
-        if (!["merged", "same_versions", "no_candidates"].includes(saved.outcome)) {
-            throw new Error(saved.error || "正式historyを保存できませんでした");
-        }
-        const success = result.results.filter(item => item.status === "success").length;
+        if (!["available", "partial"].includes(result?.status))
+            throw new Error(result?.reason || "正式historyを取得できませんでした");
+        const applied = await applyWeeklyProductionResult(result, null, null,
+            { updateConsumer: false });
+        const success = result.runs.filter(item =>
+            item.options.status === "available").length;
         weeklyOptionsBackfillStatus.textContent =
-            `完了：解析・検証 ${success}週、失敗 ${result.results.length - success}週、` +
-            `保存 ${saved.changedCount || 0}週`;
+            `完了：解析・検証 ${success}週、失敗 ${result.runs.length - success}週、` +
+            `semantic write ${result.runs.reduce((sum, item) =>
+                sum + item.options.semanticRevisionWriteCount, 0)}件`;
         await renderWeeklyOptionsHistoryStatus();
         await refreshWeeklyOptionsFormalHistoryComparison();
     } catch (error) {
@@ -2618,54 +2597,15 @@ function validateWeeklyFuturesBackfillRange() {
     return { startDate, endDate };
 }
 
-async function fetchWeeklyFuturesBackfillListing(listingUrl) {
-    const result = await optionMapBridge.fetchOpenInterestListing(listingUrl);
-    if (!result?.success) {
-        throw new Error(result?.error || "JPX公式一覧を取得できませんでした");
-    }
-    return result.data;
-}
-
-async function fetchWeeklyFuturesBackfillExcel(sourceUrl) {
-    const result = await optionMapBridge.downloadJpxExcel(sourceUrl);
-    if (!result?.success) {
-        throw new Error(result?.error || "JPX週次先物Excelを取得できませんでした");
-    }
-    return result.data;
-}
-
-function parseWeeklyFuturesBackfillExcel(bytes) {
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    return {
-        excelSourceDate: extractJapaneseCalendarDate(
-            sheet?.A2?.v, { asOf: true }
-        ),
-        publishedDate: extractJapaneseCalendarDate(sheet?.A3?.v),
-        data: window.OptionMapWeeklyFutures.parseWeeklyFuturesRows(rows)
-    };
-}
-
 async function previewWeeklyFuturesBackfill() {
     try {
         const range = validateWeeklyFuturesBackfillRange();
         weeklyFuturesBackfillPreviewButton.disabled = true;
         weeklyFuturesBackfillStartButton.disabled = true;
-        weeklyFuturesBackfillStatus.textContent = "JPX公式掲載一覧を確認中…";
-        const manifest = await window.OptionMapWeeklyFuturesBackfill
-            .enumerateCandidates({
-                ...range,
-                fetchListing: fetchWeeklyFuturesBackfillListing
-            });
-        weeklyFuturesBackfillCandidates = manifest.candidates;
-        const failureText = manifest.failures.length
-            ? `（一覧取得失敗 ${manifest.failures.length}年）` : "";
+        weeklyFuturesBackfillCandidates = [range];
         weeklyFuturesBackfillStatus.textContent =
-            `公式掲載候補：${manifest.candidates.length}週${failureText}`;
-        weeklyFuturesBackfillStartButton.disabled =
-            manifest.candidates.length === 0 ||
-            weeklyFuturesHistoryStorageInvalid;
+            `${range.startDate} ～ ${range.endDate} をmain-owned正式取得で確認します`;
+        weeklyFuturesBackfillStartButton.disabled = weeklyFuturesHistoryStorageInvalid;
     } catch (error) {
         weeklyFuturesBackfillCandidates = [];
         weeklyFuturesBackfillStatus.textContent =
@@ -2684,58 +2624,32 @@ async function startWeeklyFuturesBackfill() {
     weeklyFuturesBackfillPreviewButton.disabled = true;
     weeklyFuturesBackfillStartButton.disabled = true;
     weeklyFuturesBackfillCancelButton.disabled = false;
-    const originalHistory = weeklyFuturesHistory;
     try {
-        const result = await window.OptionMapWeeklyFuturesBackfill.runBackfill({
-            history: originalHistory,
-            candidates: weeklyFuturesBackfillCandidates,
-            fetchExcel: fetchWeeklyFuturesBackfillExcel,
-            parseExcel: parseWeeklyFuturesBackfillExcel,
-            isCancelled: () => weeklyFuturesBackfillCancelled,
-            onProgress: progress => {
-                const phaseLabels = {
-                    fetch: "取得", parse: "解析", validated: "検証"
-                };
-                weeklyFuturesBackfillStatus.textContent =
-                    `${progress.current} / ${progress.total}週　` +
-                    `${phaseLabels[progress.phase] || progress.phase}：` +
-                    progress.sourceDate;
-            }
+        const range = weeklyFuturesBackfillCandidates[0];
+        weeklyFuturesBackfillStatus.textContent = "main-owned Evidence取得・検証中…";
+        const result = await optionMapBridge.acquireWeekly({
+            requestKind: "historical_backfill_range", ...range
         });
-        if (result.status === "cancelled") {
+        if (weeklyFuturesBackfillCancelled) {
             weeklyFuturesBackfillStatus.textContent =
                 "中止しました。正式historyは変更していません。";
             return;
         }
-        if (result.status === "staging_failed") {
-            throw new Error("staging全体の検証に失敗しました");
-        }
-        const saved = await window.OptionMapWeeklyFuturesBackfill
-            .commitHistory(
-                localStorage,
-                WEEKLY_FUTURES_HISTORY_STORAGE_KEY,
-                result.history
-            );
-        if (!saved.saved) {
-            throw new Error(
-                saved.reason === "storage_failed"
-                    ? "正式historyを保存できませんでした"
-                    : "正式historyの最終検証に失敗しました"
-            );
-        }
-        weeklyFuturesHistory = result.history;
+        if (!["available", "partial"].includes(result?.status))
+            throw new Error(result?.reason || "正式historyを取得できませんでした");
+        await applyWeeklyProductionResult(result, null, null, { updateConsumer: false });
         renderWeeklyFuturesHistoryStatus();
         await window.setWeeklyFuturesJudgmentHistory?.(
             weeklyFuturesHistory
         );
-        const succeeded = result.results.filter(item =>
-            item.status === "success"
-        ).length;
-        const failed = result.results.length - succeeded;
+        const succeeded = result.runs.filter(item =>
+            item.futures.status === "available").length;
+        const failed = result.runs.length - succeeded;
         weeklyFuturesBackfillStatus.textContent =
-            `保存完了：成功 ${succeeded}週、失敗 ${failed}週`;
+            `保存完了：成功 ${succeeded}週、失敗 ${failed}週、` +
+            `semantic write ${result.runs.reduce((sum, item) =>
+                sum + item.futures.semanticRevisionWriteCount, 0)}件`;
     } catch (error) {
-        weeklyFuturesHistory = originalHistory;
         weeklyFuturesBackfillStatus.textContent =
             `${error?.message || String(error)}。既存historyは変更していません。`;
     } finally {
@@ -4495,7 +4409,7 @@ async function fetchWeeklyOptionsData({
     }
 }
 
-async function fetchWeeklyData({ requestId } = {}) {
+async function legacyRendererWeeklyData({ requestId } = {}) {
     const startedAt = new Date().toISOString();
     const futuresRequestId = requestId ||
         window.createFetchRequestId("weeklyFutures");
@@ -4602,6 +4516,147 @@ async function fetchWeeklyData({ requestId } = {}) {
     });
 
     return { weeklyPage, futuresResult, optionsResult };
+}
+
+async function commitWeeklyProductionDomain(source, domain, requestId,
+    { updateConsumer = true } = {}) {
+    if (!domain || domain.status !== "available" || !domain.cache || !domain.candidate) {
+        return { status: window.FETCH_STATUS.FAILED,
+            error: domain?.reason || "weekly_domain_unavailable" };
+    }
+    if (!isCurrentFetchRequest(source, requestId) && updateConsumer) {
+        return { status: "stale", error: "stale_request" };
+    }
+    if (!(await validateWeeklyCache(domain.cache, source))) {
+        return { status: window.FETCH_STATUS.FAILED, error: "weekly_cache_invalid" };
+    }
+    if (domain.semanticRevisionWriteCount > 0) {
+        if (source === "weeklyFutures") {
+            if (weeklyFuturesHistoryStorageInvalid || !domain.history ||
+                !(await window.OptionMapWeeklyFuturesHistory.validateHistory(domain.history))) {
+                return { status: window.FETCH_STATUS.FAILED,
+                    error: "weekly_futures_history_invalid" };
+            }
+            const saved = await window.OptionMapWeeklyFuturesBackfill.commitHistory(
+                localStorage, WEEKLY_FUTURES_HISTORY_STORAGE_KEY, domain.history);
+            if (!saved.saved) return { status: window.FETCH_STATUS.FAILED,
+                error: saved.reason || "weekly_futures_history_save_failed" };
+            weeklyFuturesHistory = domain.history;
+            renderWeeklyFuturesHistoryStatus();
+            await window.setWeeklyFuturesJudgmentHistory?.(weeklyFuturesHistory);
+        } else {
+            const saved = await window.OptionMapWeeklyOptionsHistoryStore
+                .persistWeeklyOptionsHistoryCandidate(domain.candidate, {
+                    confirmedAt: domain.binding?.boundAt
+                });
+            if (!saved.saved || !["added", "revised"].includes(saved.outcome)) {
+                return { status: window.FETCH_STATUS.FAILED,
+                    error: saved.outcome || "weekly_options_history_save_failed" };
+            }
+            await renderWeeklyOptionsHistoryStatus();
+            await refreshWeeklyOptionsFormalHistoryComparison();
+        }
+    }
+    if (!updateConsumer) return { status: window.FETCH_STATUS.SUCCESS,
+        sourceDate: domain.cache.sourceDate, semanticRevisionWriteCount:
+            domain.semanticRevisionWriteCount };
+    const comparison = compareWeeklyVersions(
+        getActiveWeeklyCache(source) || getLastValidWeeklyCache(source), domain.cache);
+    if (!["older_or_inconsistent", "indeterminate"].includes(comparison.assessment)) {
+        applyWeeklyData(source, domain.cache, "live", { status: "latest",
+            remoteCheckStatus: "current", observedLatestTradeDate: domain.cache.sourceDate });
+        if (["new_version", "revised_same_date"].includes(comparison.assessment) ||
+            !getLastValidWeeklyCache(source)) {
+            const configuration = getWeeklyCacheConfiguration(source);
+            try {
+                localStorage.setItem(configuration.storageKey, JSON.stringify(domain.cache));
+            } catch (error) {
+                console.warn(`${source} LastValid互換保存に失敗`, error);
+            }
+            setLastValidWeeklyCache(source, domain.cache);
+        }
+    }
+    window.updateFetchState(source, { status: window.FETCH_STATUS.SUCCESS,
+        fetchedAt: domain.cache.fetchedAt, sourceDate: domain.cache.sourceDate,
+        signature: domain.cache.signature, metadata: domain.cache,
+        sourceUrl: domain.cache.sourceUrl, error: null });
+    return { status: window.FETCH_STATUS.SUCCESS, sourceUrl: domain.cache.sourceUrl,
+        fetchedAt: domain.cache.fetchedAt, metadata: domain.cache, data: domain.cache.data,
+        liveResult: { applied: !["older_or_inconsistent", "indeterminate"]
+            .includes(comparison.assessment), comparison } };
+}
+
+async function applyWeeklyProductionResult(acquisition, futuresRequestId, optionsRequestId,
+    { updateConsumer = true } = {}) {
+    if (!acquisition || !["available", "partial"].includes(acquisition.status)) {
+        const error = acquisition?.reason || "weekly_acquisition_unavailable";
+        if (updateConsumer) {
+            for (const [source, requestId] of [["weeklyFutures", futuresRequestId],
+                ["weeklyOptions", optionsRequestId]]) {
+                if (isCurrentFetchRequest(source, requestId)) {
+                    updateWeeklyRemoteObservation(source, null, false);
+                    window.updateFetchState(source, { status: window.FETCH_STATUS.FAILED,
+                        fetchedAt: new Date().toISOString(), error });
+                }
+            }
+        }
+        return { futuresResult: { status: window.FETCH_STATUS.FAILED, error },
+            optionsResult: { status: window.FETCH_STATUS.FAILED, error }, runs: [] };
+    }
+    let futuresResult = { status: window.FETCH_STATUS.UNAVAILABLE },
+        optionsResult = { status: window.FETCH_STATUS.UNAVAILABLE };
+    for (const run of acquisition.runs) {
+        try {
+            futuresResult = await commitWeeklyProductionDomain("weeklyFutures", run.futures,
+                futuresRequestId, { updateConsumer });
+        } catch (error) {
+            futuresResult = { status: window.FETCH_STATUS.FAILED,
+                error: error?.message || "weekly_futures_consumer_commit_failed" };
+        }
+        try {
+            optionsResult = await commitWeeklyProductionDomain("weeklyOptions", run.options,
+                optionsRequestId, { updateConsumer });
+        } catch (error) {
+            optionsResult = { status: window.FETCH_STATUS.FAILED,
+                error: error?.message || "weekly_options_consumer_commit_failed" };
+        }
+        if (updateConsumer) {
+            for (const [source, requestId, result] of [
+                ["weeklyFutures", futuresRequestId, futuresResult],
+                ["weeklyOptions", optionsRequestId, optionsResult]
+            ]) {
+                if (result.status === window.FETCH_STATUS.FAILED &&
+                    isCurrentFetchRequest(source, requestId)) {
+                    updateWeeklyRemoteObservation(source, run.sourceDate, false);
+                    window.updateFetchState(source, { status: window.FETCH_STATUS.FAILED,
+                        fetchedAt: new Date().toISOString(), error: result.error });
+                }
+            }
+        }
+    }
+    return { futuresResult, optionsResult, runs: acquisition.runs };
+}
+
+async function fetchWeeklyData({ requestId } = {}) {
+    const startedAt = new Date().toISOString(), futuresRequestId = requestId ||
+        window.createFetchRequestId("weeklyFutures"), optionsRequestId = requestId ||
+        window.createFetchRequestId("weeklyOptions");
+    for (const [source, currentRequestId] of [["weeklyFutures", futuresRequestId],
+        ["weeklyOptions", optionsRequestId]]) {
+        window.updateFetchState(source, { status: window.FETCH_STATUS.LOADING, startedAt,
+            fetchedAt: null, sourceDate: null, signature: null, metadata: null,
+            sourceUrl: null, error: null, requestId: currentRequestId });
+        window.updateWeeklyDataState(source, { remoteCheckStatus: "pending",
+            observedLatestTradeDate: null });
+    }
+    window.invalidateWeeklyFuturesTwelveGroupDualRun?.("new_weekly_request");
+    const acquisition = await optionMapBridge.acquireWeekly({ requestKind: "latest_available" });
+    if (acquisition?.status === "stale") return { weeklyPage: null,
+        futuresResult: { status: "stale" }, optionsResult: { status: "stale" } };
+    const applied = await applyWeeklyProductionResult(acquisition, futuresRequestId,
+        optionsRequestId);
+    return { weeklyPage: { sourceUrl: null, fetchedAt: new Date().toISOString(),
+        productionAuthority: true }, ...applied };
 }
 
 function createQriPayload(html, sourceUrl = "https://svc.qri.jp/jpx/nkopm/") {

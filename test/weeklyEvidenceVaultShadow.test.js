@@ -340,12 +340,12 @@ test("W3-25 Weekly semantic history is unchanged and unreferenced", () => {
   assert.doesNotMatch(sources, /Overall|Morning|FullExport/);
 });
 
-test("W3-26 production path stays unwired while package closure includes W3 modules", () => {
+test("W3-26 production path uses the Evidence pipeline and package closure includes W3", () => {
   const production = ["main.js", "preload.js", "index.html"].map(file =>
     fs.readFileSync(path.join(REPO, file), "utf8")).join("\n"),
     packageConfig = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
-  assert.doesNotMatch(production,
-    /weeklyEvidenceVaultShadow|weeklyEvidenceSetContract|weeklyEvidenceSetStore/);
+  assert.match(production, /weeklyEvidenceVaultShadow/);
+  assert.match(production, /weeklyEvidenceSetStore/);
   assert.equal(packageConfig.build.files.includes("js/**/*"), true);
 });
 

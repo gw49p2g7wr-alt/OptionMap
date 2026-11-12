@@ -12,12 +12,10 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), 
 const expectedKeys = [
   "acquireParticipants",
   "acquireQriPage",
+  "acquireWeekly",
   "checkCalendarSources",
-  "downloadJpxExcel",
   "evaluateMorningV5Formal",
   "evaluateOverallV2Trace",
-  "fetchJpxPage",
-  "fetchOpenInterestListing",
   "finalizeQriPage",
   "getRuntimeMetadata",
   "readMorningV5Formal",
@@ -26,12 +24,7 @@ const expectedKeys = [
   "saveCalendarExportJson",
   "saveFullExportJson"
 ];
-const urlKeys = expectedKeys.filter(key => !["acquireParticipants", "acquireQriPage", "checkCalendarSources", "evaluateMorningV5Formal", "evaluateOverallV2Trace", "finalizeQriPage", "getRuntimeMetadata", "readOverallV2Trace", "readMorningV5Formal", "requestCalendarSource",
-  "saveCalendarExportJson", "saveFullExportJson"].includes(key));
 const mapping = {
-  fetchJpxPage: "fetch-daytrading-page",
-  fetchOpenInterestListing: "fetch-jpx-open-interest-json",
-  downloadJpxExcel: "download-daytrading-excel",
   saveCalendarExportJson: "save-calendar-export-json",
   saveFullExportJson: "save-full-export-json"
 };
@@ -105,7 +98,7 @@ test("main window enables context isolation with Node OFF and an absolute root p
   assert.equal(packageJson.build.files.includes("preload.bundle.js"), true);
 });
 
-test("preload publishes only the exact fifteen-method narrow bridge", () => {
+test("preload publishes only the exact thirteen-method narrow bridge", () => {
   const { key, api } = loadPreload();
   assert.equal(key, "optionMapBridge");
   assert.deepEqual(Object.keys(api).sort(), expectedKeys);
@@ -115,34 +108,14 @@ test("preload publishes only the exact fifteen-method narrow bridge", () => {
   assert.doesNotMatch(preloadSource, /generic|invoke:\s|channel\s*=>/);
 });
 
-test("each public method maps one unchanged URL to its fixed IPC channel", async () => {
-  const response = Object.freeze({ success: true, data: Object.freeze([1, 2, 3]) });
-  const failure = Object.freeze({ success: false, error: "safe", errorCode: "invalid_url" });
-  const { api, calls } = loadPreload(async channel =>
-    channel === "download-daytrading-excel" ? response : failure);
-  for (const method of urlKeys) {
-    const url = ` https://example.invalid/${method} `;
-    const result = await api[method](url);
-    assert.deepEqual(calls.at(-1), [mapping[method], url]);
-    assert.equal(result, method === "downloadJpxExcel" ? response : failure);
-  }
-  assert.deepEqual(await api.downloadJpxExcel("https://example.invalid/file.xlsx"), response);
-  assert.equal(Array.isArray(response.data), true);
+test("renderer URL acquisition methods are removed from the preload surface", () => {
+  const { api } = loadPreload();
+  for (const method of ["fetchJpxPage", "fetchOpenInterestListing", "downloadJpxExcel"])
+    assert.equal(Object.hasOwn(api, method), false);
 });
 
 test("all bridge methods reject invalid argument shape without invoking IPC", async () => {
   const { api, calls } = loadPreload();
-  const invalidCalls = [[], ["one", "two"], [null], [42], [""], [" \n\t "], ["x".repeat(4097)]];
-  for (const method of urlKeys) {
-    for (const args of invalidCalls) {
-      const result = await api[method](...args);
-      assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-        success: false,
-        error: "リクエスト引数が不正です",
-        errorCode: "invalid_argument"
-      });
-    }
-  }
   assert.equal(calls.length, 0);
   const exportRequest = { fileName: "OptionMap-Full-Export-2026-09-06T071500-JST.json",
     json: "{}" };
@@ -220,6 +193,16 @@ test("all bridge methods reject invalid argument shape without invoking IPC", as
     { requestKind: "explicit_source_date", targetDate: "2026-99-99" }])
     assert.equal((await api.acquireParticipants(value)).errorCode, "invalid_argument");
   assert.equal(calls.length, participantCount);
+  const weekly = { requestKind: "historical_backfill_range",
+    startDate: "2026-10-01", endDate: "2026-11-13" };
+  await api.acquireWeekly(weekly);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))), ["acquire-weekly", weekly]);
+  const weeklyCount = calls.length;
+  for (const value of [null, {}, { requestKind: "latest_available", sourceUrl: "https://evil" },
+    { requestKind: "historical_backfill_range", startDate: "2026-11-13",
+      endDate: "2026-10-01" }])
+    assert.equal((await api.acquireWeekly(value)).errorCode, "invalid_argument");
+  assert.equal(calls.length, weeklyCount);
 });
 
 test("renderer fail-fast validates exact bridge before XLSX and startup work", () => {
@@ -250,14 +233,12 @@ test("renderer bridge verification normalizes order but rejects missing extra an
 });
 
 test("all renderer acquisition callsites use the narrow bridge with no raw Electron access", () => {
-  const calls = html.match(/optionMapBridge\.(?:acquireParticipants|acquireQriPage|finalizeQriPage|fetchJpxPage|fetchOpenInterestListing|downloadJpxExcel)\(/g) || [];
-  assert.equal(calls.length, 16);
+  const calls = html.match(/optionMapBridge\.(?:acquireParticipants|acquireQriPage|acquireWeekly|finalizeQriPage)\(/g) || [];
+  assert.equal(calls.length, 11);
   assert.equal((html.match(/optionMapBridge\.acquireParticipants\(/g) || []).length, 5);
   assert.equal((html.match(/optionMapBridge\.acquireQriPage\(/g) || []).length, 2);
+  assert.equal((html.match(/optionMapBridge\.acquireWeekly\(/g) || []).length, 3);
   assert.equal((html.match(/optionMapBridge\.finalizeQriPage\(/g) || []).length, 1);
-  assert.equal((html.match(/optionMapBridge\.fetchJpxPage\(/g) || []).length, 1);
-  assert.equal((html.match(/optionMapBridge\.fetchOpenInterestListing\(/g) || []).length, 3);
-  assert.equal((html.match(/optionMapBridge\.downloadJpxExcel\(/g) || []).length, 4);
   assert.doesNotMatch(html, /require\(["']electron["']\)|ipcRenderer/);
 });
 

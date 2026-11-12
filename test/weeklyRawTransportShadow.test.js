@@ -340,15 +340,16 @@ test("W2-24 renderer cannot inject URL, role, bytes or hash into the shadow requ
   assert.equal(fetchFixture.calls.length, 0);
 });
 
-test("W2-25 shadow is pure-unwired and package-reachable without persistence or IPC", () => {
+test("W2-25 shadow stays pure and is production-wired through the bounded W5 service", () => {
   const root = path.resolve(__dirname, "..");
   const source = fs.readFileSync(path.join(root, "js/weeklyRawTransportShadow.js"), "utf8");
   for (const forbidden of ["evidenceVault", "localStorage", "indexedDB", "ipcMain",
     "contextBridge", "writeFileSync", "appendFile", "productionProfile"])
     assert.equal(source.includes(forbidden), false, forbidden);
-  for (const production of ["main.js", "preload.js", "index.html"])
-    assert.equal(fs.readFileSync(path.join(root, production), "utf8")
-      .includes("weeklyRawTransportShadow"), false, production);
+  assert.match(fs.readFileSync(path.join(root, "main.js"), "utf8"),
+    /weeklyRawTransportShadow/);
+  assert.match(fs.readFileSync(path.join(root, "preload.js"), "utf8"),
+    /ipcRenderer\.invoke\("acquire-weekly"/);
   const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(packageConfig.build.files.includes("js/**/*"), true);
   assert.deepEqual(Shadow.REQUEST_POLICY, {

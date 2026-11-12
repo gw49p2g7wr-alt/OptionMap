@@ -110,6 +110,20 @@ function createWeeklySemanticEvidencePromotionShadow(options = {}) {
           bindingWriteCount: 0 });
     }
 
+    let priorBinding = null;
+    try {
+      priorBinding = options.bindingStore.readForRevision(input.domainRole,
+        input.candidate.sourceDate, input.candidate.versionKey, options.authority);
+      if (priorBinding) {
+        const priorSet = readEvidenceSet(priorBinding.evidenceSetId);
+        if (!Contract.validateBindingAgainstEvidence(priorBinding, priorSet, options.vault,
+          options.authority)) throw new Error("binding_invalid");
+        return outcome("available", "binding_retry", merged.result.history, priorBinding,
+          { semanticRevisionWriteCount: merged.semanticWriteCount, bindingWriteCount: 0 });
+      }
+    } catch (_error) {
+      return outcome("unavailable", "existing_binding_invalid", input.history);
+    }
     let binding, stored, readback;
     try {
       binding = Contract.createBinding({ domainRole: input.domainRole,

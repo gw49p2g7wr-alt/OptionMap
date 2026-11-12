@@ -67,6 +67,52 @@ let overallTraceReadService = null;
 let qriProductionAcquisitionService = null;
 let participantProductionAcquisitionService = null;
 let participantFormalBridge = null;
+let weeklyProductionAcquisitionService = null;
+
+function ensureWeeklyProductionAcquisition() {
+  if (weeklyProductionAcquisitionService) return weeklyProductionAcquisitionService;
+  if (!safeStorage.isEncryptionAvailable())
+    throw new Error("weekly_authority_protection_unavailable");
+  const AuthorityState = require("./js/weeklyProductionAuthority.js");
+  const Transport = require("./js/weeklyRawTransportShadow.js");
+  const EvidenceShadow = require("./js/weeklyEvidenceVaultShadow.js");
+  const Promotion = require("./js/weeklySemanticEvidencePromotionShadow.js");
+  const Production = require("./js/weeklyProductionAcquisition.js");
+  const Vault = require("./js/sourceEvidence/sourceEvidenceVault.js");
+  const SetStore = require("./js/storage/weeklyEvidenceSetStore.js");
+  const BindingStore = require("./js/storage/weeklySemanticEvidenceBindingStore.js");
+  const profileAuthority = Object.freeze({ getUserDataPath: () => app.getPath("userData") });
+  const authority = AuthorityState.createProductionAuthority({
+    getUserDataPath: profileAuthority.getUserDataPath,
+    protector: Object.freeze({
+      protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
+      unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
+    }),
+    randomBytes
+  }).authority;
+  const transportShadow = Transport.createWeeklyRawTransportShadow({ authority,
+    fetchImpl: (url, options) => net.fetch(url, options), now: () => new Date() });
+  const vault = Vault.createProductionVault(profileAuthority),
+    evidenceSetStore = SetStore.createProductionWeeklyEvidenceSetStore(profileAuthority),
+    bindingStore = BindingStore.createProductionWeeklySemanticEvidenceBindingStore(
+      profileAuthority),
+    evidenceShadow = EvidenceShadow.createWeeklyEvidenceVaultShadow({ transportShadow, vault,
+      setStore: evidenceSetStore, authority, testHooks: null }),
+    promotion = Promotion.createWeeklySemanticEvidencePromotionShadow({ vault,
+      evidenceSetStore, bindingStore, authority });
+  weeklyProductionAcquisitionService = Production.createWeeklyProductionAcquisition({
+    authority, evidenceShadow, promotion, now: () => new Date(),
+    createRequestId: () => `weekly-production-${randomUUID()}`,
+    readHistories: async () => {
+      if (!mainWindow || mainWindow.isDestroyed())
+        throw new Error("weekly_renderer_unavailable");
+      return mainWindow.webContents.executeJavaScript(
+        "window.getWeeklyProductionHistorySnapshot?.()"
+      );
+    }
+  });
+  return weeklyProductionAcquisitionService;
+}
 
 function ensureQriProductionAcquisition() {
   if (qriProductionAcquisitionService) return qriProductionAcquisitionService;
@@ -492,6 +538,15 @@ ipcMain.handle("acquire-participants", async (event, request) => {
   try { return await ensureParticipantProductionAcquisition().acquire(request); }
   catch (_error) { return { status: "unavailable", reason: "acquisition_unavailable",
     sourceDate: null, completeSet: null, classification: null, formalWriteCount: 0 }; }
+});
+
+ipcMain.handle("acquire-weekly", async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner !== mainWindow) return { status: "unavailable",
+    reason: "invalid_sender", requestId: null, generation: null, runs: [] };
+  try { return await ensureWeeklyProductionAcquisition().acquire(request); }
+  catch (_error) { return { status: "unavailable", reason: "acquisition_unavailable",
+    requestId: null, generation: null, runs: [] }; }
 });
 
 ipcMain.handle("acquire-qri-page", async (event, request) => {

@@ -203,7 +203,8 @@ test("P5A-13 duplicate refresh creates no duplicate semantic revision", async t 
 
 test("P5A-14 startup has one Participants production acquisition call", () => {
   const html = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
-  assert.equal((html.match(/requestKind:\s*"latest_available"/g) || []).length, 1);
+  assert.equal((html.match(/acquireParticipants\(\{\s*\n\s*requestKind:\s*"latest_available"/g) ||
+    []).length, 1);
   assert.doesNotMatch(html, /fetchParticipantListing|findLatestParticipantDate/);
 });
 

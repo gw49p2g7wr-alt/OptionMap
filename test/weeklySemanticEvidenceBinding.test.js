@@ -368,11 +368,11 @@ test("W4-S6 metadata helper leaks no raw bytes path or secrets", async t => {
   assert.equal(resolved.documents.some(value => Object.hasOwn(value, "bytes")), false);
 });
 
-test("W4-S7 production Weekly path remains untouched and W4 is package reachable", () => {
+test("W4-S7 production Weekly path uses W4 binding and remains package reachable", () => {
   const root = path.resolve(__dirname, ".."), production = ["main.js", "preload.js", "index.html"]
     .map(file => fs.readFileSync(path.join(root, file), "utf8")).join("\n");
-  assert.doesNotMatch(production,
-    /weeklySemanticEvidenceBinding|weeklySemanticEvidencePromotion|weekly-semantic-evidence/);
+  assert.match(production, /weeklySemanticEvidencePromotionShadow/);
+  assert.match(production, /weeklyProductionAcquisition/);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   assert.ok(pkg.build.files.includes("js/**/*"));
 });
