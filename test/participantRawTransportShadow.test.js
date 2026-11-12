@@ -10,6 +10,7 @@ const XLSX = require("xlsx");
 const P1 = require("../js/participantAcquisitionAuthorityContract.js");
 const Shadow = require("../js/participantRawTransportShadow.js");
 const ParticipantData = require("../js/participantData.js");
+const MimePolicy = require("../js/participantXlsxMimePolicy.js");
 
 const root = path.join(__dirname, "..");
 const DATE = "2026-11-10";
@@ -57,11 +58,12 @@ function chain({ date = DATE, suffix = "a", requestId = "participants-p2-request
   return { main, intent, discovery, manifest, acquisitions };
 }
 
-function normalFetch({ date = DATE, calls = [] } = {}) {
+function normalFetch({ date = DATE, calls = [], mime = Shadow.MIME } = {}) {
   return async (url, options) => {
     calls.push({ url, options });
     const role = P1.ROLE_ORDER.find(value => url === P1.canonicalWorkbookUrl(value, date));
-    return role ? response(workbook(role, date)) : response(null, { status: 404, mime: "text/plain" });
+    return role ? response(workbook(role, date), { mime }) :
+      response(null, { status: 404, mime: "text/plain" });
   };
 }
 
@@ -118,12 +120,54 @@ test("P2-4 official XLSX MIME is accepted", async () => {
   assert.ok(value.result.results.every(result => result.mime === Shadow.MIME));
 });
 
+test("MIME-1/2 shared authority accepts exactly official XLSX and JPX binary MIME", () => {
+  assert.deepEqual(MimePolicy.ACCEPTED_MIME_TYPES, [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "binary/octet-stream"
+  ]);
+  assert.strictEqual(Shadow.ACCEPTED_MIME_TYPES, MimePolicy.ACCEPTED_MIME_TYPES);
+  assert.strictEqual(Shadow.REQUEST_POLICY.acceptedMime, MimePolicy.ACCEPTED_MIME_TYPES);
+});
+
+test("MIME-2 JPX binary/octet-stream is accepted and retained for all four roles", async () => {
+  const value = chain({ suffix: "m", requestId: "participants-mime-binary" }), calls = [],
+    result = await service(normalFetch({ date: value.manifest.sourceDate, calls,
+      mime: Shadow.BINARY_MIME }), value.main).acquireManifest(value.manifest);
+  assert.equal(result.success, true);
+  assert.equal(calls.length, 4);
+  assert.deepEqual(result.results.map(item => item.mime),
+    P1.ROLE_ORDER.map(() => Shadow.BINARY_MIME));
+});
+
 test("P2-5 generic binary MIME is rejected", async () => {
   const value = chain();
   const result = await service(async () => response(workbook("dayAuction"),
     { mime: "application/octet-stream" }), value.main).acquireManifest(value.manifest);
   assert.deepEqual([result.success, result.reason, result.diagnostics[0].stage],
     [false, "mime_mismatch", "mime"]);
+});
+
+for (const [number, label, mime] of [
+  [3, "application/octet-stream", "application/octet-stream"],
+  [4, "text/html", "text/html"],
+  [5, "empty MIME", null],
+  [6, "arbitrary binary MIME", "application/x-binary"]
+]) {
+  test(`MIME-${number} ${label} is rejected`, async () => {
+    const value = chain({ suffix: "n", requestId: `participants-mime-reject-${number}` });
+    const result = await service(async () => response(workbook("dayAuction"), { mime }),
+      value.main).acquireManifest(value.manifest);
+    assert.deepEqual([result.success, result.reason, result.diagnostics[0].stage],
+      [false, "mime_mismatch", "mime"]);
+  });
+}
+
+test("MIME-7 binary/octet-stream with invalid XLSX signature is rejected", async () => {
+  const value = chain({ suffix: "o", requestId: "participants-mime-invalid-pk" });
+  const result = await service(async () => response(new Uint8Array([1, 2, 3, 4]),
+    { mime: Shadow.BINARY_MIME }), value.main).acquireManifest(value.manifest);
+  assert.deepEqual([result.success, result.reason, result.diagnostics[0].stage],
+    [false, "workbook_parse_rejected", "parser"]);
 });
 
 test("P2-6 declared and actual oversize are rejected", async () => {
@@ -215,6 +259,17 @@ test("P2-16 wrong suffix or date is rejected before a request", async () => {
     ["route_rejected", "route_rejected", 0]);
 });
 
+test("MIME-8 binary/octet-stream does not bypass exact route validation", async () => {
+  const value = chain({ suffix: "p", requestId: "participants-mime-wrong-route" }),
+    forged = structuredClone(value.manifest);
+  forged.routes[0].canonicalUrl = forged.routes[0].canonicalUrl.replace(
+    "whole_day.xlsx", "wrong.xlsx");
+  let calls = 0;
+  const result = await service(async () => { calls += 1; return response(workbook("dayAuction"),
+    { mime: Shadow.BINARY_MIME }); }, value.main).acquireManifest(forged);
+  assert.deepEqual([result.success, result.reason, calls], [false, "route_rejected", 0]);
+});
+
 test("P2-17 fallback probes dayAuction only and never exceeds ten attempts", async () => {
   const main = authority("c");
   const intent = P1.createAcquisitionIntent({ requestKind: "latest_available" });
@@ -248,6 +303,29 @@ test("fallback success establishes sourceDate then P1 derives all four routes", 
   assert.deepEqual([result.discovery.sourceDate, result.probeCount,
     result.discovery.routes.map(route => route.role)],
   ["2026-11-09", 2, P1.ROLE_ORDER]);
+});
+
+test("MIME-9 fallback probe accepts binary/octet-stream with a valid XLSX", async () => {
+  const main = authority("q"), intent = P1.createAcquisitionIntent({
+    requestKind: "latest_available" }), urls = [];
+  const result = await service(async url => {
+    urls.push(url);
+    return response(workbook("dayAuction", DATE), { mime: Shadow.BINARY_MIME });
+  }, main).resolveDiscovery({ intent, indexFacts: { indexUrl: P1.CURRENT_INDEX_URL, hrefs: [],
+    discoveryRequestId: "participants-index-empty-binary" }, probeStartDate: DATE,
+  discoveryRequestId: "participants-fallback-binary" });
+  assert.deepEqual([result.success, result.discovery.sourceDate, result.probeCount, urls.length],
+    [true, DATE, 1, 1]);
+  assert.deepEqual(result.discovery.routes.map(route => route.role), P1.ROLE_ORDER);
+});
+
+test("MIME-10 binary/octet-stream four-role transport set remains complete and valid", async () => {
+  const value = chain({ suffix: "r", requestId: "participants-mime-complete-set" }),
+    result = await service(normalFetch({ date: value.manifest.sourceDate,
+      mime: Shadow.BINARY_MIME }), value.main).acquireManifest(value.manifest);
+  assert.equal(Shadow.validateTransportSet(result, value.manifest, value.acquisitions,
+    value.main), true);
+  assert.deepEqual(result.results.map(item => item.role), P1.ROLE_ORDER);
 });
 
 test("P2-18 four-role assembly is signed and deterministic", async () => {

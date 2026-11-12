@@ -36,9 +36,9 @@ function workbook(role, date = DATE) {
   return new Uint8Array(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
 }
 
-function response(bytes) {
+function response(bytes, mime = P2.MIME) {
   return new Response(bytes, { status: 200, headers: {
-    "content-type": P2.MIME, "content-length": String(bytes.byteLength) } });
+    "content-type": mime, "content-length": String(bytes.byteLength) } });
 }
 
 function chain({ date = DATE, suffix = "a", requestId = "participants-p3-request-1" } = {}) {
@@ -55,11 +55,11 @@ function chain({ date = DATE, suffix = "a", requestId = "participants-p3-request
   return { main, manifest, acquisitions: P1.createWorkbookAcquisitions(manifest, main) };
 }
 
-function transport(main, date = DATE) {
+function transport(main, date = DATE, mime = P2.MIME) {
   return P2.createParticipantsRawTransportShadow({ authority: main, now: () => NOW,
     fetchImpl: async url => {
       const role = P1.ROLE_ORDER.find(item => P1.canonicalWorkbookUrl(item, date) === url);
-      return role ? response(workbook(role, date)) : new Response(null, { status: 404 });
+      return role ? response(workbook(role, date), mime) : new Response(null, { status: 404 });
     } });
 }
 
@@ -263,4 +263,24 @@ test("P3-20 production activation is main-owned behind a bounded Participants IP
   assert.match(production, /participantEvidenceVaultShadow|participantEvidenceSetStore/);
   assert.match(production, /acquire-participants/);
   assert.doesNotMatch(production, /fetch-jpx-participant-json|fetchParticipantListing/);
+});
+
+test("MIME-11 actual JPX binary MIME is retained in all four Evidence occurrences", async t => {
+  const value = chain({ suffix: "m", requestId: "participants-p3-binary" }), root =
+    fs.realpathSync(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-p3-mime-"))),
+    vault = Vault.createIsolatedVault({ root, targetEnvironment: "isolated_test", crashAt: null }),
+    setStore = SetStore.createIsolatedParticipantEvidenceSetStore({ root,
+      targetEnvironment: "isolated_test" }), transportShadow = transport(value.main,
+      value.manifest.sourceDate, P2.BINARY_MIME), shadow =
+      Shadow.createParticipantsEvidenceVaultShadow({ transportShadow, vault, setStore,
+        authority: value.main, testHooks: null });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const captured = await shadow.capture(value.manifest);
+  assert.equal(captured.status, "available");
+  const resolved = shadow.resolve(captured.evidenceSet.evidenceSetId);
+  assert.equal(resolved.status, "available");
+  assert.deepEqual(resolved.documents.map(document => document.occurrence.mediaType),
+    P1.ROLE_ORDER.map(() => P2.BINARY_MIME));
+  assert.ok(captured.evidenceSet.roles.every(entry =>
+    vault.readContentMetadata(entry.contentSha256).contentObject.mediaType === P2.BINARY_MIME));
 });

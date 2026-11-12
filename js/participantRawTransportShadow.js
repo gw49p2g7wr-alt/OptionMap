@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const XLSX = require("xlsx");
 const P1 = require("./participantAcquisitionAuthorityContract.js");
 const ParticipantData = require("./participantData.js");
+const MimePolicy = require("./participantXlsxMimePolicy.js");
 
 const TRANSPORT_RESULT_VERSION = "participants-raw-transport-result-v1";
 const TRANSPORT_SET_VERSION = "participants-raw-transport-set-v1";
@@ -12,7 +13,9 @@ const MAX_REDIRECTS = 3;
 const MAX_BYTES = 2_000_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const BODY_TIMEOUT_MS = 15_000;
-const MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const MIME = MimePolicy.OFFICIAL_XLSX_MIME;
+const BINARY_MIME = MimePolicy.JPX_BINARY_XLSX_MIME;
+const ACCEPTED_MIME_TYPES = MimePolicy.ACCEPTED_MIME_TYPES;
 const REQUEST_POLICY = Object.freeze({
   method: "GET",
   redirect: "manual",
@@ -23,7 +26,7 @@ const REQUEST_POLICY = Object.freeze({
   requestTimeoutMs: REQUEST_TIMEOUT_MS,
   bodyTimeoutMs: BODY_TIMEOUT_MS,
   maxBytes: MAX_BYTES,
-  acceptedMime: MIME
+  acceptedMime: ACCEPTED_MIME_TYPES
 });
 
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -74,7 +77,8 @@ function validateRawResult(value, manifest, acquisition, authority) {
       value.redirects.length > MAX_REDIRECTS || value.redirects.some(redirect =>
         !exact(redirect, ["status", "from", "to"]) || redirect.status < 300 ||
         redirect.status >= 400 || redirect.from !== acquisition.canonicalUrl ||
-        redirect.to !== acquisition.canonicalUrl) || value.status !== 200 || value.mime !== MIME ||
+        redirect.to !== acquisition.canonicalUrl) || value.status !== 200 ||
+      !MimePolicy.isAcceptedParticipantsXlsxMime(value.mime) ||
       value.encoding !== null || !(value.bytes instanceof Uint8Array) ||
       value.byteLength !== value.bytes.byteLength || value.byteLength <= 0 ||
       value.byteLength > MAX_BYTES || !digest(value.rawSha256) ||
@@ -88,14 +92,14 @@ function validateRawResult(value, manifest, acquisition, authority) {
     authority.verify("participants_raw_acquisition_result", integrity, value.authoritySignature);
 }
 
-function buildRawResult({ manifest, acquisition, route, finalUrl, redirects, bytes,
+function buildRawResult({ manifest, acquisition, route, finalUrl, redirects, mime, bytes,
     acquiredByteLength, acquiredRawSha256, fetchedAt }, authority) {
   const result = { success: true, contractVersion: RAW_RESULT_VERSION, rawResultId: "",
     manifestId: manifest.manifestId, runId: manifest.runId, requestId: manifest.requestId,
     acquisitionId: acquisition.acquisitionId, routeIdentity: route.routeIdentity,
     sourceFamily: P1.SOURCE_FAMILY, sourceId: P1.SOURCE_ID, sourceDate: route.sourceDate,
     role: route.role, initialUrl: route.canonicalUrl, finalUrl, redirects, status: 200,
-    mime: MIME, encoding: null, byteLength: acquiredByteLength, rawSha256: acquiredRawSha256,
+    mime, encoding: null, byteLength: acquiredByteLength, rawSha256: acquiredRawSha256,
     fetchedAt, authorityKeyId: authority.keyId, integritySha256: "", authoritySignature: "",
     bytes: new Uint8Array(bytes), diagnostics: [] };
   result.integritySha256 = P1.sha256(rawResultMaterial(result));
@@ -251,7 +255,8 @@ function validateTransportResult(value, manifest, acquisition, authority) {
       value.redirects.length > MAX_REDIRECTS || value.redirects.some(redirect =>
         !exact(redirect, ["status", "from", "to"]) || redirect.status < 300 ||
         redirect.status >= 400 || redirect.from !== acquisition.canonicalUrl ||
-        redirect.to !== acquisition.canonicalUrl) || value.status !== 200 || value.mime !== MIME ||
+        redirect.to !== acquisition.canonicalUrl) || value.status !== 200 ||
+      !MimePolicy.isAcceptedParticipantsXlsxMime(value.mime) ||
       value.encoding !== null || !(value.bytes instanceof Uint8Array) ||
       value.byteLength !== value.bytes.byteLength || value.byteLength <= 0 ||
       value.byteLength > MAX_BYTES || !digest(value.rawSha256) ||
@@ -267,14 +272,14 @@ function validateTransportResult(value, manifest, acquisition, authority) {
     authority.verify("participants_transport_result", integrity, value.authoritySignature);
 }
 
-function buildTransportResult({ manifest, acquisition, route, response, finalUrl, redirects,
+function buildTransportResult({ manifest, acquisition, route, response, finalUrl, redirects, mime,
     bytes, acquiredByteLength, acquiredRawSha256, parsed, now }, authority) {
   const result = { success: true, contractVersion: TRANSPORT_RESULT_VERSION,
     transportResultId: "", manifestId: manifest.manifestId, runId: manifest.runId,
     requestId: manifest.requestId, acquisitionId: acquisition.acquisitionId,
     routeIdentity: route.routeIdentity, sourceFamily: P1.SOURCE_FAMILY, sourceId: P1.SOURCE_ID,
     sourceDate: route.sourceDate, role: route.role, initialUrl: route.canonicalUrl, finalUrl,
-    redirects, status: response.status, mime: MIME, encoding: null, byteLength: acquiredByteLength,
+    redirects, status: response.status, mime, encoding: null, byteLength: acquiredByteLength,
     rawSha256: acquiredRawSha256, fetchedAt: now().toISOString(), parserPreview: parsed,
     parserPreviewSha256: parserPreviewHash(parsed), authorityKeyId: authority.keyId,
     integritySha256: "", authoritySignature: "", bytes: new Uint8Array(bytes), diagnostics: [] };
@@ -334,7 +339,8 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
       if (response.status !== 200 || response.ok !== true) return failure("http_status",
         { stage: "status", role: route.role, sourceDate: route.sourceDate,
           httpStatus: response.status, redirectCount: redirects.length });
-      if (mimeOf(response.headers) !== MIME) return failure("mime_mismatch",
+      const mime = mimeOf(response.headers);
+      if (!MimePolicy.isAcceptedParticipantsXlsxMime(mime)) return failure("mime_mismatch",
         { stage: "mime", role: route.role, sourceDate: route.sourceDate,
           httpStatus: response.status, redirectCount: redirects.length });
       let bytes;
@@ -343,7 +349,7 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
         sourceDate: route.sourceDate, httpStatus: response.status,
         redirectCount: redirects.length }); }
       const acquiredByteLength = bytes.byteLength, acquiredRawSha256 = rawSha256(bytes);
-      return { success: true, route, response, finalUrl: currentUrl, redirects, bytes,
+      return { success: true, route, response, finalUrl: currentUrl, redirects, mime, bytes,
         acquiredByteLength, acquiredRawSha256, fetchedAt: now().toISOString() };
     }
     return failure("redirect_rejected", { stage: "redirect", role: route.role,
@@ -420,7 +426,8 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
       const fetched = await fetchRawRoute(route);
       if (!fetched.success) return fetched;
       return buildRawResult({ manifest, acquisition, route,
-        finalUrl: fetched.finalUrl, redirects: fetched.redirects, bytes: fetched.bytes,
+        finalUrl: fetched.finalUrl, redirects: fetched.redirects, mime: fetched.mime,
+        bytes: fetched.bytes,
         acquiredByteLength: fetched.acquiredByteLength,
         acquiredRawSha256: fetched.acquiredRawSha256, fetchedAt: fetched.fetchedAt }, authority);
     }));
@@ -449,6 +456,7 @@ function createParticipantsRawTransportShadow({ fetchImpl = globalThis.fetch,
         redirectCount: rawResult.redirects.length }); }
       results.push(buildTransportResult({ manifest, acquisition, route,
         response: { status: rawResult.status }, finalUrl: rawResult.finalUrl,
+        mime: rawResult.mime,
         redirects: rawResult.redirects, bytes: rawResult.bytes,
         acquiredByteLength: rawResult.byteLength, acquiredRawSha256: rawResult.rawSha256,
         parsed, now: () => new Date(rawResult.fetchedAt) }, authority));
@@ -536,6 +544,7 @@ function assembleTransportSet({ manifest, acquisitions, results } = {}, authorit
 
 module.exports = freeze({ TRANSPORT_RESULT_VERSION, TRANSPORT_SET_VERSION, RAW_RESULT_VERSION,
   RAW_RESULT_FIELDS, validateRawResult, MAX_REDIRECTS,
-  MAX_BYTES, REQUEST_TIMEOUT_MS, BODY_TIMEOUT_MS, MIME, REQUEST_POLICY, rawSha256,
+  MAX_BYTES, REQUEST_TIMEOUT_MS, BODY_TIMEOUT_MS, MIME, BINARY_MIME, ACCEPTED_MIME_TYPES,
+  REQUEST_POLICY, rawSha256,
   parseWorkbook, validateTransportResult, validateTransportSet, assembleTransportSet,
   createParticipantsRawTransportShadow });

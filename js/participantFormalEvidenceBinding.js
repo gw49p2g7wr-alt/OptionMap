@@ -5,6 +5,7 @@ const P2 = require("./participantRawTransportShadow.js");
 const P3 = require("./participantEvidenceSetContract.js");
 const ParticipantData = require("./participantData.js");
 const Evidence = require("./sourceEvidence/sourceEvidenceContract.js");
+const MimePolicy = require("./participantXlsxMimePolicy.js");
 
 const BINDING_VERSION = "participants-formal-evidence-binding-v1";
 const STATE_AVAILABLE = "available";
@@ -77,7 +78,10 @@ function validateEvidenceSetMetadata(evidenceSet, vault, authority) {
         occurrence.contentSha256 !== entry.contentSha256 || occurrence.byteLength !== entry.byteLength ||
         metadata.contentObject.sha256 !== entry.contentSha256 ||
         metadata.contentObject.byteLength !== entry.byteLength ||
-        metadata.contentObject.mediaType !== P2.MIME || metadata.contentObject.encoding !== null)
+        !MimePolicy.isAcceptedParticipantsXlsxMime(occurrence.mediaType) ||
+        !MimePolicy.isAcceptedParticipantsXlsxMime(metadata.contentObject.mediaType) ||
+        occurrence.mediaType !== metadata.contentObject.mediaType ||
+        metadata.contentObject.encoding !== null)
       return false;
   }
   return true;

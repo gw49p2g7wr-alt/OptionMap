@@ -4,7 +4,7 @@ const Schema = require("./formalArchive/participantFormalArchiveSchema.js");
 const Binding = require("./participantFormalEvidenceBinding.js");
 const EvidenceSet = require("./participantEvidenceSetContract.js");
 const P1 = require("./participantAcquisitionAuthorityContract.js");
-const P2 = require("./participantRawTransportShadow.js");
+const MimePolicy = require("./participantXlsxMimePolicy.js");
 
 const CONTRACT_VERSION = "participants-knowledge-at-reader-v1";
 const ORDER = "source_date_ascending";
@@ -119,10 +119,13 @@ function createMetadataEvidenceVerifier(options = {}) {
           occurrence.runId !== evidenceSet.runId || occurrence.requestRole !== entry.role ||
           occurrence.initialUrl !== P1.canonicalWorkbookUrl(entry.role, revision.sourceDate) ||
           occurrence.sourceUrl !== occurrence.initialUrl || occurrence.httpStatus !== 200 ||
-          occurrence.mediaType !== P2.MIME || occurrence.encoding !== null ||
+          !MimePolicy.isAcceptedParticipantsXlsxMime(occurrence.mediaType) ||
+          occurrence.encoding !== null ||
           occurrence.contentSha256 !== entry.contentSha256 ||
           occurrence.byteLength !== entry.byteLength || contentObject.sha256 !== entry.contentSha256 ||
-          contentObject.byteLength !== entry.byteLength)
+          contentObject.byteLength !== entry.byteLength ||
+          !MimePolicy.isAcceptedParticipantsXlsxMime(contentObject.mediaType) ||
+          occurrence.mediaType !== contentObject.mediaType)
         return freeze({ verified: false, reason: "evidence_verification_failed" });
     }
     return freeze({ verified: true, reason: null,

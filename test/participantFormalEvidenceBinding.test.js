@@ -50,12 +50,12 @@ function chain(main, requestId) {
   return { manifest, acquisitions: P1.createWorkbookAcquisitions(manifest, main) };
 }
 
-function transport(main, values) {
+function transport(main, values, mime = P2.MIME) {
   return P2.createParticipantsRawTransportShadow({ authority: main, now: () => NOW,
     fetchImpl: async url => {
       const role = P1.ROLE_ORDER.find(item => P1.canonicalWorkbookUrl(item, DATE) === url),
         bytes = workbook(role, values);
-      return new Response(bytes, { status: 200, headers: { "content-type": P2.MIME,
+      return new Response(bytes, { status: 200, headers: { "content-type": mime,
         "content-length": String(bytes.byteLength) } });
     } });
 }
@@ -74,8 +74,8 @@ function harness(t) {
 }
 
 async function bundle(h, { requestId = "p4-request-1", volume = 100, marker = "a",
-    rejectParserRole = null } = {}) {
-  const authority = chain(h.main, requestId), raw = transport(h.main, { volume, marker }),
+    rejectParserRole = null, mime = P2.MIME } = {}) {
+  const authority = chain(h.main, requestId), raw = transport(h.main, { volume, marker }, mime),
     shadow = P3.createParticipantsEvidenceVaultShadow({ transportShadow: raw, vault: h.vault,
       setStore: h.setStore, authority: h.main,
       testHooks: rejectParserRole ? { rejectParserRole } : null }),
@@ -166,6 +166,16 @@ test("P4-9 tampered revision Evidence ref fails verification", async t => {
 test("P4-10 changed raw bytes with unchanged canonical set are Formal write0", async t => {
   const { h } = await accepted(t), later = await bundle(h,
     { requestId: "p4-request-raw-change", marker: "different-raw" }), result = await accept(h, later,
+    "2026-11-10T11:00:00.000Z");
+  assert.deepEqual([result.classification, result.revisionWriteCount,
+    (await h.archive.readEntryRevisions(DATE)).length, h.vault.vaultStatus().occurrenceCount],
+  ["semantic_duplicate", 0, 1, 8]);
+});
+
+test("MIME-12 actual MIME and raw-byte changes do not change Formal semantics", async t => {
+  const { h } = await accepted(t), later = await bundle(h,
+    { requestId: "p4-request-binary-raw-change", marker: "binary-raw",
+      mime: P2.BINARY_MIME }), result = await accept(h, later,
     "2026-11-10T11:00:00.000Z");
   assert.deepEqual([result.classification, result.revisionWriteCount,
     (await h.archive.readEntryRevisions(DATE)).length, h.vault.vaultStatus().occurrenceCount],

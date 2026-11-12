@@ -3,13 +3,15 @@
 const P1 = require("./participantAcquisitionAuthorityContract.js");
 const P2 = require("./participantRawTransportShadow.js");
 const Evidence = require("./sourceEvidence/sourceEvidenceContract.js");
+const MimePolicy = require("./participantXlsxMimePolicy.js");
 
 const SET_VERSION = "participants-source-evidence-set-v1";
 const SET_ID_PREFIX = "participants-evidence-set-v1";
 const TRANSPORT_VERSION = P2.TRANSPORT_RESULT_VERSION;
 const ACQUISITION_CONTEXT = "live_original_acquisition";
 const POLICY = Evidence.createSourcePolicy({ sourceFamily: P1.SOURCE_FAMILY,
-  sourceId: P1.SOURCE_ID, allowedMediaTypes: [P2.MIME], allowedEncodings: [],
+  sourceId: P1.SOURCE_ID, allowedMediaTypes: MimePolicy.ACCEPTED_MIME_TYPES,
+  allowedEncodings: [],
   maxBytes: P2.MAX_BYTES });
 
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -180,7 +182,8 @@ function validateEvidenceSetAgainstVault(value, vault, authority) {
         occurrence.requestRole !== entry.role || occurrence.contentSha256 !== entry.contentSha256 ||
         occurrence.initialUrl !== P1.canonicalWorkbookUrl(entry.role, value.sourceDate) ||
         occurrence.sourceUrl !== P1.canonicalWorkbookUrl(entry.role, value.sourceDate) ||
-        occurrence.httpStatus !== 200 || occurrence.mediaType !== P2.MIME ||
+        occurrence.httpStatus !== 200 ||
+        !MimePolicy.isAcceptedParticipantsXlsxMime(occurrence.mediaType) ||
         occurrence.encoding !== null || occurrence.transportVersion !== TRANSPORT_VERSION ||
         occurrence.acquisitionContext !== ACQUISITION_CONTEXT ||
         !identity(occurrence.sourceDocumentRole, "participants-p1") ||
