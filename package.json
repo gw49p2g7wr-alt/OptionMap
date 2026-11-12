@@ -3,9 +3,11 @@
   "version": "1.1.0-beta.16",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test test/*.test.js",
-    "dist": "electron-builder"
+    "build:preload": "node scripts/buildPreloadBundle.js",
+    "check:preload": "node scripts/buildPreloadBundle.js --check",
+    "start": "npm run check:preload && electron .",
+    "test": "npm run check:preload && node --test test/*.test.js",
+    "dist": "npm run check:preload && electron-builder"
   },
   "keywords": [],
   "author": "",
@@ -18,7 +20,7 @@
     "files": [
       "index.html",
       "main.js",
-      "preload.js",
+    "preload.bundle.js",
       "style.css",
       "js/**/*",
       "scripts/marketCalendarReadOnlyProbe.html",

@@ -70,7 +70,7 @@ function loadPreload(invokeImplementation = async (channel, url) => ({ channel, 
   const context = vm.createContext({
     require(id) {
       if (id === "electron") return electron;
-      if (id.endsWith("participantFormalMainBridge.js")) return {
+      if (id.endsWith("participantFormalBridgeContract.js")) return {
         COMMAND_CHANNEL: "optionmap:participants-formal:commit",
         RESULT_CHANNEL: "optionmap:participants-formal:result"
       };
@@ -100,9 +100,9 @@ test("main window enables context isolation with Node OFF and an absolute root p
   const main = mainWindowBlock();
   assert.match(main, /nodeIntegration:\s*false/);
   assert.match(main, /contextIsolation:\s*true/);
-  assert.match(main, /preload:\s*path\.join\(__dirname, "preload\.js"\)/);
+  assert.match(main, /preload:\s*path\.join\(__dirname, "preload\.bundle\.js"\)/);
   assert.doesNotMatch(main, /contextIsolation:\s*false|nodeIntegration:\s*true/);
-  assert.equal(packageJson.build.files.includes("preload.js"), true);
+  assert.equal(packageJson.build.files.includes("preload.bundle.js"), true);
 });
 
 test("preload publishes only the exact fifteen-method narrow bridge", () => {

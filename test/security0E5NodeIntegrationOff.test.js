@@ -49,9 +49,9 @@ test("main renderer is Node OFF with isolation and the packaged narrow preload",
     const block = mainWindowBlock();
     assert.match(block, /nodeIntegration:\s*false/);
     assert.match(block, /contextIsolation:\s*true/);
-    assert.match(block, /preload:\s*path\.join\(__dirname, "preload\.js"\)/);
+    assert.match(block, /preload:\s*path\.join\(__dirname, "preload\.bundle\.js"\)/);
     assert.doesNotMatch(block, /nodeIntegration:\s*true|contextIsolation:\s*false/);
-    assert.equal(packageJson.build.files.includes("preload.js"), true);
+    assert.equal(packageJson.build.files.includes("preload.bundle.js"), true);
 });
 
 test("main world production has no raw Electron, XLSX require, or historical direct require", () => {
@@ -75,7 +75,7 @@ test("preload keeps Electron authority and the exact immutable fifteen-method su
                 ipcRenderer: { on() {}, send() {},
                     invoke: (...args) => { calls.push(args); return Promise.resolve(args); } }
             };
-            if (id.endsWith("participantFormalMainBridge.js")) return {
+            if (id.endsWith("participantFormalBridgeContract.js")) return {
                 COMMAND_CHANNEL: "optionmap:participants-formal:commit",
                 RESULT_CHANNEL: "optionmap:participants-formal:result"
             };

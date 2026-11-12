@@ -1,7 +1,7 @@
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
-const participantFormalBridge = require("./js/participantFormalMainBridge.js");
+const participantFormalBridge = require("./js/participantFormalBridgeContract.js");
 const participantFormalWriterApi = require("./js/participantFormalProductionWriter.js");
 const participantFormalSchema = require("./js/formalArchive/participantFormalArchiveSchema.js");
 // Private preload state: not exposed through the immutable narrow API.

@@ -37,7 +37,9 @@ jobs:
         run: node --check main.js
 
       - name: Check preload syntax
-        run: node --check preload.js
+        run: |
+          node --check preload.js
+          node --check preload.bundle.js
 
       - name: Build unsigned Windows RC
         shell: cmd

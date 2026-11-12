@@ -184,7 +184,7 @@ test("preloadはURLなしの限定APIだけを公開しmain requestも再検証�
       ipcRenderer: { invoke: (...args) => { invoked = args; return Promise.resolve({ success: true }); },
         on() {}, send() {} }
     };
-    if (name === "./js/participantFormalMainBridge.js") return {
+    if (name === "./js/participantFormalBridgeContract.js") return {
       COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
     if (name === "./js/participantFormalProductionWriter.js") return {
       createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};

@@ -1,9 +1,9 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const Contract = require("./participantFormalBridgeContract.js");
 
-const COMMAND_CHANNEL = "optionmap:participants-formal:commit";
-const RESULT_CHANNEL = "optionmap:participants-formal:result";
+const { COMMAND_CHANNEL, RESULT_CHANNEL } = Contract;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const exact = (value, fields) => object(value) && Object.keys(value).length === fields.length &&

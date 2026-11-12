@@ -29,7 +29,7 @@ function resolveLocal(from, request) {
 }
 
 function runtimeClosure() {
-  const pending = [path.join(root, "main.js"), path.join(root, "preload.js")];
+  const pending = [path.join(root, "main.js"), path.join(root, "preload.bundle.js")];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const match of html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/g)) {
     if (!/^(?:https?:|data:)/.test(match[1])) pending.push(path.resolve(root, match[1]));
@@ -42,6 +42,7 @@ function runtimeClosure() {
     assert.ok(tracked.has(name), `runtime dependency is not tracked: ${name}`);
     visited.add(name);
     const source = fs.readFileSync(file, "utf8");
+    if (name === "preload.bundle.js") continue;
     for (const match of source.matchAll(/require\s*\(\s*["']([^"']+)["']\s*\)/g)) {
       const dependency = resolveLocal(file, match[1]);
       if (dependency) pending.push(dependency);

@@ -61,7 +61,7 @@ async function bootstrap({ readFailure = false } = {}) {
     if (id === "electron") return { contextBridge: { exposeInMainWorld: (_, api) => { bridge = api; } },
       ipcRenderer: { invoke: (channel, request) => handlers.get(channel)({ sender: windows[0].webContents }, request),
         on() {}, send() {} } };
-    if (id === "./js/participantFormalMainBridge.js") return {
+    if (id === "./js/participantFormalBridgeContract.js") return {
       COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
     if (id === "./js/participantFormalProductionWriter.js") return {
       createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};

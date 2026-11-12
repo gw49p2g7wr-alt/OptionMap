@@ -61,7 +61,7 @@ test("Windows packaging is pinned to x64 NSIS", () => {
 test("runtime files are included and development data is excluded", () => {
   const files = packageJson.build.files;
   for (const required of [
-    "index.html", "main.js", "preload.js", "style.css", "js/**/*"
+    "index.html", "main.js", "preload.bundle.js", "style.css", "js/**/*"
   ]) {
     assert.ok(files.includes(required), `missing runtime pattern: ${required}`);
   }
@@ -91,9 +91,10 @@ test("manual artifact workflow validates source before building without publishi
     "npm ci",
     "npm test",
     "node --check main.js",
-    "node --check preload.js"
+    "node --check preload.js",
+    "node --check preload.bundle.js"
   ]) {
-    assert.ok(workflow.includes(`run: ${command}`), `missing check: ${command}`);
+    assert.ok(workflow.includes(command), `missing check: ${command}`);
   }
   assert.match(workflow, /^permissions:\s*\n\s+contents: read$/m);
   assert.match(workflow, /node-version:\s*22\.12\.0/);
@@ -134,5 +135,5 @@ test("Security 0E5 main renderer flags remain unchanged", () => {
   const block = main.slice(start, end);
   assert.match(block, /nodeIntegration:\s*false/);
   assert.match(block, /contextIsolation:\s*true/);
-  assert.match(block, /preload:\s*path\.join\(__dirname, "preload\.js"\)/);
+  assert.match(block, /preload:\s*path\.join\(__dirname, "preload\.bundle\.js"\)/);
 });

@@ -154,7 +154,7 @@ test("H9 arbitrary request fields and renderer startup cannot enable a source", 
     require: id => {
       if (id === "electron") return {contextBridge:{exposeInMainWorld:(_, api)=>{bridge=api;}},
         ipcRenderer:{invoke:()=>{calls++;},on(){},send(){}}};
-      if (id === "./js/participantFormalMainBridge.js") return {
+      if (id === "./js/participantFormalBridgeContract.js") return {
         COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
       if (id === "./js/participantFormalProductionWriter.js") return {
         createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};

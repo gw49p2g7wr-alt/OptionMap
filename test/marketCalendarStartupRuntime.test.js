@@ -157,7 +157,7 @@ test("browser Node-off modules compose without Node globals; API input contract 
     require: id => {
       if (id === "electron") return { contextBridge: { exposeInMainWorld: (_, value) => { api = value; } },
         ipcRenderer: { invoke: async () => { calls++; return {}; }, on() {}, send() {} } };
-      if (id === "./js/participantFormalMainBridge.js") return {
+      if (id === "./js/participantFormalBridgeContract.js") return {
         COMMAND_CHANNEL:"participants-command",RESULT_CHANNEL:"participants-result"};
       if (id === "./js/participantFormalProductionWriter.js") return {
         createParticipantFormalProductionWriter:()=>({commit:async()=>({status:"rejected"})})};
