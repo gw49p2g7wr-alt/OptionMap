@@ -30,12 +30,14 @@ test("private beta package metadata preserves application identity", () => {
 });
 
 test("main fixes canonical Electron identity before profile-dependent initialization", () => {
-  const identity = 'require("electron").app.setName("OptionMap");';
-  assert.equal(main.match(/\.app\.setName\("OptionMap"\)/g)?.length, 1);
-  assert.equal(main.indexOf(identity), 0);
+  const identity = 'earlyElectronApp.setName("OptionMap");';
+  assert.equal(main.match(/earlyElectronApp\.setName\("OptionMap"\)/g)?.length, 1);
+  assert.ok(main.indexOf(identity) > 0);
   assert.ok(main.indexOf(identity) < main.indexOf("const auditCoordinator"));
   assert.ok(main.indexOf(identity) < main.indexOf('app.getPath("userData")'));
   assert.ok(main.indexOf(identity) < main.indexOf("app.whenReady()"));
+  assert.match(main, /earlyElectronApp\.setName\(AuthorityRewrap\.LEGACY_IDENTITY\)/);
+  assert.ok(main.indexOf("earlyAuthorityHelperFlag") < main.indexOf(identity));
   assert.equal(packageJson.build.productName, "OptionMap");
   assert.match(main, /title:\s*"OptionMap"/);
 });

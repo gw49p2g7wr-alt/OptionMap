@@ -1,4 +1,20 @@
-require("electron").app.setName("OptionMap");
+const earlyElectronApp = require("electron").app;
+const earlyAuthorityHelperFlag = process.argv.find(value => typeof value === "string" &&
+  value.startsWith("--optionmap-authority-legacy-decrypt="));
+if (earlyAuthorityHelperFlag) {
+  const AuthorityRewrap = require("./js/productionAuthorityRewrap.js");
+  const domain = AuthorityRewrap.helperDomain(process.argv);
+  if (domain === "invalid" || domain === null) earlyElectronApp.exit(2);
+  else {
+    earlyElectronApp.setName(AuthorityRewrap.LEGACY_IDENTITY);
+    earlyElectronApp.whenReady().then(async () => {
+      const code = await AuthorityRewrap.runLegacyHelper({ app: earlyElectronApp,
+        safeStorage: require("electron").safeStorage, domain, env: process.env, outputFd: 3 });
+      earlyElectronApp.exit(code);
+    }, () => earlyElectronApp.exit(3));
+  }
+} else {
+earlyElectronApp.setName("OptionMap");
 const auditCoordinator = require("./js/marketCalendarHistory/readOnlyAuditCoordinator.js");
 const auditArguments = auditCoordinator.classifyArguments(process.argv);
 auditCoordinator.configureDevelopmentProfile();
@@ -125,12 +141,17 @@ function ensureQriProductionAcquisition() {
   const qriOptionsParser = require("./js/qriOptions.js");
   const qriVolumeHistory = require("./js/qriVolumeHistory.js");
   const sourceEvidenceVault = require("./js/sourceEvidence/sourceEvidenceVault.js");
+  const authorityRewrap = require("./js/productionAuthorityRewrap.js");
+  const protector = Object.freeze({
+    protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
+    unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
+  });
+  authorityRewrap.migrateAuthorityRecord({ domain: "qri", profile: app.getPath("userData"),
+    protector, legacyDecrypt: domain => authorityRewrap.invokeLegacyHelper({ app, domain,
+      profile: app.getPath("userData"), env: process.env }) });
   const authorityState = qriProductionAuthority.createProductionAuthority({
     getUserDataPath: () => app.getPath("userData"),
-    protector: Object.freeze({
-      protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
-      unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
-    }),
+    protector,
     randomBytes
   });
   const authority = authorityState.authority;
@@ -172,12 +193,18 @@ function ensureParticipantProductionAcquisition() {
   const Bridge = require("./js/participantFormalMainBridge.js");
   const Vault = require("./js/sourceEvidence/sourceEvidenceVault.js");
   const SetStore = require("./js/storage/participantEvidenceSetStore.js");
+  const AuthorityRewrap = require("./js/productionAuthorityRewrap.js");
+  const protector = Object.freeze({
+    protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
+    unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
+  });
+  AuthorityRewrap.migrateAuthorityRecord({ domain: "participants",
+    profile: app.getPath("userData"), protector,
+    legacyDecrypt: domain => AuthorityRewrap.invokeLegacyHelper({ app, domain,
+      profile: app.getPath("userData"), env: process.env }) });
   const authorityState = Authority.createProductionAuthority({
     getUserDataPath: () => app.getPath("userData"),
-    protector: Object.freeze({
-      protect: bytes => safeStorage.encryptString(Buffer.from(bytes).toString("base64")),
-      unprotect: bytes => Buffer.from(safeStorage.decryptString(bytes), "base64")
-    }),
+    protector,
     randomBytes
   }), authority = authorityState.authority,
     fetchImpl = (url, options) => net.fetch(url, options),
@@ -996,5 +1023,6 @@ app.on("before-quit", () => {
   participantFormalBridge = null;
   participantProductionAcquisitionService = null;
 });
+}
 }
 }

@@ -102,4 +102,4 @@ function createProductionAuthority(options) {
 }
 
 module.exports = Object.freeze({ RECORD_VERSION, KEY_ID, FILE_NAME, MAX_BYTES,
-  validateRecord, createProductionAuthority });
+  recordFor, validateRecord, createProductionAuthority });
