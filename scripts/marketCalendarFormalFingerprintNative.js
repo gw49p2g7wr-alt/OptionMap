@@ -84,7 +84,7 @@ function launch(root, input) {
   const packageRoot = path.join(root, "package"); fs.mkdirSync(packageRoot);
   fs.writeFileSync(path.join(packageRoot, "fixture.json"), JSON.stringify({ root, ...input }), { flag: "wx" });
   fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "optionmap",
-    version: "1.1.0-beta.16", main: "entry.cjs" }), { flag: "wx" });
+    version: "1.1.0-beta.17", main: "entry.cjs" }), { flag: "wx" });
   fs.writeFileSync(path.join(packageRoot, "entry.cjs"), `require(${JSON.stringify(__filename)}).worker(${
     JSON.stringify(root)}).catch(error=>{console.error(error.stack);require('electron').app.exit(1);});`,
   { flag: "wx" });
