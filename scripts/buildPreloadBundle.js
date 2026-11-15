@@ -13,8 +13,12 @@ const MODULE_FILES = Object.freeze([
   "js/participantData.js"
 ]);
 
-function moduleId(file) {
-  return `./${file.split(path.sep).join("/")}`;
+function normalizeSourceText(text) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function moduleId(file, separator = path.sep) {
+  return `./${file.split(separator).join("/")}`;
 }
 
 function resolveLocal(fromFile, request) {
@@ -27,11 +31,11 @@ function resolveLocal(fromFile, request) {
   throw new Error(`preload_bundle_dependency_unresolved: ${fromFile} -> ${request}`);
 }
 
-function buildBundle() {
+function buildBundle(readSource = file => fs.readFileSync(path.join(ROOT, file), "utf8")) {
   const known = new Set(MODULE_FILES.map(moduleId));
   const modules = [], edges = {};
   for (const file of MODULE_FILES) {
-    const id = moduleId(file), source = fs.readFileSync(path.join(ROOT, file), "utf8");
+    const id = moduleId(file), source = normalizeSourceText(readSource(file));
     edges[id] = {};
     for (const match of source.matchAll(/require\s*\(\s*["']([^"']+)["']\s*\)/g)) {
       if (!match[1].startsWith(".")) continue;
@@ -74,4 +78,4 @@ if (process.argv.includes("--check")) {
   fs.writeFileSync(OUTPUT, expected);
 }
 
-module.exports = Object.freeze({ MODULE_FILES, buildBundle });
+module.exports = Object.freeze({ MODULE_FILES, buildBundle, moduleId, normalizeSourceText });
