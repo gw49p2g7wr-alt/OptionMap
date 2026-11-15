@@ -19,8 +19,10 @@ const snapshotFields = STORE_ORDER.map(([field]) => field);
 const emptyCounts = () => Object.fromEntries(snapshotFields.map(field => [field, 0]));
 const copy = value => structuredClone(value);
 const sorted = snapshot => Object.fromEntries(STORE_ORDER.map(([field]) =>
-  [field, [...snapshot[field]].sort((a, b) =>
-    String(a[KEY_FOR[field]]).localeCompare(String(b[KEY_FOR[field]])))]));
+  [field, [...snapshot[field]].sort((a, b) => {
+    const leftKey = String(a[KEY_FOR[field]]), rightKey = String(b[KEY_FOR[field]]);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  })]));
 const material = value => Canonicalizer.stable(value);
 const same = (a, b) => material(a) === material(b);
 const result = (plan, outcome, reason, extra = {}) => Object.freeze({
@@ -206,6 +208,7 @@ function executePrepared(database, token, failurePoint, metrics) {
     failurePoint, metrics, prepared.ceiling);
 }
 
-module.exports = Object.freeze({ STORE_ORDER, STORE_NAMES, FAILURE_POINTS, emptyCounts, copy, sorted, material,
+module.exports = Object.freeze({ STORE_ORDER, STORE_NAMES, FAILURE_POINTS, emptyCounts, copy,
+  sorted, material,
   same, result, expectedWrites, linkageValid, applyToMemory, alreadyApplied,
   identityConflict, planScopeValid, prepareExecution, executePrepared });

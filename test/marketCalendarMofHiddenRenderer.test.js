@@ -125,7 +125,7 @@ test("fixed native production entry rejects non-main context without touching a 
   await assert.rejects(W.createProductionWindow("arbitrary"), /native_main_required/);
 });
 test("writer core remains byte-identical", () => assert.equal(hashFile(require.resolve("../js/marketCalendarHistory/formalControlledWriterCore.js")),
-  "7c2d0ca2a1779de0b9f65a48129adf6ce08647009d1b81de542306335f4eb0c5"));
+  "af8655afd8fabba370be6eda7f063d845f6759fcda4ee0fcc2dd5bf3f09c16d5"));
 test("fixed receipt rejects drift, missing and unknown fields", async () => {
   const material = await S.prepareNativeMaterial({ source: await F.source("hidden-native"), snapshot: (await AF.fixture()).snapshot, attemptIdentity: A.hash("hidden-native") });
   const data = S.inspectNativeMaterial(material), receipt = successful.executed.output.receipt;

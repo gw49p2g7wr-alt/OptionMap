@@ -9,6 +9,10 @@ const Schema = require("../marketCalendarHistory/productionSchemaV1.js");
 const Registry = require("../marketCalendar/sourceRegistry.js");
 const KEYS = Object.freeze({ entries: "eventKey", revisions: "revisionKey", evidence: "evidenceLinkKey",
   observations: "observationKey", runs: "runKey", cursors: "sourceId" });
+const compareCodeUnits = (left, right) => {
+  const leftKey = String(left), rightKey = String(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
 const contexts = new WeakMap();
 let activeContexts = 0;
 function freeze(value) {
@@ -35,7 +39,7 @@ function create(snapshot, schemaFingerprint) {
     peakCanonicalChunkBytes: 0, peakDerivedMaterialBytes: 0,
     canonicalMaterialBytes: 0, referenceArrayBytes: 0 };
   const sorted = Object.fromEntries(Object.entries(KEYS).map(([field, key]) => [field,
-    [...snapshot[field]].sort((a, b) => String(a[key]).localeCompare(String(b[key])))]));
+    [...snapshot[field]].sort((a, b) => compareCodeUnits(a[key], b[key]))]));
   // Records are shared by reference, never cloned per source. Freeze makes validation reusable safely.
   for (const rows of Object.values(sorted)) { metrics.referenceArrayBytes += rows.length * 8;
     rows.forEach(freeze); Object.freeze(rows); }

@@ -24,9 +24,13 @@ const emptySnapshot = () => Object.fromEntries(FIELDS.map(field => [field, []]))
 const counts = snapshot => Object.fromEntries(FIELDS.map(field => [field, snapshot[field].length]));
 const keyFor = Object.fromEntries(BootstrapSchema.STORE_ORDER.map(([field, name]) =>
   [field, Schema.STORES[name].keyPath]));
+const compareCodeUnits = (left, right) => {
+  const leftKey = String(left), rightKey = String(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
 function sortSnapshot(snapshot) {
   for (const field of FIELDS) snapshot[field].sort((left, right) =>
-    String(left[keyFor[field]]).localeCompare(String(right[keyFor[field]])));
+    compareCodeUnits(left[keyFor[field]], right[keyFor[field]]));
   return snapshot;
 }
 const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
@@ -107,6 +111,10 @@ async function executeBootstrapInRenderer(material, schemaDefinition, storeOrder
   const stable = value => { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
     if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key =>
       `${JSON.stringify(key)}:${stable(value[key])}`).join(",")}}`; return JSON.stringify(value); };
+  const compareCodeUnits = (left, right) => {
+    const leftKey = String(left), rightKey = String(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  };
   const hash = async value => [...new Uint8Array(await crypto.subtle.digest("SHA-256",
     new TextEncoder().encode(stable(value))))].map(value => value.toString(16).padStart(2, "0")).join("");
   const fields = storeOrder.map(value => value[0]), names = storeOrder.map(value => value[1]);
@@ -180,7 +188,7 @@ async function executeBootstrapInRenderer(material, schemaDefinition, storeOrder
     const keyFor = Object.fromEntries(storeOrder.map(([field, name]) =>
       [field, schemaDefinition.stores[name].keyPath]));
     for (const field of fields) snapshot[field].sort((left, right) =>
-      String(left[keyFor[field]]).localeCompare(String(right[keyFor[field]])));
+      compareCodeUnits(left[keyFor[field]], right[keyFor[field]]));
     const snapshotIdentity = await hash(snapshot);
     if (snapshotIdentity !== material.snapshotIdentity) throw Error("calendar_bootstrap_readback_mismatch");
     return { status: "committed", reason: null, created: 1, transactions: 1,

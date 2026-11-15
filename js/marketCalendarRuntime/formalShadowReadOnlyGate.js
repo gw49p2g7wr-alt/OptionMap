@@ -14,10 +14,13 @@ const FIELDS = Object.freeze(["eventEntryCreate", "eventEntryUpdate",
 const SNAPSHOT = Object.freeze({ entries: "eventKey", revisions: "revisionKey",
   evidence: "evidenceLinkKey", observations: "observationKey", runs: "runKey",
   cursors: "sourceId" });
+const compareCodeUnits = (left, right) => {
+  const leftKey = String(left), rightKey = String(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
 function snapshotMaterial(snapshot) {
   return Object.fromEntries(Object.entries(SNAPSHOT).map(([field, key]) =>
-    [field, [...snapshot[field]].sort((a, b) =>
-      String(a[key]).localeCompare(String(b[key])))]));
+    [field, [...snapshot[field]].sort((a, b) => compareCodeUnits(a[key], b[key]))]));
 }
 async function formalPreconditionIdentity(snapshot, schemaFingerprint) {
   return Canonicalizer.sha256({ schemaFingerprint, formalSnapshot: snapshotMaterial(snapshot) });

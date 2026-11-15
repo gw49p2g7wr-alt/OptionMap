@@ -27,8 +27,12 @@ const frozen = value => {
   }
   return value;
 };
+const compareCodeUnits = (left, right) => {
+  const leftKey = String(left), rightKey = String(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
 const sorted = (values, key) => [...values].sort((a, b) =>
-  String(a[key]).localeCompare(String(b[key])));
+  compareCodeUnits(a[key], b[key]));
 const same = (left, right) => Canonicalizer.stable(left) === Canonicalizer.stable(right);
 const emptyMutations = () => Object.fromEntries(Object.keys(FIELDS).map(field => [field, []]));
 function containsRawPayload(value, seen = new WeakSet()) {
