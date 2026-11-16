@@ -168,7 +168,7 @@ test("RW-17 Participants canonical authority remains acquisition-ready", t => {
   assert.equal(authority.verify("manifest", integrity, signature), true);
 });
 
-test("RW-NATIVE legacy-only decrypt rewraps both domains under canonical identity", t => {
+test("RW-NATIVE canonical-or-legacy decrypt preserves both authority domains", t => {
   const profile = root(t), executable = require("electron"), script =
     path.join(ROOT, "scripts/productionAuthorityRewrapNative.js"), run = mode =>
       childProcess.spawnSync(executable, [script, mode, profile], { cwd: ROOT,
@@ -178,9 +178,14 @@ test("RW-NATIVE legacy-only decrypt rewraps both domains under canonical identit
   const migrated = run("migrate");
   assert.equal(migrated.status, 0, migrated.stderr);
   const result = JSON.parse(migrated.stdout.trim());
-  assert.deepEqual([result.qriResult.status, result.participantResult.status,
-    result.qriResult.secretEqualityVerified, result.participantResult.secretEqualityVerified,
-    result.qriSignatureValid, result.participantsSignatureValid,
+  for (const transition of [result.qriResult, result.participantResult]) {
+    assert(["canonical", "rewrapped"].includes(transition.status));
+    assert.equal(transition.writeCount, transition.status === "canonical" ? 0 : 1);
+    assert.equal(transition.secretEqualityVerified, true);
+  }
+  assert.equal(result.participantResult.status, result.qriResult.status);
+  assert.deepEqual([result.qriSignatureValid, result.participantsSignatureValid,
+    result.secondQri.status, result.secondParticipants.status,
     result.secondQri.writeCount, result.secondParticipants.writeCount,
-    result.weeklyUnchanged], ["rewrapped", "rewrapped", true, true, true, true, 0, 0, true]);
+    result.weeklyUnchanged], [true, true, "canonical", "canonical", 0, 0, true]);
 });

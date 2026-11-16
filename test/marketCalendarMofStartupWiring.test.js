@@ -73,6 +73,10 @@ test("S1 createWindow profile resolution absent; unchanged Security assertions r
 for(const [label,n,mode]of [["unchanged16",0,true],["new1",1,true],["stale persistence",1,"stale"]])
   test(`N real production factories in dedicated temp profile: ${label}`,async()=>{
     const r=await require("../scripts/marketCalendarG17CanaryNative.js").nativeCase(null,n,mode),v=r.executed.result;
+    assert.deepEqual({status:r.executed.diagnostic.status,signal:r.executed.diagnostic.signal,
+      resultExists:r.executed.diagnostic.resultExists,markerExists:r.executed.diagnostic.markerExists,
+      stage:r.executed.diagnostic.stage},
+    {status:0,signal:null,resultExists:true,markerExists:true,stage:"result_published"});
     assert.deepEqual(v.guard,{productionAttempts:0,networkAttempts:0});assert.equal(v.diagnostics.bridge.audit.runtimeWrites,0);
     assert.equal(v.diagnostics.bridge.audit.normalStarts,1);assert.equal(v.requests,4);
     if(mode==="stale"){assert.equal(v.status,"FAIL");assert.equal(v.reason,"startup_fresh_persistence_required");assert.equal(v.diagnostics.bridge.audit.proofs,0);assert.equal(v.safety.safety.sequence,14);}

@@ -12,8 +12,11 @@ const TimeTravel = require("../js/timeTravel/optionMapHistoricalReadModel.js");
 const Mvp = require("../js/marketCalendarMvp.js");
 const Presentation = require("../js/marketCalendarRuntime/calendarUpdatePresentation.js");
 const Canonicalizer = require("../js/marketCalendar/marketEventCanonicalizer.js");
+const History = require("../js/marketCalendarHistory/historyIntegrity.js");
 const Fixture = require("./fixtures/marketCalendar/calendar13Fixture.js");
 const Native = require("../scripts/marketCalendarCea1Native.js");
+
+const FIXTURE_CONFIRMED_AT = "2026-10-07T00:00:00.000Z";
 
 function renderer(factory) {
   const context = vm.createContext({ indexedDB: factory, crypto: crypto.webcrypto, TextEncoder,
@@ -25,8 +28,18 @@ function renderer(factory) {
 const absent = async () => ({ status: "unavailable", reason: "formal_database_absent" });
 async function acceptedSources() {
   const fixture = await Fixture.fixture();
-  for (const source of fixture.sources) source.candidateIdentity = await Canonicalizer.sha256({
-    sourceId: source.sourceId, revisions: source.canonicalRecords.map(value => value.revisionKey).sort() });
+  for (const source of fixture.sources) {
+    if (source.sourceId === "jp-mof-jgb-auction-calendar") source.canonicalRecords =
+      await Promise.all(source.canonicalRecords.map(async value => {
+        const acquisitionEvidence = { ...value.acquisitionEvidence, fetchedAt: FIXTURE_CONFIRMED_AT },
+          acquisitionEvidenceHash = await Canonicalizer.sha256(acquisitionEvidence);
+        return { ...value, source: { ...value.source, fetchedAt: FIXTURE_CONFIRMED_AT },
+          acquisitionEvidence, acquisitionEvidenceHash,
+          acquisitionEvidenceKey: `${source.sourceId}|sha256:${acquisitionEvidenceHash}` };
+      }));
+    source.candidateIdentity = await Canonicalizer.sha256({ sourceId: source.sourceId,
+      revisions: source.canonicalRecords.map(value => value.revisionKey).sort() });
+  }
   fixture.checkedAt = [...fixture.sources.flatMap(source => source.canonicalRecords.map(value =>
     value.acquisitionEvidence.fetchedAt)), Fixture.AT].sort((left, right) =>
       Date.parse(right) - Date.parse(left))[0];
@@ -59,6 +72,11 @@ test("CEA1 empty archive + valid 13/13 creates one Formal database and read-back
   const historical = await TimeTravel.calendarFor(factory, future.calendarDateStart);
   assert.equal(historical.status, "available");
   assert(historical.value.some(value => value.revision.eventKey === future.eventKey));
+  const beforeConfirmation = await History.queryAsKnownAt(receipt.snapshot, {
+    calendarDate: future.calendarDateStart, knowledgeAt: "2026-10-06T23:59:59.999Z",
+    displayTimeZone: "Asia/Tokyo" });
+  assert.equal(beforeConfirmation.status, "available");
+  assert.equal(beforeConfirmation.events.some(value => value.revision.eventKey === future.eventKey), false);
   const fullHistorical = await TimeTravel.read({ calendarDate: future.calendarDateStart,
     indexedDB: factory, localStorage: { getItem: () => null }, readMorningV5: async () => ({
       status: "missing", records: [] }) });

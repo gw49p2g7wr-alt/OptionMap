@@ -47,6 +47,8 @@ const GATE_D_HTML = `<h3>2026 FOMC Meetings</h3><div class="fomc-meeting__month"
 <div class="fomc-meeting__month"><strong>December</strong></div><div class="fomc-meeting__date">8-9*</div><div class="panel-footer"></div>`;
 const clone = value => structuredClone(value);
 const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+const canonicalFunctionSource = value => value.toString().replace(/\r\n?/g, "\n");
+const functionDigest = value => digest(Buffer.from(canonicalFunctionSource(value), "utf8"));
 
 function acquisition(html = HTML, fetchedAt = "2026-11-09T01:00:00.000Z") {
   const raw = new TextEncoder().encode(html), hash = digest(raw);
@@ -314,7 +316,7 @@ test("R19-15 historical Gate D artifact, parser and route identities remain unch
   assert.equal(events.length, 24);
   assert.equal(await Authorization.artifactDigest(artifact),
     "1074ae4926e90771e3bcdfb2f95ad3e2ffd3cc18b911d72db7c7874129ec7351");
-  assert.equal(crypto.createHash("sha256").update(Parsers.parseFed.toString()).digest("hex"),
+  assert.equal(functionDigest(Parsers.parseFed),
     "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
   assert.equal(Contract.expectedRouteIdentity(SOURCE_ID),
     "4c469e38231822771a31a9bb85d0677a26374ed9882467b623f62750e9b17085");
@@ -322,6 +324,17 @@ test("R19-15 historical Gate D artifact, parser and route identities remain unch
   assert.deepEqual(Boundary.MUTATION_CEILING, { appendEntries: 0, updateEntries: 24,
     closeRevisions: 0, appendRevisions: 0, appendEvidence: 24,
     appendObservations: 24, appendRuns: 1, updateCursors: 1 });
+});
+
+test("R5F-1/R5F-2 Fed parser identity normalizes only source line endings", () => {
+  const logical = Parsers.parseFed.toString(), crlf = logical.replace(/\n/g, "\r\n"),
+    legacyCr = logical.replace(/\n/g, "\r");
+  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => logical }), "utf8")),
+    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
+  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => crlf }), "utf8")),
+    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
+  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => legacyCr }), "utf8")),
+    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
 });
 
 test("R19-16 Gate D scripts remain excluded and have no runtime import edge", () => {

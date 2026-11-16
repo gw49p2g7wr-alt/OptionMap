@@ -26,23 +26,26 @@ function killOwnedProcessGroup(pid){
 async function worker(){
   const {app,BrowserWindow,session}=require("electron"),pack=app.getAppPath();
   const config=JSON.parse(fs.readFileSync(path.join(pack,"fixture.json"),"utf8"));
+  const stageFile=path.join(pack,"stage.json");let stage="modules";
+  const markStage=value=>{stage=value;fs.writeFileSync(stageFile,JSON.stringify({stage:value}));};
+  markStage(stage);
   const Guard=require("./marketCalendarG14bFilesystemGuard.js"),policy=Guard.createIsolatedPolicy({targetEnvironment:"isolated_test",fixtureRoot:config.root});
   assert.equal(pack,path.join(config.root,"package"));app.setPath("appData",policy.parents[1]);app.setPath("userData",policy.profile);app.setPath("sessionData",policy.profile);
   app.setPath("crashDumps",path.join(config.root,"crashes"));app.commandLine.appendSwitch("disable-background-networking");app.disableHardwareAcceleration();
   const guard=sentinel();app.on("window-all-closed",()=>{});
-  let stage="modules";const watchdog=setTimeout(async()=>{console.error("isolated_watchdog: "+stage);await Lifecycle.shutdown(app,session,3);},40000);
+  const watchdog=setTimeout(async()=>{console.error("isolated_watchdog: "+stage);await Lifecycle.shutdown(app,session,3);},40000);
   const corePath=require.resolve("../js/marketCalendarHistory/formalControlledWriterCore.js"),core=require(corePath);let mainTokenAttempts=0;
   require.cache[corePath].exports=Object.freeze({...core,prepareExecution(){mainTokenAttempts++;throw Error("isolated_main_token_forbidden");}});
   const E=require("../js/marketCalendarHistory/mofStartupCanaryEnvelope.js"),P=require("../js/marketCalendarHistory/mofStartupCanaryPlan.js"),Store=require("../js/marketCalendarHistory/mofStartupCanaryStore.js");
   const W=require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"),C=require("../js/marketCalendarRuntime/mofStartupCanaryController.js");
   const Reader=require("../js/marketCalendarRuntime/formalShadowElectronRead.js"),Schema=require("../js/marketCalendarHistory/productionSchemaV1.js"),A=require("../js/marketCalendarHistory/formalWriterAuthorityV2.js");
-  await app.whenReady();stage="app_ready";let result,window;
+  await app.whenReady();markStage("app_ready");let result,window;
   if(config.wiring&&config.mode==="execute")Store.createProductionStore().activate(A.hash("G1.7-production-factory-isolated-fixture"));
   const s=Store.createIsolatedStore({targetEnvironment:"isolated_test",fixtureRoot:config.root,crashAt:null}),loaded=s.load();assert.equal(loaded.status,"valid",loaded.reason);
   if(config.mode==="read"){
-    stage="read_window";
+    markStage("read_window");
     window=await W.createIsolatedWindow({targetEnvironment:"isolated_test",fixtureRoot:config.root});
-    stage="read_snapshot";
+    markStage("read_snapshot");
     try{result={status:"READ",loaded,formal:await Reader.createReader(window.wc)()};}finally{await window.close();}
   }else{
     const f=config.fixture;
@@ -67,12 +70,13 @@ async function worker(){
     }
     result.security=security;result.parity=parity;
   }
-  stage="cleanup";s.close();assert.equal(BrowserWindow.getAllWindows().length,0);await session.defaultSession.closeAllConnections();clearTimeout(watchdog);
+  markStage("cleanup");s.close();assert.equal(BrowserWindow.getAllWindows().length,0);await session.defaultSession.closeAllConnections();clearTimeout(watchdog);
   assert.equal(guard.productionAttempts,0);assert.equal(guard.networkAttempts,0);assert.equal(mainTokenAttempts,0);
   result.guard=guard;result.mainTokenAttempts=mainTokenAttempts;result.cleanup={windows:0,handles:0,ipcHandlers:0};
   const bytes=Buffer.from(JSON.stringify(result)),file=path.join(pack,"result.json");
   fs.writeFileSync(file+".tmp",bytes,{flag:"wx",mode:0o600});fs.renameSync(file+".tmp",file);
   fs.writeFileSync(file+".complete",JSON.stringify({bytes:bytes.length,sha256:sha(bytes)}),{flag:"wx",mode:0o600});
+  markStage("result_published");
   console.log(JSON.stringify({mode:config.mode,status:result.status,bytes:bytes.length}));
   clearTimeout(watchdog);await Lifecycle.shutdown(app,session,0);
 }
@@ -80,19 +84,28 @@ function launch(root,profile,fixture,mode,fault,wiring=false){
   const pack=path.join(root,"package");fs.mkdirSync(pack,{recursive:true});
   fs.writeFileSync(path.join(pack,"package.json"),JSON.stringify({name:"optionmap",version:"1.1.0-beta.6",main:__filename}));
   fs.writeFileSync(path.join(pack,"fixture.json"),JSON.stringify({root,fixture,mode,fault,wiring}));
-  for(const name of ["result.json","result.json.complete"]){const p=path.join(pack,name);if(fs.existsSync(p))fs.unlinkSync(p);}
+  for(const name of ["result.json","result.json.complete","stage.json"]){const p=path.join(pack,name);if(fs.existsSync(p))fs.unlinkSync(p);}
   const env={...process.env};for(const k of ["ELECTRON_RUN_AS_NODE","NODE_TEST_CONTEXT","NODE_CHANNEL_FD","NODE_CHANNEL_SERIALIZATION_MODE"])delete env[k];
-  const out=fs.openSync(path.join(pack,"stdout.log"),"w"),err=fs.openSync(path.join(pack,"stderr.log"),"w");let child;
+  const outPath=path.join(pack,"stdout.log"),errPath=path.join(pack,"stderr.log"),
+    resultPath=path.join(pack,"result.json"),markerPath=path.join(pack,"result.json.complete"),
+    stagePath=path.join(pack,"stage.json"),out=fs.openSync(outPath,"w"),err=fs.openSync(errPath,"w");let child;
   try{child=Lifecycle.withNativeElectronLaunchLock(()=>cp.spawnSync(require("electron"),[pack,"--user-data-dir="+profile],
     {cwd:ROOT,env,detached:true,stdio:["ignore",out,err],timeout:45000,killSignal:"SIGKILL"}));}
   finally{fs.closeSync(out);fs.closeSync(err);}
   const hard=["after_authorization","before_window","before_load","after_load","after_challenge","started_before_permit","commit_before_readback","readback_before_completion"];
   const crash=mode==="execute"&&(child.status===86&&fault==="after_authorization"||Lifecycle.isIntentionalForcedTermination({child,mode,fault,forcedFaults:hard}));
   if(child.error||crash)killOwnedProcessGroup(child.pid);
-  if(child.error||child.signal&&!crash)throw Error("isolated_native_child_failed: "+fs.readFileSync(path.join(pack,"stderr.log"),"utf8"));
-  let result=null;if(child.status===0){const b=fs.readFileSync(path.join(pack,"result.json")),m=JSON.parse(fs.readFileSync(path.join(pack,"result.json.complete")));
+  const stdout=fs.readFileSync(outPath,"utf8"),stderr=fs.readFileSync(errPath,"utf8"),
+    stage=fs.existsSync(stagePath)?JSON.parse(fs.readFileSync(stagePath,"utf8")).stage:"not_started",
+    diagnostic={status:child.status,signal:child.signal||null,error:child.error?.code||null,stdout,stderr,
+      resultPath,resultExists:fs.existsSync(resultPath),markerExists:fs.existsSync(markerPath),stage};
+  if(child.error||child.signal&&!crash)throw Error("isolated_native_child_failed: "+JSON.stringify(diagnostic));
+  if(child.status===0&&(!diagnostic.resultExists||!diagnostic.markerExists)){
+    const failure=Error("native_fixture_result_missing: "+JSON.stringify(diagnostic));failure.code="native_fixture_result_missing";failure.diagnostic=diagnostic;throw failure;
+  }
+  let result=null;if(child.status===0){const b=fs.readFileSync(resultPath),m=JSON.parse(fs.readFileSync(markerPath));
     assert.equal(b.length,m.bytes);assert.equal(sha(b),m.sha256);result=JSON.parse(b);}
-  return {code:crash?86:child.status,result,stderr:fs.readFileSync(path.join(pack,"stderr.log"),"utf8")};
+  return {code:crash?86:child.status,result,stderr,stdout,diagnostic};
 }
 async function nativeCase(fault=null,newEvents=1,wiring=false){
   const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),"optionmap-g14bg-fixture-g17-native-"));
@@ -106,7 +119,9 @@ async function nativeCase(fault=null,newEvents=1,wiring=false){
     const executed=launch(root,policy.profile,fixture,"execute",fault,wiring),reload=launch(root,policy.profile,null,"read",null,wiring);
     assert.equal(reload.code,0,reload.stderr);assert.equal(reload.result.loaded.status,"valid",reload.result.loaded.reason);
     assert.equal(A.hash(reload.result.loaded.record.historicalRecord),history);assert.equal(reload.result.formal.audit.readwrite,0);
-    if(!fault&&wiring!=="stale")assert.equal(executed.result?.status,"PASS",executed.result?.reason||executed.stderr);
+    if(!fault&&wiring!=="stale")assert.equal(executed.result?.status,"PASS",JSON.stringify({
+      reason:executed.result?.reason||null,canary:executed.result?.diagnostics?.canary||null,
+      normalState:executed.result?.normal?.state||null,stderr:executed.stderr}));
     Lifecycle.assertFixtureExited({child:{status:reload.code,signal:null,error:null},profile:policy.profile,childProcess:cp});
     return {executed,reload,historyUnchanged:true,cleanup:{profiles:0,children:0}};
   }finally{fs.rmSync(root,{recursive:true});}
@@ -114,12 +129,17 @@ async function nativeCase(fault=null,newEvents=1,wiring=false){
 async function wiringCycle(f,mode){
   const {BrowserWindow,ipcMain}=require("electron"),W=require("../js/marketCalendarRuntime/mofHiddenRendererWindow.js"),
     Reader=require("../js/marketCalendarRuntime/formalShadowElectronRead.js"),Bridge=require("../js/marketCalendarRuntime/mofStartupPersistenceBridge.js"),
-    Production=require("../js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js"),Normal=require("../js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js");
-  const win=new BrowserWindow({show:false,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(ROOT,"preload.js")}});
+    Production=require("../js/marketCalendarRuntime/mofStartupCanaryProductionRuntime.js"),Normal=require("../js/marketCalendarRuntime/normalCalendarAcquisitionRuntime.js"),
+    NormalFixture=require("../test/fixtures/marketCalendar/mofNormalFixture.js"),NativeDate=global.Date;
+  global.Date=class FixedFixtureDate extends NativeDate{
+    constructor(...args){super(...(args.length?args:[NormalFixture.AT]));}
+    static now(){return NativeDate.parse(NormalFixture.AT);}
+  };
+  const win=new BrowserWindow({show:false,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(ROOT,"preload.bundle.js")}});
   let composition,resolveDone;const done=new Promise(r=>{resolveDone=r;});
   try{
-    const nf=await require("../test/fixtures/marketCalendar/mofNormalFixture.js").setup({readFormal:Reader.createReader(win.webContents),
-      compose:c=>Normal.create({...c,webContents:win.webContents,runtimeStateOwner:"renderer",now:()=>new Date().toISOString()})});
+    const nf=await NormalFixture.setup({readFormal:Reader.createReader(win.webContents),
+        compose:c=>Normal.create({...c,webContents:win.webContents,runtimeStateOwner:"renderer",now:()=>NormalFixture.AT})});
     if(f.source.canonicalRecords.length>16){const u="https://www.mof.go.jp/jgbs/auction/calendar/2612.htm";
       nf.documents[u]=nf.documents[u].replace("</tbody>",require("../test/fixtures/marketCalendar/mofJgbFixture.js").row("12月28日","10年利付国債")+"</tbody>");}
     const context=Production.initializeProductionContext();assert(context);assert.equal(Production.validateProductionContext({}),false);
@@ -139,7 +159,7 @@ async function wiringCycle(f,mode){
     const reason=await done,diagnostics=composition.diagnostics();
     return {status:reason?"FAIL":"PASS",reason,diagnostics,normal:startup,requests:nf.requests.length,
       safety:require("../js/marketCalendarRuntime/writerSafetyReadOnly.js").createReader(require("electron").app.getPath("userData")).load()};
-  }finally{composition?.close();for(const c of [Bridge.CLAIM,Bridge.PERSISTED,"check-market-calendar-sources"])ipcMain.removeHandler(c);win.destroy();}
+  }finally{composition?.close();for(const c of [Bridge.CLAIM,Bridge.PERSISTED,"check-market-calendar-sources"])ipcMain.removeHandler(c);win.destroy();global.Date=NativeDate;}
 }
 async function atomicWorker(mode,root,crashAt){
   const guard=sentinel(),Store=require("../js/marketCalendarHistory/mofStartupCanaryStore.js"),P=require("../js/marketCalendarHistory/mofStartupCanaryPlan.js"),
