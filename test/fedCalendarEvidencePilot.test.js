@@ -327,14 +327,16 @@ test("R19-15 historical Gate D artifact, parser and route identities remain unch
 });
 
 test("R5F-1/R5F-2 Fed parser identity normalizes only source line endings", () => {
-  const logical = Parsers.parseFed.toString(), crlf = logical.replace(/\n/g, "\r\n"),
-    legacyCr = logical.replace(/\n/g, "\r");
-  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => logical }), "utf8")),
-    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
-  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => crlf }), "utf8")),
-    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
-  assert.equal(digest(Buffer.from(canonicalFunctionSource({ toString: () => legacyCr }), "utf8")),
-    "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b");
+  const checkoutSource = Parsers.parseFed.toString(), lf = canonicalFunctionSource({
+    toString: () => checkoutSource }), crlf = lf.replace(/\n/g, "\r\n"),
+    legacyCr = lf.replace(/\n/g, "\r"), expected =
+      "55b65068da162423ba55b5c8a8df504c1eb242ab0f968eafcd0c2900e2ad660b";
+  assert.equal(crlf.includes("\r\r\n"), false);
+  const regeneratedCrlf = canonicalFunctionSource({ toString: () => crlf }).replace(/\n/g, "\r\n");
+  assert.equal(regeneratedCrlf.includes("\r\r\n"), false);
+  assert.equal(regeneratedCrlf, crlf);
+  for (const source of [lf, crlf, legacyCr]) assert.equal(digest(Buffer.from(
+    canonicalFunctionSource({ toString: () => source }), "utf8")), expected);
 });
 
 test("R19-16 Gate D scripts remain excluded and have no runtime import edge", () => {
