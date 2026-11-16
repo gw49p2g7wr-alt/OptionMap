@@ -81,11 +81,9 @@ function createWeeklyEvidenceSetStore(options = {}) {
     const descriptor = fs.openSync(file, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
     try {
       const opened = fs.fstatSync(descriptor);
-      if (!Filesystem.secureFileStat(opened, { maxBytes: MAX_SET_BYTES }) ||
-          opened.dev !== before.dev || opened.ino !== before.ino)
-        fail("weekly_evidence_set_path_unsafe");
-      const bytes = fs.readFileSync(descriptor), after = fs.lstatSync(file);
-      if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size)
+      const bytes = fs.readFileSync(descriptor);
+      if (!Filesystem.validateSameOpenedFile({ file, root: directory, pathStatBefore: before,
+        fdStat: opened, maxBytes: MAX_SET_BYTES }))
         fail("weekly_evidence_set_path_unsafe");
       return bytes;
     } finally { fs.closeSync(descriptor); }

@@ -22,6 +22,104 @@ test("POSIX permission checks remain strict while Windows does not use synthetic
   assert.equal(Safety.secureFileStat({ ...file(0o100600), nlink: 2 }, { platform: "win32" }), false);
 });
 
+function fileStat({ dev = 0, ino = 41, size = 8, nlink = 1, regular = true,
+  symbolic = false, mode = 0o100600 } = {}) {
+  return { dev, ino, size, nlink, mode,
+    uid: typeof process.getuid === "function" ? process.getuid() : 0,
+    isFile: () => regular, isDirectory: () => false, isSymbolicLink: () => symbolic };
+}
+
+function windowsValidationFs(file, { after = fileStat(), reopened = fileStat({ dev: 91 }),
+  final = fileStat(), realpath = file } = {}) {
+  const pathStats = [after, final];
+  let opens = 0, closes = 0;
+  return {
+    realpathSync: () => realpath,
+    lstatSync: () => pathStats.shift(),
+    openSync: () => { opens++; return 73; },
+    fstatSync: descriptor => { assert.equal(descriptor, 73); return reopened; },
+    closeSync: descriptor => { assert.equal(descriptor, 73); closes++; },
+    counts: () => ({ opens, closes })
+  };
+}
+
+test("WFS-3/WFS-4 platform identity keeps POSIX dev+ino strict and accepts Windows path dev zero", () => {
+  const posixFile = "/OptionMap/vault/record.json", posixRoot = "/OptionMap/vault";
+  assert.equal(Safety.validateSameOpenedFile({ file: posixFile, root: posixRoot,
+    pathStatBefore: fileStat({ dev: 12 }), fdStat: fileStat({ dev: 12 }),
+    fsApi: windowsValidationFs(posixFile, { after: fileStat({ dev: 12 }) }),
+    platform: "darwin" }), true);
+  assert.equal(Safety.validateSameOpenedFile({ file: posixFile, root: posixRoot,
+    pathStatBefore: fileStat({ dev: 0 }), fdStat: fileStat({ dev: 12 }),
+    fsApi: windowsValidationFs(posixFile, { after: fileStat({ dev: 0 }) }),
+    platform: "darwin" }), false);
+  const windowsFile = "C:\\OptionMap\\vault\\record.json", windowsRoot = "C:\\OptionMap\\vault";
+  assert.equal(Safety.validateSameOpenedFile({ file: windowsFile, root: windowsRoot,
+    pathStatBefore: fileStat({ dev: 13 }), fdStat: fileStat({ dev: 12 }),
+    fsApi: windowsValidationFs(windowsFile, { reopened: fileStat({ dev: 12 }) }),
+    platform: "win32" }), false);
+});
+
+test("WFS-1/WFS-2/WFS-4 Windows normal file uses a matching reopened handle identity", () => {
+  const file = "C:\\OptionMap\\vault\\record.json", root = "c:\\optionmap\\vault",
+    before = fileStat(), opened = fileStat({ dev: 91 }), fsApi = windowsValidationFs(file);
+  assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: before,
+    fdStat: opened, fsApi, platform: "win32", maxBytes: 16 }), true);
+  assert.deepEqual(fsApi.counts(), { opens: 1, closes: 1 });
+});
+
+test("WFS-5/WFS-6 Windows inode mismatch or path swap rejects before acceptance", () => {
+  const file = "C:\\OptionMap\\vault\\record.json", root = "C:\\OptionMap\\vault",
+    opened = fileStat({ dev: 91 });
+  assert.equal(Safety.validateSameOpenedFile({ file, root,
+    pathStatBefore: fileStat({ ino: 40 }), fdStat: opened,
+    fsApi: windowsValidationFs(file), platform: "win32" }), false);
+  const swapped = windowsValidationFs(file, { after: fileStat({ ino: 42 }) });
+  assert.equal(Safety.validateSameOpenedFile({ file, root,
+    pathStatBefore: fileStat(), fdStat: opened, fsApi: swapped, platform: "win32" }), false);
+  assert.deepEqual(swapped.counts(), { opens: 0, closes: 0 });
+});
+
+test("WFS-7/WFS-9/WFS-10/WFS-11 unsafe file facts and containment remain fail-closed", () => {
+  const file = "C:\\OptionMap\\vault\\record.json", root = "C:\\OptionMap\\vault",
+    opened = fileStat({ dev: 91 });
+  for (const before of [fileStat({ symbolic: true }), fileStat({ nlink: 2 }),
+    fileStat({ regular: false })]) assert.equal(Safety.validateSameOpenedFile({ file, root,
+      pathStatBefore: before, fdStat: opened, fsApi: windowsValidationFs(file), platform: "win32" }), false);
+  for (const fdStat of [fileStat({ dev: 91, nlink: 2 }), fileStat({ dev: 91, regular: false })])
+    assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: fileStat(),
+      fdStat, fsApi: windowsValidationFs(file), platform: "win32" }), false);
+  assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: fileStat(),
+    fdStat: opened, fsApi: windowsValidationFs(file, { after: fileStat({ size: 9 }) }),
+    platform: "win32" }), false);
+  assert.equal(Safety.validateSameOpenedFile({ file: "C:\\Other\\record.json", root,
+    pathStatBefore: fileStat(), fdStat: opened,
+    fsApi: windowsValidationFs("C:\\Other\\record.json"), platform: "win32" }), false);
+});
+
+test("WFS-8/WFS-4 canonical alias and reopened-handle volume mismatch reject", () => {
+  const file = "C:\\OptionMap\\vault\\record.json", root = "C:\\OptionMap\\vault",
+    opened = fileStat({ dev: 91 });
+  assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: fileStat(),
+    fdStat: opened, fsApi: windowsValidationFs(file, { realpath: "C:\\Elsewhere\\record.json" }),
+    platform: "win32" }), false);
+  const differentHandle = windowsValidationFs(file, { reopened: fileStat({ dev: 92 }) });
+  assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: fileStat(),
+    fdStat: opened, fsApi: differentHandle, platform: "win32" }), false);
+  assert.deepEqual(differentHandle.counts(), { opens: 1, closes: 1 });
+});
+
+test("WFS-19 Windows reopened-handle contention fails closed without retry", () => {
+  const file = "C:\\OptionMap\\vault\\record.json", root = "C:\\OptionMap\\vault";
+  let attempts = 0;
+  const fsApi = { realpathSync: () => file, lstatSync: () => fileStat(),
+    openSync: () => { attempts++; const error = new Error("locked"); error.code = "EBUSY"; throw error; },
+    fstatSync: () => { throw new Error("unreachable"); }, closeSync: () => {} };
+  assert.equal(Safety.validateSameOpenedFile({ file, root, pathStatBefore: fileStat(),
+    fdStat: fileStat({ dev: 91 }), fsApi, platform: "win32" }), false);
+  assert.equal(attempts, 1);
+});
+
 test("canonical identity rejects aliases and directory sync has explicit platform strategies", () => {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "optionmap-fs-policy-"));
   try {

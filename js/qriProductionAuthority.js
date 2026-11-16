@@ -59,11 +59,10 @@ function createProductionAuthority(options) {
     const fd = fs.openSync(file, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
     try {
       const opened = fs.fstatSync(fd);
-      if (!Filesystem.secureFileStat(opened, { maxBytes: MAX_BYTES }) ||
-          opened.dev !== stat.dev || opened.ino !== stat.ino) {
-        throw new Error("qri_production_authority_file_unsafe");
-      }
       const bytes = fs.readFileSync(fd);
+      if (!Filesystem.validateSameOpenedFile({ file, root: profile, pathStatBefore: stat,
+        fdStat: opened, maxBytes: MAX_BYTES }))
+        throw new Error("qri_production_authority_file_unsafe");
       let record;
       try { record = JSON.parse(bytes.toString("utf8")); }
       catch (_error) { throw new Error("qri_production_authority_record_invalid"); }

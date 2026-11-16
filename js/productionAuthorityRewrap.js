@@ -82,11 +82,9 @@ function secureRecord(profile, descriptor, fsApi = fs) {
   const fd = fsApi.openSync(file, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
   try {
     const opened = fsApi.fstatSync(fd);
-    if (!Filesystem.secureFileStat(opened, { maxBytes: descriptor.maxBytes }) ||
-        opened.dev !== stat.dev || opened.ino !== stat.ino)
-      throw error("authority_rewrap_invalid_record");
-    const bytes = fsApi.readFileSync(fd), after = fsApi.lstatSync(file);
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size)
+    const bytes = fsApi.readFileSync(fd);
+    if (!Filesystem.validateSameOpenedFile({ file, root: profile, pathStatBefore: stat,
+      fdStat: opened, fsApi, maxBytes: descriptor.maxBytes }))
       throw error("authority_rewrap_invalid_record");
     let record;
     try { record = JSON.parse(bytes.toString("utf8")); }

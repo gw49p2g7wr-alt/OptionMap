@@ -155,11 +155,9 @@ function createVault({ profileRoot, targetEnvironment, crashAt }) {
     const descriptor = fs.openSync(file, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
     try {
       const opened = fs.fstatSync(descriptor);
-      if (!Filesystem.secureFileStat(opened, { maxBytes: maximum }) ||
-          before.dev !== opened.dev || before.ino !== opened.ino) fail("vault_path_unsafe");
       const bytes = fs.readFileSync(descriptor);
-      const after = fs.lstatSync(file);
-      if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size)
+      if (!Filesystem.validateSameOpenedFile({ file, root, pathStatBefore: before,
+        fdStat: opened, maxBytes: maximum }))
         fail("vault_path_unsafe");
       return bytes;
     } finally { fs.closeSync(descriptor); }

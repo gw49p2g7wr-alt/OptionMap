@@ -57,11 +57,12 @@ function createProductionAuthority(options) {
     const descriptor = fs.openSync(file, fs.constants.O_RDONLY | Filesystem.noFollowFlag());
     try {
       const opened = fs.fstatSync(descriptor);
-      if (!Filesystem.secureFileStat(opened, { maxBytes: MAX_BYTES }) ||
-          opened.dev !== stat.dev || opened.ino !== stat.ino)
+      const bytes = fs.readFileSync(descriptor);
+      if (!Filesystem.validateSameOpenedFile({ file, root: profile, pathStatBefore: stat,
+        fdStat: opened, maxBytes: MAX_BYTES }))
         throw new Error("weekly_production_authority_file_unsafe");
       let record;
-      try { record = JSON.parse(fs.readFileSync(descriptor, "utf8")); }
+      try { record = JSON.parse(bytes.toString("utf8")); }
       catch (_error) { throw new Error("weekly_production_authority_record_invalid"); }
       if (!validateRecord(record)) throw new Error("weekly_production_authority_record_invalid");
       const secret = options.protector.unprotect(Buffer.from(record.ciphertext, "base64"));
